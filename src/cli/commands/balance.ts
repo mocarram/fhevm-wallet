@@ -5,15 +5,16 @@
 import { Command } from 'commander';
 import inquirer from 'inquirer';
 import ora from 'ora';
-import Table from 'cli-table3';
 import chalk from 'chalk';
 import { loadWallet, listWallets, hasWallet } from '../../core/wallet/index.js';
 import { listTokens, getToken, TokenEntry } from '../../core/token/TokenRegistry.js';
 import { getDecryptedBalance } from '../../core/token/TokenService.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
+import { getProvider } from '../../core/network/ProviderFactory.js';
 import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.js';
 import { formatTokenAmount, formatAddress, error, warning, bold } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
+import { DynamicBalanceTable } from '../utils/DynamicBalanceTable.js';
 
 export function registerBalanceCommand(program: Command): void {
   program
@@ -110,47 +111,40 @@ export function registerBalanceCommand(program: Command): void {
           return;
         }
 
-        console.log();
-        console.log(bold(`Balances for ${selectedWallet}`));
-        console.log(chalk.dim(`Address: ${wallet.address}`));
-        console.log(chalk.dim(`Network: ${network}`));
-        console.log();
+        // Fetch ETH balance
+        const provider = getProvider(network);
+        const ethBalance = await provider.getBalance(wallet.address);
+        const ethFormatted = formatTokenAmount(ethBalance, 18);
 
-        const table = new Table({
-          head: ['Token', 'Balance', 'Address'],
-          style: { head: ['cyan'] },
+        const headerLines = [
+          '',
+          bold(`Balances for ${selectedWallet}`),
+          chalk.dim(`Address: ${wallet.address}`),
+          chalk.dim(`Network: ${network}`),
+          ''
+        ].join('\n');
+
+        const dynamicTable = new DynamicBalanceTable({
+          tokens,
+          header: headerLines,
+          ethBalance: ethFormatted,
         });
+        dynamicTable.start();
 
-        for (const token of tokens) {
-          const spinner = ora(`Fetching ${token.symbol} balance...`).start();
-
+        for (let i = 0; i < tokens.length; i++) {
+          dynamicTable.setLoading(i);
           try {
-            const balance = await getDecryptedBalance(token.address, wallet, network, {
+            const balance = await getDecryptedBalance(tokens[i].address, wallet, network, {
               forceRefresh: options.refresh,
             });
-            const formatted = formatTokenAmount(balance, token.decimals);
-
-            spinner.succeed(`${token.symbol}: ${formatted}`);
-
-            table.push([
-              token.symbol,
-              formatted,
-              formatAddress(token.address),
-            ]);
+            const formatted = formatTokenAmount(balance, tokens[i].decimals);
+            dynamicTable.setSuccess(i, formatted);
           } catch (err) {
-            spinner.fail(`${token.symbol}: Failed to fetch`);
-            console.log(chalk.dim(`  ${err instanceof Error ? err.message : String(err)}`));
-
-            table.push([
-              token.symbol,
-              chalk.red('Error'),
-              formatAddress(token.address),
-            ]);
+            dynamicTable.setError(i, err instanceof Error ? err.message : 'Failed');
           }
         }
 
-        console.log();
-        console.log(table.toString());
+        dynamicTable.stop();
       } catch (err) {
         console.log(error(err instanceof Error ? err.message : 'Failed to fetch balances'));
       }
