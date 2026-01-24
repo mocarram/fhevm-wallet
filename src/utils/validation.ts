@@ -55,3 +55,11 @@ export function isValidAmount(amount: string): boolean {
 export function isValidNetwork(network: string): network is 'mainnet' | 'sepolia' {
   return network === 'mainnet' || network === 'sepolia';
 }
+
+/**
+ * Validate a contact name for the address book
+ * Allows alphanumeric characters and spaces, 1-32 characters
+ */
+export function isValidContactName(name: string): boolean {
+  return /^[a-zA-Z0-9 ]{1,32}$/.test(name) && name.trim().length > 0;
+}

@@ -20,6 +20,7 @@ import { getProvider } from '../../core/network/ProviderFactory.js';
 import { formatAddress, error, bold } from '../../utils/formatting.js';
 import { isValidNetwork, isValidAddress } from '../../utils/validation.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
+import { getNameByAddress } from '../../storage/AddressBook.js';
 
 /**
  * Format date for display
@@ -61,7 +62,11 @@ function getDirectionInfo(tx: Transaction, walletAddress: string): { label: stri
   const arrow = isSend ? '→' : '←';
   const counterparty = isSend ? tx.to : tx.from;
 
-  return { label: `${arrow} ${formatAddress(counterparty, 6)}` };
+  // Check if counterparty is in address book
+  const contactName = getNameByAddress(counterparty);
+  const displayName = contactName || formatAddress(counterparty, 6);
+
+  return { label: `${arrow} ${displayName}` };
 }
 
 /**

@@ -56,7 +56,15 @@ import {
   isValidAddress,
   isValidAmount,
   isValidNetwork,
+  isValidContactName,
 } from "../../utils/validation.js";
+import {
+  addAddress,
+  listAddresses,
+  getAddressByName,
+  removeAddress,
+  AddressEntry,
+} from "../../storage/AddressBook.js";
 import { DynamicBalanceTable } from "../utils/DynamicBalanceTable.js";
 import { displayHistoryInteractive } from "./history.js";
 
@@ -67,6 +75,7 @@ type MenuChoice =
   | "send"
   | "history"
   | "config"
+  | "addressbook"
   | "exit"
   | "back"
   | "wallet-create"
@@ -80,7 +89,10 @@ type MenuChoice =
   | "token-remove"
   | "config-show"
   | "config-network"
-  | "config-wallet";
+  | "config-wallet"
+  | "addressbook-add"
+  | "addressbook-list"
+  | "addressbook-remove";
 
 function clearScreen(): void {
   console.clear();
@@ -113,6 +125,7 @@ async function mainMenu(): Promise<MenuChoice> {
         new inquirer.Separator(),
         { name: "👛  Wallet Management", value: "wallet" },
         { name: "🪙  Token Management", value: "token" },
+        { name: "📒  Address Book", value: "addressbook" },
         { name: "⚙️   Configuration", value: "config" },
         new inquirer.Separator(),
         { name: "🚪  Exit", value: "exit" },
@@ -174,6 +187,25 @@ async function configMenu(): Promise<MenuChoice> {
         { name: "👁️   Show Current Config", value: "config-show" },
         { name: "🌐  Change Network", value: "config-network" },
         { name: "👛  Change Default Wallet", value: "config-wallet" },
+        new inquirer.Separator(),
+        { name: "← Back", value: "back" },
+      ],
+      loop: false,
+    },
+  ]);
+  return choice;
+}
+
+async function addressBookMenu(): Promise<MenuChoice> {
+  const { choice } = await inquirer.prompt([
+    {
+      type: "list",
+      name: "choice",
+      message: "Address Book",
+      choices: [
+        { name: "➕  Add Contact", value: "addressbook-add" },
+        { name: "📋  List Contacts", value: "addressbook-list" },
+        { name: "🗑️   Remove Contact", value: "addressbook-remove" },
         new inquirer.Separator(),
         { name: "← Back", value: "back" },
       ],
@@ -663,6 +695,156 @@ async function handleChangeNetwork(): Promise<void> {
   console.log(success(`Default network set to ${network}`));
 }
 
+async function handleAddContact(): Promise<void> {
+  const { name } = await inquirer.prompt([
+    {
+      type: "input",
+      name: "name",
+      message: "Enter contact name:",
+      validate: (input) => {
+        if (!isValidContactName(input)) {
+          return "Contact name must be 1-32 alphanumeric characters or spaces";
+        }
+        return true;
+      },
+    },
+  ]);
+
+  const { address } = await inquirer.prompt([
+    {
+      type: "input",
+      name: "address",
+      message: "Enter address:",
+      validate: (input) => isValidAddress(input) || "Invalid Ethereum address",
+    },
+  ]);
+
+  try {
+    addAddress(name.trim(), address);
+    console.log(success(`Contact "${name.trim()}" added`));
+  } catch (err) {
+    console.log(error(err instanceof Error ? err.message : "Failed to add contact"));
+  }
+}
+
+async function handleListContacts(): Promise<void> {
+  const contacts = listAddresses();
+
+  if (contacts.length === 0) {
+    console.log("\nNo contacts saved. Add one first.");
+    return;
+  }
+
+  const table = new Table({
+    head: ["Name", "Address", "Added"],
+    style: { head: ["cyan"] },
+  });
+
+  for (const contact of contacts) {
+    table.push([
+      contact.name,
+      formatAddress(contact.address),
+      formatDate(contact.addedAt),
+    ]);
+  }
+
+  console.log();
+  console.log(table.toString());
+}
+
+async function handleRemoveContact(): Promise<void> {
+  const contacts = listAddresses();
+
+  if (contacts.length === 0) {
+    console.log("\nNo contacts to remove.");
+    return;
+  }
+
+  const { contactName, confirm } = await inquirer.prompt([
+    {
+      type: "list",
+      name: "contactName",
+      message: "Select contact to remove:",
+      choices: contacts.map((c) => ({
+        name: `${c.name} (${formatAddress(c.address)})`,
+        value: c.name,
+      })),
+    },
+    {
+      type: "confirm",
+      name: "confirm",
+      message: "Are you sure?",
+      default: false,
+    },
+  ]);
+
+  if (!confirm) {
+    console.log("Cancelled");
+    return;
+  }
+
+  const removed = removeAddress(contactName);
+  if (removed) {
+    console.log(success(`Contact "${contactName}" removed`));
+  } else {
+    console.log(error("Contact not found"));
+  }
+}
+
+/**
+ * Prompt for recipient selection from address book or manual entry
+ */
+async function selectRecipient(): Promise<string | null> {
+  const contacts = listAddresses();
+
+  if (contacts.length === 0) {
+    // No contacts, just prompt for address
+    const { to } = await inquirer.prompt([
+      {
+        type: "input",
+        name: "to",
+        message: "Enter recipient address:",
+        validate: (input) => isValidAddress(input) || "Invalid Ethereum address",
+      },
+    ]);
+    return to;
+  }
+
+  // Show contacts with option to enter new address
+  const choices = [
+    ...contacts.map((c) => ({
+      name: `${c.name} (${formatAddress(c.address)})`,
+      value: c.address,
+    })),
+    new inquirer.Separator(),
+    { name: "Enter new address...", value: "__new__" },
+  ];
+
+  const { recipient } = await inquirer.prompt([
+    {
+      type: "list",
+      name: "recipient",
+      message: "Select recipient:",
+      choices,
+      loop: false,
+    },
+  ]);
+
+  if (recipient === "__new__") {
+    const { to } = await inquirer.prompt([
+      {
+        type: "input",
+        name: "to",
+        message: "Enter recipient address:",
+        validate: (input) => isValidAddress(input) || "Invalid Ethereum address",
+      },
+    ]);
+    return to;
+  }
+
+  return recipient;
+}
+
 async function handleBalance(): Promise<void> {
   const network = getDefaultNetwork();
   const wallets = listWallets();
@@ -819,14 +1001,15 @@ async function handleSend(): Promise<void> {
     walletName = selectedWallet;
   }
 
-  // Get recipient and amount
-  const { to, amount } = await inquirer.prompt([
-    {
-      type: "input",
-      name: "to",
-      message: "Enter recipient address:",
-      validate: (input) => isValidAddress(input) || "Invalid Ethereum address",
-    },
+  // Get recipient from address book or manual entry
+  const to = await selectRecipient();
+  if (!to) {
+    console.log("Cancelled");
+    return;
+  }
+
+  // Get amount
+  const { amount } = await inquirer.prompt([
     {
       type: "input",
       name: "amount",
@@ -1073,6 +1256,34 @@ async function runInteractiveMode(): Promise<void> {
               break;
             case "back":
               inConfigMenu = false;
+              break;
+          }
+        }
+        break;
+      }
+
+      case "addressbook": {
+        let inAddressBookMenu = true;
+        while (inAddressBookMenu) {
+          clearScreen();
+          printHeader();
+          const addressBookChoice = await addressBookMenu();
+
+          switch (addressBookChoice) {
+            case "addressbook-add":
+              await handleAddContact();
+              await waitForKey();
+              break;
+            case "addressbook-list":
+              await handleListContacts();
+              await waitForKey();
+              break;
+            case "addressbook-remove":
+              await handleRemoveContact();
+              await waitForKey();
+              break;
+            case "back":
+              inAddressBookMenu = false;
               break;
           }
         }

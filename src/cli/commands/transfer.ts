@@ -13,6 +13,7 @@ import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.js';
 import { formatTokenAmount, parseTokenAmount, formatAddress, error, success, warning, bold } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork, isValidAmount } from '../../utils/validation.js';
+import { listAddresses, getAddressByName } from '../../storage/AddressBook.js';
 
 export function registerTransferCommand(program: Command): void {
   program
@@ -23,10 +24,12 @@ export function registerTransferCommand(program: Command): void {
     .option('-t, --token <address>', 'Token contract address')
     .option('-w, --wallet <name>', 'Wallet to use')
     .option('-n, --network <network>', 'Network (sepolia or mainnet)')
+    .option('-c, --contact <name>', 'Use address book contact as recipient')
     .action(async (to?: string, amount?: string, options?: {
       token?: string;
       wallet?: string;
       network?: string;
+      contact?: string;
     }) => {
       try {
         // Determine network
@@ -75,17 +78,61 @@ export function registerTransferCommand(program: Command): void {
           token = getToken(tokenAddress, network)!;
         }
 
-        // Prompt for recipient if not provided
-        if (!to) {
-          const answers = await inquirer.prompt([
-            {
-              type: 'input',
-              name: 'to',
-              message: 'Enter recipient address:',
-              validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
-            },
-          ]);
-          to = answers.to;
+        // Resolve recipient from contact or prompt
+        if (options?.contact) {
+          const contact = getAddressByName(options.contact);
+          if (!contact) {
+            console.log(error(`Contact "${options.contact}" not found`));
+            return;
+          }
+          to = contact.address;
+          console.log(`Using contact: ${contact.name} (${formatAddress(contact.address)})`);
+        } else if (!to) {
+          // Offer address book selection if contacts exist
+          const contacts = listAddresses();
+
+          if (contacts.length > 0) {
+            const choices = [
+              ...contacts.map(c => ({
+                name: `${c.name} (${formatAddress(c.address)})`,
+                value: c.address,
+              })),
+              { name: 'Enter new address...', value: '__new__' },
+            ];
+
+            const { recipient } = await inquirer.prompt([
+              {
+                type: 'list',
+                name: 'recipient',
+                message: 'Select recipient:',
+                choices,
+              },
+            ]);
+
+            if (recipient === '__new__') {
+              const { address } = await inquirer.prompt([
+                {
+                  type: 'input',
+                  name: 'address',
+                  message: 'Enter recipient address:',
+                  validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
+                },
+              ]);
+              to = address;
+            } else {
+              to = recipient;
+            }
+          } else {
+            const answers = await inquirer.prompt([
+              {
+                type: 'input',
+                name: 'to',
+                message: 'Enter recipient address:',
+                validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
+              },
+            ]);
+            to = answers.to;
+          }
         }
 
         if (!isValidAddress(to!)) {
