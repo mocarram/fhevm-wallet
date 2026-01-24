@@ -1,0 +1,20 @@
+services:
+  fhe-wallet:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fhe-wallet:latest
+    container_name: fhe-wallet
+    stdin_open: true
+    tty: true
+    env_file:
+      - .env
+    volumes:
+      # Persist wallet data and configuration
+      - ./data:/app/data
+    networks:
+      - fhe-network
+
+networks:
+  fhe-network:
+    driver: bridge

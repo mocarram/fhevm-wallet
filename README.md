@@ -2,8 +2,6 @@
 
 A CLI wallet for managing encrypted ERC-7984 tokens using Zama's Fully Homomorphic Encryption (FHE) technology.
 
-**Node.js 20+** required
-
 ## Features
 
 - **Interactive Mode** - Menu-driven terminal interface with keyboard navigation
@@ -11,62 +9,107 @@ A CLI wallet for managing encrypted ERC-7984 tokens using Zama's Fully Homomorph
 - **Confidential Token Tracking** - Add and manage ERC-7984 compliant tokens
 - **Encrypted Balance Viewing** - Decrypt and view your confidential token balances
 - **Confidential Transfers** - Send tokens with end-to-end encryption
+- **Address Book** - Save frequently used addresses with friendly names
 - **Multi-Network Support** - Works on Ethereum Sepolia testnet and Mainnet
 
-## Installation
+## Quick Start
+
+### Option 1: Docker (Recommended)
+
+No local dependencies required - just Docker.
 
 ```bash
-# Clone the repository
+# 1. Clone and enter the directory
 git clone <repository-url>
 cd fhe-wallet
 
-# Install dependencies
-npm install
+# 2. Create environment file
+make env
+# Edit .env with your RPC URLs and API keys
 
-# Build the project
-npm run build
-
-# Link globally for CLI access
-npm link
+# 3. Run
+make docker-run
 ```
 
-After linking, the `fhe-wallet` command will be available globally in your terminal.
+### Option 2: Local Installation
+
+Requires Node.js >= 22.
+
+```bash
+# 1. Clone and enter the directory
+git clone <repository-url>
+cd fhe-wallet
+
+# 2. Install dependencies
+make install
+
+# 3. Create environment file
+make env
+# Edit .env with your RPC URLs and API keys
+
+# 4. Build and run
+make run
+```
+
+## Docker vs Local Development
+
+| Task                  | Docker                              | Local                             |
+| --------------------- | ----------------------------------- | --------------------------------- |
+| **Prerequisites**     | Docker only                         | Node.js >= 22                     |
+| **Setup**             | `make env`                          | `make install && make env`        |
+| **Run (interactive)** | `make docker-run`                   | `make run`                        |
+| **Run (with args)**   | `make docker-send ARGS="0x... 100"` | `npm run start -- send 0x... 100` |
+| **Check balance**     | `make docker-balance`               | `npm run start -- balance`        |
+| **View history**      | `make docker-history`               | `npm run start -- history`        |
+| **Shell access**      | `make docker-shell`                 | N/A                               |
+| **Build image/code**  | `make docker-build`                 | `make build`                      |
+| **Clean up**          | `make docker-clean`                 | `make clean`                      |
+| **Run all checks**    | N/A                                 | `make check`                      |
 
 ## Configuration
 
-1. Copy the example environment file:
+Create a `.env` file from the template:
 
 ```bash
-cp .env.example .env
+make env
 ```
 
-2. Configure your RPC endpoints in `.env`:
+Configure your environment in `.env`:
+
+| Variable            | Description                              | Required |
+| ------------------- | ---------------------------------------- | -------- |
+| `SEPOLIA_RPC_URL`   | Sepolia testnet RPC endpoint             | Yes      |
+| `MAINNET_RPC_URL`   | Ethereum mainnet RPC endpoint            | Yes      |
+| `ETHERSCAN_API_KEY` | Etherscan API key (for tx history sync)  | No       |
+| `DEFAULT_NETWORK`   | Default network (`sepolia` or `mainnet`) | No       |
+| `DEFAULT_WALLET`    | Default wallet name                      | No       |
+
+Example `.env`:
 
 ```env
-# RPC Endpoints
 SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/YOUR_INFURA_KEY
 MAINNET_RPC_URL=https://mainnet.infura.io/v3/YOUR_INFURA_KEY
-
-# Default network (sepolia or mainnet)
+ETHERSCAN_API_KEY=YOUR_ETHERSCAN_KEY
 DEFAULT_NETWORK=sepolia
-
-# Default wallet name (optional)
-DEFAULT_WALLET=
+DEFAULT_WALLET=my-wallet
 ```
 
 ## Usage
+
+> **Note:** Examples below use `fhe-cli-wallet` which requires global installation via `npm link`.
+> Alternatively, use `npm run start --` or `make` commands as shown in the Quick Start section.
 
 ### Interactive Mode
 
 The easiest way to use FHE Wallet is through the interactive menu:
 
 ```bash
-# Launch interactive mode (default when no command provided)
-fhe-wallet
+# Docker
+make docker-run
 
-# Or explicitly
-fhe-wallet interactive
-fhe-wallet i
+# Local
+make run
+# or: npm run start
 ```
 
 Interactive mode provides a menu-driven interface with keyboard navigation for all operations.
@@ -75,89 +118,100 @@ Interactive mode provides a menu-driven interface with keyboard navigation for a
 
 ```bash
 # Create a new wallet
-fhe-wallet wallet create [name]
-fhe-wallet wallet create my-wallet --set-default
+fhe-cli-wallet wallet create [name]
+fhe-cli-wallet wallet create my-wallet --set-default
 
 # Import wallet from mnemonic
-fhe-wallet wallet import [name] --mnemonic
+fhe-cli-wallet wallet import [name] --mnemonic
 
 # Import wallet from private key
-fhe-wallet wallet import [name] --key
+fhe-cli-wallet wallet import [name] --key
 
 # List all wallets
-fhe-wallet wallet list
-fhe-wallet wallet ls
+fhe-cli-wallet wallet list
 
 # Set default wallet
-fhe-wallet wallet set-default <name>
+fhe-cli-wallet wallet set-default <name>
 
 # Remove a wallet
-fhe-wallet wallet remove <name>
-fhe-wallet wallet rm <name> --force
+fhe-cli-wallet wallet remove <name>
 ```
 
 ### Token Commands
 
 ```bash
 # Add a token to track
-fhe-wallet token add [address]
-fhe-wallet token add 0x... --network sepolia
+fhe-cli-wallet token add [address]
+fhe-cli-wallet token add 0x... --network sepolia
 
 # List tracked tokens
-fhe-wallet token list
-fhe-wallet token ls --network mainnet
+fhe-cli-wallet token list
 
 # Remove a tracked token
-fhe-wallet token remove <address>
-fhe-wallet token rm <address> --network sepolia --force
+fhe-cli-wallet token remove <address>
 ```
 
 ### Balance Command
 
 ```bash
 # View balances for all tracked tokens
-fhe-wallet balance
+fhe-cli-wallet balance
 
 # View balance with specific wallet
-fhe-wallet balance --wallet my-wallet
+fhe-cli-wallet balance --wallet my-wallet
 
 # View balance for specific token
-fhe-wallet balance --token 0x...
+fhe-cli-wallet balance --token 0x...
 
 # View balance on specific network
-fhe-wallet balance --network mainnet
+fhe-cli-wallet balance --network mainnet
 ```
 
 ### Send Command
 
 ```bash
 # Send tokens (interactive prompts)
-fhe-wallet send
+fhe-cli-wallet send
 
 # Send tokens with arguments
-fhe-wallet send <to-address> <amount>
-fhe-wallet send 0x... 100 --token 0x... --wallet my-wallet
+fhe-cli-wallet send <to-address> <amount>
+fhe-cli-wallet send 0x... 100 --token 0x... --wallet my-wallet
+
+# Send to a saved contact
+fhe-cli-wallet send --contact Alice 100
 
 # Send on specific network
-fhe-wallet send 0x... 50 --network mainnet
+fhe-cli-wallet send 0x... 50 --network mainnet
+```
+
+### Address Book
+
+Save frequently used addresses for quick access:
+
+```bash
+# In interactive mode: Address Book > Add Contact
+# Contacts appear when selecting recipients in Send flow
+
+# Send to a saved contact via CLI
+fhe-cli-wallet send --contact Alice 100
 ```
 
 ### Configuration Command
 
 ```bash
 # View current configuration
-fhe-wallet config --show
+fhe-cli-wallet config --show
 
 # Set default network
-fhe-wallet config --network sepolia
+fhe-cli-wallet config --network sepolia
 ```
 
 ### Global Flags
 
 ```bash
 # Use specific network for any command
-fhe-wallet balance --network mainnet
-fhe-wallet send 0x... 100 -n sepolia
+fhe-cli-wallet balance --network mainnet
+fhe-cli-wallet send 0x... 100 -n sepolia
 ```
 
 ## How It Works
@@ -185,6 +239,45 @@ ERC-7984 is a token standard for confidential tokens using FHE. It provides:
 2. **Balance Query**: Encrypted balances are fetched from the blockchain and decrypted using your private key
 3. **Transfers**: Amounts are encrypted client-side before being sent to the token contract
 
+## Make Commands
+
+Run `make help` to see all available commands:
+
+### Development
+
+| Command         | Description                          |
+| --------------- | ------------------------------------ |
+| `make install`  | Install dependencies                 |
+| `make build`    | Build TypeScript                     |
+| `make dev`      | Run in development mode              |
+| `make run`      | Build and run                        |
+| `make lint`     | Run ESLint                           |
+| `make lint-fix` | Fix lint issues                      |
+| `make format`   | Format with Prettier                 |
+| `make check`    | Run all checks (lint, format, build) |
+| `make clean`    | Clean build artifacts                |
+
+### Docker
+
+| Command                       | Description                 |
+| ----------------------------- | --------------------------- |
+| `make docker-build`           | Build Docker image          |
+| `make docker-run`             | Run in Docker (interactive) |
+| `make docker-shell`           | Open shell in container     |
+| `make docker-send ARGS="..."` | Send tokens via Docker      |
+| `make docker-balance`         | Check balance via Docker    |
+| `make docker-history`         | View history via Docker     |
+| `make docker-clean`           | Remove Docker image         |
+
+### Docker Compose
+
+| Command              | Description               |
+| -------------------- | ------------------------- |
+| `make up`            | Start with docker-compose |
+| `make down`          | Stop services             |
+| `make compose-build` | Build with docker-compose |
+| `make compose-clean` | Clean all resources       |
+
 ## Project Structure
 
 ```
@@ -196,6 +289,7 @@ fhe-wallet/
 │   │   │   ├── token.ts       # Token tracking commands
 │   │   │   ├── balance.ts     # Balance viewing command
 │   │   │   ├── transfer.ts    # Token transfer command
+│   │   │   ├── history.ts     # Transaction history command
 │   │   │   └── interactive.ts # Interactive TUI mode
 │   │   └── index.ts           # CLI setup
 │   ├── core/
@@ -204,11 +298,20 @@ fhe-wallet/
 │   │   ├── token/             # Token operations
 │   │   └── wallet/            # Wallet operations
 │   ├── storage/               # Data persistence
+│   │   ├── AddressBook.ts     # Address book storage
+│   │   ├── ConfigStore.ts     # Configuration storage
+│   │   ├── TransactionStore.ts # Transaction history
+│   │   └── WalletStore.ts     # Wallet storage
 │   └── utils/                 # Formatting and validation
 ├── data/                      # Local data storage (created at runtime)
 │   ├── wallets/               # Encrypted keystores
+│   ├── addressbook.json       # Saved contacts
 │   ├── tokens.json            # Tracked tokens
+│   ├── transactions.json      # Transaction history
 │   └── config.json            # CLI configuration
+├── Dockerfile                 # Docker build configuration
+├── docker-compose.yml         # Docker Compose configuration
+├── Makefile                   # Make commands
 └── package.json
 ```
 
