@@ -132,3 +132,14 @@ export function getWalletAddress(name: string): string | null {
 export function hasWallet(name: string): boolean {
   return walletExists(name);
 }
+
+/**
+ * Export wallet private key
+ */
+export async function exportWalletPrivateKey(
+  name: string,
+  password: string,
+): Promise<string> {
+  const wallet = await loadWallet(name, password);
+  return wallet.privateKey;
+}

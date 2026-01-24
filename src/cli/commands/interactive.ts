@@ -15,6 +15,7 @@ import {
   removeWallet,
   hasWallet,
   loadWallet,
+  exportWalletPrivateKey,
 } from "../../core/wallet/index.js";
 import {
   addToken,
@@ -68,6 +69,7 @@ type MenuChoice =
   | "wallet-list"
   | "wallet-remove"
   | "wallet-set-default"
+  | "wallet-export"
   | "token-add"
   | "token-list"
   | "token-remove"
@@ -126,6 +128,7 @@ async function walletMenu(): Promise<MenuChoice> {
         { name: "📥  Import Wallet", value: "wallet-import" },
         { name: "📋  List Wallets", value: "wallet-list" },
         { name: "⭐  Set Default Wallet", value: "wallet-set-default" },
+        { name: "🔑  Export Private Key", value: "wallet-export" },
         { name: "🗑️   Remove Wallet", value: "wallet-remove" },
         new inquirer.Separator(),
         { name: "← Back", value: "back" },
@@ -460,6 +463,68 @@ async function handleSetDefaultWallet(): Promise<void> {
 
   setDefaultWallet(walletName);
   console.log(success(`Set "${walletName}" as default wallet`));
+}
+
+async function handleExportWallet(): Promise<void> {
+  const wallets = listWallets();
+
+  if (wallets.length === 0) {
+    console.log("\nNo wallets available.");
+    return;
+  }
+
+  console.log();
+  console.log(warning("WARNING: Your private key grants full access to your wallet."));
+  console.log(warning("Never share it with anyone or enter it on untrusted websites."));
+  console.log();
+
+  const { walletName, confirm } = await inquirer.prompt([
+    {
+      type: "list",
+      name: "walletName",
+      message: "Select wallet to export:",
+      choices: wallets.map((w) => ({
+        name: `${w.name} (${formatAddress(w.address)})`,
+        value: w.name,
+      })),
+    },
+    {
+      type: "confirm",
+      name: "confirm",
+      message: "Do you understand the risks and want to continue?",
+      default: false,
+    },
+  ]);
+
+  if (!confirm) {
+    console.log("Cancelled");
+    return;
+  }
+
+  const { password } = await inquirer.prompt([
+    {
+      type: "password",
+      name: "password",
+      message: "Enter wallet password:",
+      mask: "*",
+    },
+  ]);
+
+  const spinner = ora("Decrypting wallet...").start();
+
+  try {
+    const privateKey = await exportWalletPrivateKey(walletName, password);
+    spinner.succeed("Wallet decrypted");
+
+    console.log();
+    console.log(bold("Private Key:"));
+    console.log(chalk.yellow(privateKey));
+    console.log();
+    console.log(warning("Copy this key securely and clear your terminal history."));
+  } catch (err) {
+    spinner.fail("Failed to decrypt wallet");
+    console.log(error(err instanceof Error ? err.message : "Invalid password"));
+  }
 }
 
 async function handleAddToken(): Promise<void> {
@@ -889,6 +954,10 @@ async function runInteractiveMode(): Promise<void> {
               break;
             case "wallet-set-default":
               await handleSetDefaultWallet();
+              await waitForKey();
+              break;
+            case "wallet-export":
+              await handleExportWallet();
               await waitForKey();
               break;
             case "back":

@@ -14,6 +14,7 @@ import {
   listWallets,
   removeWallet,
   hasWallet,
+  exportWalletPrivateKey,
 } from '../../core/wallet/index.js';
 import { setDefaultWallet, getDefaultWallet } from '../../storage/ConfigStore.js';
 import { formatAddress, formatDate, success, error, warning, bold } from '../../utils/formatting.js';
@@ -323,5 +324,61 @@ export function registerWalletCommands(program: Command): void {
 
       setDefaultWallet(name);
       console.log(success(`Set "${name}" as default wallet`));
+    });
+
+  // Export wallet private key
+  wallet
+    .command('export')
+    .description('Export wallet private key')
+    .argument('<name>', 'Wallet name')
+    .action(async (name: string) => {
+      if (!hasWallet(name)) {
+        console.log(error(`Wallet "${name}" not found`));
+        return;
+      }
+
+      console.log();
+      console.log(warning('WARNING: Your private key grants full access to your wallet.'));
+      console.log(warning('Never share it with anyone or enter it on untrusted websites.'));
+      console.log();
+
+      const { confirm } = await inquirer.prompt([
+        {
+          type: 'confirm',
+          name: 'confirm',
+          message: 'Do you understand the risks and want to continue?',
+          default: false,
+        },
+      ]);
+
+      if (!confirm) {
+        console.log('Cancelled');
+        return;
+      }
+
+      const { password } = await inquirer.prompt([
+        {
+          type: 'password',
+          name: 'password',
+          message: 'Enter wallet password:',
+          mask: '*',
+        },
+      ]);
+
+      const spinner = ora('Decrypting wallet...').start();
+
+      try {
+        const privateKey = await exportWalletPrivateKey(name, password);
+        spinner.succeed('Wallet decrypted');
+
+        console.log();
+        console.log(bold('Private Key:'));
+        console.log(chalk.yellow(privateKey));
+        console.log();
+        console.log(warning('Copy this key securely and clear your terminal history.'));
+      } catch (err) {
+        spinner.fail('Failed to decrypt wallet');
+        console.log(error(err instanceof Error ? err.message : 'Invalid password'));
+      }
     });
 }
