@@ -775,19 +775,22 @@ async function selectRecipient(): Promise<string | null> {
   const contacts = listAddresses();
 
   if (contacts.length === 0) {
-    // No contacts, just prompt for address
+    // No contacts, just prompt for address (empty to cancel)
     const { to } = await inquirer.prompt([
       {
         type: 'input',
         name: 'to',
-        message: 'Enter recipient address:',
-        validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
+        message: 'Enter recipient address (empty to cancel):',
+        validate: (input) => {
+          if (input === '') return true;
+          return isValidAddress(input) || 'Invalid Ethereum address';
+        },
       },
     ]);
-    return to;
+    return to || null;
   }
 
-  // Show contacts with option to enter new address
+  // Show contacts with option to enter new address or go back
   const choices = [
     ...contacts.map((c) => ({
       name: `${c.name} (${formatAddress(c.address)})`,
@@ -795,6 +798,7 @@ async function selectRecipient(): Promise<string | null> {
     })),
     new inquirer.Separator(),
     { name: 'Enter new address...', value: '__new__' },
+    { name: '← Back', value: '__back__' },
   ];
 
   const { recipient } = await inquirer.prompt([
@@ -807,16 +811,23 @@ async function selectRecipient(): Promise<string | null> {
     },
   ]);
 
+  if (recipient === '__back__') {
+    return null;
+  }
+
   if (recipient === '__new__') {
     const { to } = await inquirer.prompt([
       {
         type: 'input',
         name: 'to',
-        message: 'Enter recipient address:',
-        validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
+        message: 'Enter recipient address (empty to cancel):',
+        validate: (input) => {
+          if (input === '') return true;
+          return isValidAddress(input) || 'Invalid Ethereum address';
+        },
       },
     ]);
-    return to;
+    return to || null;
   }
 
   return recipient;
@@ -848,13 +859,20 @@ async function handleBalance(): Promise<void> {
         type: 'list',
         name: 'selectedWallet',
         message: 'Select wallet:',
-        choices: wallets.map((w) => ({
-          name: `${w.name} (${formatAddress(w.address)})${w.name === defaultWallet ? ' - default' : ''}`,
-          value: w.name,
-        })),
+        choices: [
+          ...wallets.map((w) => ({
+            name: `${w.name} (${formatAddress(w.address)})${w.name === defaultWallet ? ' - default' : ''}`,
+            value: w.name,
+          })),
+          new inquirer.Separator(),
+          { name: '← Back', value: '__back__' },
+        ],
         default: defaultWallet,
       },
     ]);
+    if (selectedWallet === '__back__') {
+      return;
+    }
     walletName = selectedWallet;
   }
 
@@ -949,12 +967,19 @@ async function handleSend(): Promise<void> {
         type: 'list',
         name: 'tokenAddress',
         message: 'Select token:',
-        choices: tokens.map((t) => ({
-          name: `${t.symbol} - ${t.name} (${formatAddress(t.address)})`,
-          value: t.address,
-        })),
+        choices: [
+          ...tokens.map((t) => ({
+            name: `${t.symbol} - ${t.name} (${formatAddress(t.address)})`,
+            value: t.address,
+          })),
+          new inquirer.Separator(),
+          { name: '← Back', value: '__back__' },
+        ],
       },
     ]);
+    if (tokenAddress === '__back__') {
+      return;
+    }
     token = getToken(tokenAddress, network)!;
   }
 
@@ -970,32 +995,45 @@ async function handleSend(): Promise<void> {
         type: 'list',
         name: 'selectedWallet',
         message: 'Select wallet:',
-        choices: wallets.map((w) => ({
-          name: `${w.name} (${formatAddress(w.address)})${w.name === defaultWallet ? ' - default' : ''}`,
-          value: w.name,
-        })),
+        choices: [
+          ...wallets.map((w) => ({
+            name: `${w.name} (${formatAddress(w.address)})${w.name === defaultWallet ? ' - default' : ''}`,
+            value: w.name,
+          })),
+          new inquirer.Separator(),
+          { name: '← Back', value: '__back__' },
+        ],
         default: defaultWallet,
       },
     ]);
+    if (selectedWallet === '__back__') {
+      return;
+    }
     walletName = selectedWallet;
   }
 
   // Get recipient from address book or manual entry
   const to = await selectRecipient();
   if (!to) {
-    console.log('Cancelled');
     return;
   }
 
-  // Get amount
+  // Get amount (empty to cancel)
   const { amount } = await inquirer.prompt([
     {
       type: 'input',
       name: 'amount',
-      message: `Enter amount (${token.symbol}):`,
-      validate: (input) => isValidAmount(input) || 'Invalid amount',
+      message: `Enter amount in ${token.symbol} (empty to cancel):`,
+      validate: (input) => {
+        if (input === '') return true;
+        return isValidAmount(input) || 'Invalid amount';
+      },
     },
   ]);
+
+  if (!amount) {
+    return;
+  }
 
   // Get password
   const { password } = await inquirer.prompt([
@@ -1106,13 +1144,20 @@ async function handleHistory(): Promise<void> {
         type: 'list',
         name: 'selectedAddress',
         message: 'Select wallet:',
-        choices: wallets.map((w) => ({
-          name: `${w.name} (${formatAddress(w.address)})${w.name === defaultWallet ? ' - default' : ''}`,
-          value: w.address,
-        })),
+        choices: [
+          ...wallets.map((w) => ({
+            name: `${w.name} (${formatAddress(w.address)})${w.name === defaultWallet ? ' - default' : ''}`,
+            value: w.address,
+          })),
+          new inquirer.Separator(),
+          { name: '← Back', value: '__back__' },
+        ],
         default: wallets.find((w) => w.name === defaultWallet)?.address,
       },
     ]);
+    if (selectedAddress === '__back__') {
+      return;
+    }
     walletAddress = selectedAddress;
   }
 

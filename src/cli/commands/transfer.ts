@@ -86,12 +86,18 @@ export function registerTransferCommand(program: Command): void {
                 type: 'list',
                 name: 'tokenAddress',
                 message: 'Select token:',
-                choices: tokens.map((t) => ({
-                  name: `${t.symbol} - ${t.name} (${formatAddress(t.address)})`,
-                  value: t.address,
-                })),
+                choices: [
+                  ...tokens.map((t) => ({
+                    name: `${t.symbol} - ${t.name} (${formatAddress(t.address)})`,
+                    value: t.address,
+                  })),
+                  { name: '← Cancel', value: '__cancel__' },
+                ],
               },
             ]);
+            if (tokenAddress === '__cancel__') {
+              return;
+            }
             token = getToken(tokenAddress, network)!;
           }
 
@@ -115,6 +121,7 @@ export function registerTransferCommand(program: Command): void {
                   value: c.address,
                 })),
                 { name: 'Enter new address...', value: '__new__' },
+                { name: '← Cancel', value: '__cancel__' },
               ];
 
               const { recipient } = await inquirer.prompt([
@@ -126,15 +133,25 @@ export function registerTransferCommand(program: Command): void {
                 },
               ]);
 
+              if (recipient === '__cancel__') {
+                return;
+              }
+
               if (recipient === '__new__') {
                 const { address } = await inquirer.prompt([
                   {
                     type: 'input',
                     name: 'address',
-                    message: 'Enter recipient address:',
-                    validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
+                    message: 'Enter recipient address (empty to cancel):',
+                    validate: (input) => {
+                      if (input === '') return true;
+                      return isValidAddress(input) || 'Invalid Ethereum address';
+                    },
                   },
                 ]);
+                if (!address) {
+                  return;
+                }
                 to = address;
               } else {
                 to = recipient;
@@ -144,10 +161,16 @@ export function registerTransferCommand(program: Command): void {
                 {
                   type: 'input',
                   name: 'to',
-                  message: 'Enter recipient address:',
-                  validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
+                  message: 'Enter recipient address (empty to cancel):',
+                  validate: (input) => {
+                    if (input === '') return true;
+                    return isValidAddress(input) || 'Invalid Ethereum address';
+                  },
                 },
               ]);
+              if (!answers.to) {
+                return;
+              }
               to = answers.to;
             }
           }
@@ -163,10 +186,16 @@ export function registerTransferCommand(program: Command): void {
               {
                 type: 'input',
                 name: 'amount',
-                message: `Enter amount (${token.symbol}):`,
-                validate: (input) => isValidAmount(input) || 'Invalid amount',
+                message: `Enter amount in ${token.symbol} (empty to cancel):`,
+                validate: (input) => {
+                  if (input === '') return true;
+                  return isValidAmount(input) || 'Invalid amount';
+                },
               },
             ]);
+            if (!answers.amount) {
+              return;
+            }
             amount = answers.amount;
           }
 
@@ -190,12 +219,18 @@ export function registerTransferCommand(program: Command): void {
                 type: 'list',
                 name: 'name',
                 message: 'Select wallet:',
-                choices: wallets.map((w) => ({
-                  name: `${w.name} (${formatAddress(w.address)})`,
-                  value: w.name,
-                })),
+                choices: [
+                  ...wallets.map((w) => ({
+                    name: `${w.name} (${formatAddress(w.address)})`,
+                    value: w.name,
+                  })),
+                  { name: '← Cancel', value: '__cancel__' },
+                ],
               },
             ]);
+            if (name === '__cancel__') {
+              return;
+            }
             walletName = name;
           }
 
