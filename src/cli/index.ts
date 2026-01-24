@@ -8,6 +8,7 @@ import { registerWalletCommands } from './commands/wallet.js';
 import { registerTokenCommands } from './commands/token.js';
 import { registerBalanceCommand } from './commands/balance.js';
 import { registerTransferCommand } from './commands/transfer.js';
+import { registerInteractiveCommand, runInteractiveMode } from './commands/interactive.js';
 import { updateConfig, loadConfig } from '../storage/ConfigStore.js';
 import { isValidNetwork } from '../utils/validation.js';
 import { NetworkName } from '../core/network/NetworkConfig.js';
@@ -40,6 +41,7 @@ export function createProgram(): Command {
   registerTokenCommands(program);
   registerBalanceCommand(program);
   registerTransferCommand(program);
+  registerInteractiveCommand(program);
 
   // Config command
   program
@@ -68,3 +70,5 @@ export function createProgram(): Command {
 
   return program;
 }
+
+export { runInteractiveMode } from './commands/interactive.js';

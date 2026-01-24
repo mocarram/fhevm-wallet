@@ -6,6 +6,7 @@ A CLI wallet for managing encrypted ERC-7984 tokens using Zama's Fully Homomorph
 
 ## Features
 
+- **Interactive Mode** - Menu-driven terminal interface with keyboard navigation
 - **Wallet Management** - Create new wallets or import existing ones via mnemonic phrase or private key
 - **Confidential Token Tracking** - Add and manage ERC-7984 compliant tokens
 - **Encrypted Balance Viewing** - Decrypt and view your confidential token balances
@@ -54,6 +55,21 @@ DEFAULT_WALLET=
 ```
 
 ## Usage
+
+### Interactive Mode
+
+The easiest way to use FHE Wallet is through the interactive menu:
+
+```bash
+# Launch interactive mode (default when no command provided)
+fhe-wallet
+
+# Or explicitly
+fhe-wallet interactive
+fhe-wallet i
+```
+
+Interactive mode provides a menu-driven interface with keyboard navigation for all operations.
 
 ### Wallet Commands
 
@@ -176,22 +192,23 @@ fhe-wallet/
 ├── src/
 │   ├── cli/
 │   │   ├── commands/
-│   │   │   ├── wallet.ts    # Wallet management commands
-│   │   │   ├── token.ts     # Token tracking commands
-│   │   │   ├── balance.ts   # Balance viewing command
-│   │   │   └── transfer.ts  # Token transfer command
-│   │   └── index.ts         # CLI setup
+│   │   │   ├── wallet.ts      # Wallet management commands
+│   │   │   ├── token.ts       # Token tracking commands
+│   │   │   ├── balance.ts     # Balance viewing command
+│   │   │   ├── transfer.ts    # Token transfer command
+│   │   │   └── interactive.ts # Interactive TUI mode
+│   │   └── index.ts           # CLI setup
 │   ├── core/
-│   │   ├── fhe/             # FHE encryption services
-│   │   ├── network/         # Network configuration
-│   │   ├── token/           # Token operations
-│   │   └── wallet/          # Wallet operations
-│   ├── storage/             # Data persistence
-│   └── utils/               # Formatting and validation
-├── data/                    # Local data storage (created at runtime)
-│   ├── wallets/             # Encrypted keystores
-│   ├── tokens.json          # Tracked tokens
-│   └── config.json          # CLI configuration
+│   │   ├── fhe/               # FHE encryption services
+│   │   ├── network/           # Network configuration
+│   │   ├── token/             # Token operations
+│   │   └── wallet/            # Wallet operations
+│   ├── storage/               # Data persistence
+│   └── utils/                 # Formatting and validation
+├── data/                      # Local data storage (created at runtime)
+│   ├── wallets/               # Encrypted keystores
+│   ├── tokens.json            # Tracked tokens
+│   └── config.json            # CLI configuration
 └── package.json
 ```
 

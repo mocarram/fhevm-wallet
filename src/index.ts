@@ -7,8 +7,13 @@
  */
 
 import 'dotenv/config';
-import { createProgram } from './cli/index.js';
+import { createProgram, runInteractiveMode } from './cli/index.js';
 
 const program = createProgram();
 
-program.parse(process.argv);
+// If no arguments provided, launch interactive mode
+if (process.argv.length <= 2) {
+  runInteractiveMode().catch(console.error);
+} else {
+  program.parse(process.argv);
+}
