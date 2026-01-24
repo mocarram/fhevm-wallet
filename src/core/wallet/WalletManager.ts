@@ -17,6 +17,7 @@ import {
   removeWallet as removeStoredWallet,
   WalletMetadata,
 } from '../../storage/WalletStore.js';
+import { logEvent } from '../../storage/AuditLog.js';
 import { getProvider, NetworkName } from '../network/index.js';
 
 export interface CreateWalletResult {
@@ -42,6 +43,8 @@ export async function createWallet(
   const result = await createNewWallet(password);
   saveWalletKeystore(name, result.keystore, result.address);
 
+  logEvent('WALLET_CREATED', { name, address: result.address });
+
   return {
     address: result.address,
     mnemonic: result.mnemonic!,
@@ -63,6 +66,8 @@ export async function importWalletFromMnemonic(
   const result = await importFromMnemonic(mnemonic, password);
   saveWalletKeystore(name, result.keystore, result.address);
 
+  logEvent('WALLET_IMPORTED', { name, address: result.address });
+
   return result.address;
 }
 
@@ -80,6 +85,8 @@ export async function importWalletFromPrivateKey(
 
   const result = await importFromPrivateKey(privateKey, password);
   saveWalletKeystore(name, result.keystore, result.address);
+
+  logEvent('WALLET_IMPORTED', { name, address: result.address });
 
   return result.address;
 }
@@ -114,7 +121,11 @@ export function listWallets(): WalletInfo[] {
  * Remove a wallet
  */
 export function removeWallet(name: string): boolean {
-  return removeStoredWallet(name);
+  const result = removeStoredWallet(name);
+  if (result) {
+    logEvent('WALLET_REMOVED', { name });
+  }
+  return result;
 }
 
 /**
@@ -141,5 +152,6 @@ export async function exportWalletPrivateKey(
   password: string,
 ): Promise<string> {
   const wallet = await loadWallet(name, password);
+  logEvent('WALLET_EXPORTED', { name });
   return wallet.privateKey;
 }

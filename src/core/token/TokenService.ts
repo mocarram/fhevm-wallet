@@ -7,6 +7,7 @@ import { getProvider, NetworkName, getNetworkConfig } from '../network/index.js'
 import { encryptAmount, EncryptedAmount } from '../fhe/EncryptionService.js';
 import { decryptBalance } from '../fhe/DecryptionService.js';
 import { CHAIN_IDS } from '../network/NetworkConfig.js';
+import { logEvent } from '../../storage/AuditLog.js';
 
 // ERC-7984 ABI (minimal interface)
 const ERC7984_ABI = [
@@ -137,6 +138,14 @@ export async function confidentialTransfer(
   );
 
   const receipt = await tx.wait();
+
+  logEvent('TRANSFER', {
+    token: tokenAddress,
+    to: toAddress,
+    amount: amount.toString(),
+    txHash: tx.hash,
+    network,
+  });
 
   return {
     txHash: tx.hash,

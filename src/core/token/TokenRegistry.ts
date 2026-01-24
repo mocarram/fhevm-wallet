@@ -7,6 +7,7 @@ import { join } from 'path';
 import { z } from 'zod';
 import { NetworkName } from '../network/NetworkConfig.js';
 import { getTokenInfo, TokenInfo } from './TokenService.js';
+import { logEvent } from '../../storage/AuditLog.js';
 
 const TokenEntrySchema = z.object({
   address: z.string(),
@@ -95,6 +96,8 @@ export async function addToken(
   registry.tokens.push(entry);
   saveRegistry(registry);
 
+  logEvent('TOKEN_ADDED', { address: tokenAddress, symbol: info.symbol, network });
+
   return entry;
 }
 
@@ -114,6 +117,8 @@ export function removeToken(tokenAddress: string, network: NetworkName): boolean
 
   registry.tokens.splice(index, 1);
   saveRegistry(registry);
+
+  logEvent('TOKEN_REMOVED', { address: tokenAddress, network });
 
   return true;
 }
