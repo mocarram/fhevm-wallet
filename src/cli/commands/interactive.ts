@@ -100,7 +100,6 @@ function printHeader(): void {
     chalk.dim(`  Network: ${config.defaultNetwork}  |  Wallet: ${defaultWallet || '(none)'}`),
   );
   console.log(chalk.dim('  ─'.repeat(30)));
-  console.log();
 }
 
 async function mainMenu(): Promise<MenuChoice> {
@@ -121,6 +120,7 @@ async function mainMenu(): Promise<MenuChoice> {
         new inquirer.Separator(),
         { name: '🚪  Exit', value: 'exit' },
       ],
+      pageSize: 15,
       loop: false,
     },
   ]);
@@ -143,6 +143,7 @@ async function walletMenu(): Promise<MenuChoice> {
         new inquirer.Separator(),
         { name: '← Back', value: 'back' },
       ],
+      pageSize: 12,
       loop: false,
     },
   ]);
@@ -162,6 +163,7 @@ async function tokenMenu(): Promise<MenuChoice> {
         new inquirer.Separator(),
         { name: '← Back', value: 'back' },
       ],
+      pageSize: 10,
       loop: false,
     },
   ]);
@@ -181,6 +183,7 @@ async function configMenu(): Promise<MenuChoice> {
         new inquirer.Separator(),
         { name: '← Back', value: 'back' },
       ],
+      pageSize: 10,
       loop: false,
     },
   ]);
@@ -200,6 +203,7 @@ async function addressBookMenu(): Promise<MenuChoice> {
         new inquirer.Separator(),
         { name: '← Back', value: 'back' },
       ],
+      pageSize: 10,
       loop: false,
     },
   ]);
@@ -807,6 +811,7 @@ async function selectRecipient(): Promise<string | null> {
       name: 'recipient',
       message: 'Select recipient:',
       choices,
+      pageSize: 15,
       loop: false,
     },
   ]);
