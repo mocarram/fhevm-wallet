@@ -48,6 +48,7 @@ import {
   error,
   warning,
   bold,
+  shortErrorMessage,
 } from '../../utils/formatting.js';
 import {
   isValidWalletName,
@@ -939,7 +940,7 @@ async function handleBalance(): Promise<void> {
       const formatted = formatTokenAmount(balance, tokens[i].decimals);
       dynamicTable.setSuccess(i, formatted);
     } catch (err) {
-      dynamicTable.setError(i, err instanceof Error ? err.message : 'Failed');
+      dynamicTable.setError(i, shortErrorMessage(err));
     }
   }
 

@@ -105,7 +105,7 @@ export class DynamicBalanceTable {
         ts.status === 'success'
           ? ts.balance
           : ts.status === 'error'
-            ? chalk.red('Error')
+            ? chalk.red(ts.error || 'Error')
             : chalk.dim('-');
 
       table.push([icon, ts.token.symbol, balance, formatAddress(ts.token.address)]);

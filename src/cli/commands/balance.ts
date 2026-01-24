@@ -12,7 +12,7 @@ import { getDecryptedBalance } from '../../core/token/TokenService.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getProvider } from '../../core/network/ProviderFactory.js';
 import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.js';
-import { formatTokenAmount, formatAddress, error, warning, bold } from '../../utils/formatting.js';
+import { formatTokenAmount, formatAddress, error, warning, bold, shortErrorMessage } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
 import { DynamicBalanceTable } from '../utils/DynamicBalanceTable.js';
 
@@ -145,13 +145,13 @@ export function registerBalanceCommand(program: Command): void {
               const formatted = formatTokenAmount(balance, tokens[i].decimals);
               dynamicTable.setSuccess(i, formatted);
             } catch (err) {
-              dynamicTable.setError(i, err instanceof Error ? err.message : 'Failed');
+              dynamicTable.setError(i, shortErrorMessage(err));
             }
           }
 
           dynamicTable.stop();
         } catch (err) {
-          console.log(error(err instanceof Error ? err.message : 'Failed to fetch balances'));
+          console.log(error(shortErrorMessage(err)));
         }
       },
     );

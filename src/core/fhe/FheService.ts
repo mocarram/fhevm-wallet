@@ -5,6 +5,7 @@
 import {
   createInstance,
   FhevmInstance,
+  FhevmInstanceConfig,
   MainnetConfig,
   SepoliaConfig,
 } from '@zama-fhe/relayer-sdk/node';
@@ -26,7 +27,23 @@ export async function getFheInstance(chainId: bigint): Promise<FhevmInstance> {
     return cached;
   }
 
-  const config = chainId === CHAIN_IDS.MAINNET ? MainnetConfig : SepoliaConfig;
+  let config: FhevmInstanceConfig;
+
+  if (chainId === CHAIN_IDS.MAINNET) {
+    const apiKey = process.env.ZAMA_MAINNET_API_KEY;
+    if (!apiKey) {
+      throw new Error('Mainnet requires ZAMA_MAINNET_API_KEY');
+    }
+    config = {
+      ...MainnetConfig,
+      auth: {
+        __type: 'ApiKeyHeader',
+        value: apiKey,
+      },
+    };
+  } else {
+    config = SepoliaConfig;
+  }
 
   const instance = await createInstance(config);
   fheInstanceCache.set(chainId, instance);

@@ -113,3 +113,31 @@ export function dim(text: string): string {
 export function bold(text: string): string {
   return chalk.bold(text);
 }
+
+/**
+ * Extract a short error message from a verbose error
+ * Looks for HTTP status codes or returns a truncated message
+ */
+export function shortErrorMessage(err: unknown): string {
+  if (!(err instanceof Error)) {
+    return 'Failed';
+  }
+
+  const message = err.message;
+
+  // Check for "Unexpected response status XXX" pattern (SDK errors)
+  const unexpectedMatch = message.match(/Unexpected response status (\d{3})/i);
+  if (unexpectedMatch) {
+    return `HTTP ${unexpectedMatch[1]}`;
+  }
+
+  // Check for HTTP status codes in the message
+  const statusMatch = message.match(/status[:\s]+(\d{3})/i);
+  if (statusMatch) {
+    return `HTTP ${statusMatch[1]}`;
+  }
+
+  // Return first line only (no truncation for short messages)
+  const firstLine = message.split('\n')[0];
+  return firstLine;
+}
