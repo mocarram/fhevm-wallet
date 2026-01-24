@@ -18,7 +18,9 @@ export interface ReencryptionParams {
  * Generate a keypair for reencryption
  * Returns hex strings (without 0x prefix)
  */
-export async function generateKeypair(chainId: bigint): Promise<{ publicKey: string; privateKey: string }> {
+export async function generateKeypair(
+  chainId: bigint,
+): Promise<{ publicKey: string; privateKey: string }> {
   const fheInstance = await getFheInstance(chainId);
   const keypair = fheInstance.generateKeypair();
   return {
@@ -52,7 +54,7 @@ export async function createReencryptionSignature(
 
   // Sign using wallet's signTypedData
   // Need to remove EIP712Domain from types as ethers adds it automatically
-  const { EIP712Domain, ...types } = eip712Data.types as Record<string, unknown>;
+  const { EIP712Domain: _EIP712Domain, ...types } = eip712Data.types as Record<string, unknown>;
 
   const signature = await wallet.signTypedData(
     eip712Data.domain as Record<string, unknown>,

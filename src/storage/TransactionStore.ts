@@ -22,10 +22,13 @@ const TransactionSchema = z.object({
   timestamp: z.string(),
 });
 
-const SyncStateSchema = z.record(z.object({
-  lastBlock: z.number(),
-  lastSyncedAt: z.string(),
-}));
+const SyncStateSchema = z.record(
+  z.string(),
+  z.object({
+    lastBlock: z.number(),
+    lastSyncedAt: z.string(),
+  }),
+);
 
 const TransactionStoreSchema = z.object({
   transactions: z.array(TransactionSchema),
@@ -33,7 +36,6 @@ const TransactionStoreSchema = z.object({
 });
 
 export type Transaction = z.infer<typeof TransactionSchema>;
-type SyncState = z.infer<typeof SyncStateSchema>;
 type TransactionStoreData = z.infer<typeof TransactionStoreSchema>;
 
 const DATA_DIR = join(process.cwd(), 'data');
@@ -93,7 +95,11 @@ export function getLastSyncedBlock(walletAddress: string, network: NetworkName):
 /**
  * Update last synced block
  */
-export function updateSyncState(walletAddress: string, network: NetworkName, blockNumber: number): void {
+export function updateSyncState(
+  walletAddress: string,
+  network: NetworkName,
+  blockNumber: number,
+): void {
   const store = loadStore();
   const key = getSyncKey(walletAddress, network);
   store.syncState[key] = {
@@ -110,7 +116,7 @@ export function upsertTransaction(tx: Transaction): void {
   const store = loadStore();
 
   const existingIndex = store.transactions.findIndex(
-    t => t.txHash.toLowerCase() === tx.txHash.toLowerCase()
+    (t) => t.txHash.toLowerCase() === tx.txHash.toLowerCase(),
   );
 
   if (existingIndex >= 0) {
@@ -135,7 +141,7 @@ export function upsertTransactions(txs: Transaction[]): void {
 
   for (const tx of txs) {
     const existingIndex = store.transactions.findIndex(
-      t => t.txHash.toLowerCase() === tx.txHash.toLowerCase()
+      (t) => t.txHash.toLowerCase() === tx.txHash.toLowerCase(),
     );
 
     if (existingIndex >= 0) {
@@ -158,9 +164,7 @@ export function upsertTransactions(txs: Transaction[]): void {
 export function updateTransactionAmount(txHash: string, amount: string): boolean {
   const store = loadStore();
 
-  const tx = store.transactions.find(
-    t => t.txHash.toLowerCase() === txHash.toLowerCase()
-  );
+  const tx = store.transactions.find((t) => t.txHash.toLowerCase() === txHash.toLowerCase());
 
   if (!tx) {
     return false;
@@ -176,9 +180,7 @@ export function updateTransactionAmount(txHash: string, amount: string): boolean
  */
 export function getTransactionByHash(txHash: string): Transaction | null {
   const store = loadStore();
-  return store.transactions.find(
-    t => t.txHash.toLowerCase() === txHash.toLowerCase()
-  ) ?? null;
+  return store.transactions.find((t) => t.txHash.toLowerCase() === txHash.toLowerCase()) ?? null;
 }
 
 /**
@@ -193,8 +195,9 @@ export function listTransactions(options: {
   const addr = options.walletAddress.toLowerCase();
 
   let transactions = store.transactions.filter(
-    t => t.network === options.network &&
-      (t.from.toLowerCase() === addr || t.to.toLowerCase() === addr)
+    (t) =>
+      t.network === options.network &&
+      (t.from.toLowerCase() === addr || t.to.toLowerCase() === addr),
   );
 
   // Sort by block number descending (most recent first)
@@ -215,9 +218,10 @@ export function getEncryptedTransactions(options: {
   const addr = options.walletAddress.toLowerCase();
 
   return store.transactions.filter(
-    t => t.network === options.network &&
+    (t) =>
+      t.network === options.network &&
       (t.from.toLowerCase() === addr || t.to.toLowerCase() === addr) &&
-      t.amount === null
+      t.amount === null,
   );
 }
 

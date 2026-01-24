@@ -32,10 +32,7 @@ export interface WalletInfo extends WalletMetadata {
 /**
  * Create a new wallet
  */
-export async function createWallet(
-  name: string,
-  password: string,
-): Promise<CreateWalletResult> {
+export async function createWallet(name: string, password: string): Promise<CreateWalletResult> {
   if (walletExists(name)) {
     throw new Error(`Wallet "${name}" already exists`);
   }
@@ -133,7 +130,7 @@ export function removeWallet(name: string): boolean {
  */
 export function getWalletAddress(name: string): string | null {
   const wallets = listStoredWallets();
-  const wallet = wallets.find(w => w.name === name);
+  const wallet = wallets.find((w) => w.name === name);
   return wallet?.address ?? null;
 }
 
@@ -147,10 +144,7 @@ export function hasWallet(name: string): boolean {
 /**
  * Export wallet private key
  */
-export async function exportWalletPrivateKey(
-  name: string,
-  password: string,
-): Promise<string> {
+export async function exportWalletPrivateKey(name: string, password: string): Promise<string> {
   const wallet = await loadWallet(name, password);
   logEvent('WALLET_EXPORTED', { name });
   return wallet.privateKey;

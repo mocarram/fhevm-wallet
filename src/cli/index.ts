@@ -9,7 +9,7 @@ import { registerTokenCommands } from './commands/token.js';
 import { registerBalanceCommand } from './commands/balance.js';
 import { registerTransferCommand } from './commands/transfer.js';
 import { registerHistoryCommand } from './commands/history.js';
-import { registerInteractiveCommand, runInteractiveMode } from './commands/interactive.js';
+import { registerInteractiveCommand } from './commands/interactive.js';
 import { updateConfig, loadConfig } from '../storage/ConfigStore.js';
 import { isValidNetwork } from '../utils/validation.js';
 import { NetworkName } from '../core/network/NetworkConfig.js';
@@ -52,7 +52,7 @@ export function createProgram(): Command {
     .option('--network <network>', 'Set default network')
     .option('--show', 'Show current configuration')
     .action((options: { network?: string; show?: boolean }) => {
-      if (options.show || (!options.network)) {
+      if (options.show || !options.network) {
         const config = loadConfig();
         console.log('Current configuration:');
         console.log(`  Default network: ${config.defaultNetwork}`);

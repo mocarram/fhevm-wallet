@@ -6,16 +6,14 @@ import { Command } from 'commander';
 import inquirer from 'inquirer';
 import ora from 'ora';
 import Table from 'cli-table3';
-import { addToken, removeToken, listTokens, TokenEntry } from '../../core/token/TokenRegistry.js';
+import { addToken, removeToken, listTokens } from '../../core/token/TokenRegistry.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getDefaultNetwork } from '../../storage/ConfigStore.js';
-import { formatAddress, formatDate, success, error } from '../../utils/formatting.js';
+import { formatAddress, success, error } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
 
 export function registerTokenCommands(program: Command): void {
-  const token = program
-    .command('token')
-    .description('Manage tracked tokens');
+  const token = program.command('token').description('Manage tracked tokens');
 
   // Add token
   token
@@ -99,13 +97,7 @@ export function registerTokenCommands(program: Command): void {
       });
 
       for (const t of tokens) {
-        table.push([
-          t.symbol,
-          t.name,
-          formatAddress(t.address),
-          t.network,
-          t.decimals.toString(),
-        ]);
+        table.push([t.symbol, t.name, formatAddress(t.address), t.network, t.decimals.toString()]);
       }
 
       console.log(table.toString());

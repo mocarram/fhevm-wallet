@@ -90,9 +90,9 @@ export function loadWalletMetadata(name: string): WalletMetadata | null {
  */
 export function listWallets(): WalletMetadata[] {
   ensureWalletsDir();
-  const files = readdirSync(WALLETS_DIR).filter(f => f.endsWith('.meta.json'));
+  const files = readdirSync(WALLETS_DIR).filter((f) => f.endsWith('.meta.json'));
 
-  return files.map(file => {
+  return files.map((file) => {
     const name = file.replace('.meta.json', '');
     const metadata = loadWalletMetadata(name);
     if (metadata) {

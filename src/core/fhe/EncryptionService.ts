@@ -2,7 +2,6 @@
  * FHE encryption service
  */
 
-import { FhevmInstance } from '@zama-fhe/relayer-sdk/node';
 import { getFheInstance } from './FheService.js';
 
 export interface EncryptedAmount {
@@ -16,9 +15,12 @@ export interface EncryptedAmount {
  * Convert Uint8Array to hex string
  */
 function toHex(bytes: Uint8Array): string {
-  return '0x' + Array.from(bytes)
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
+  return (
+    '0x' +
+    Array.from(bytes)
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')
+  );
 }
 
 /**

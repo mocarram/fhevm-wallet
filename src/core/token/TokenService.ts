@@ -4,11 +4,11 @@
 
 import { Contract, Wallet, HDNodeWallet, TransactionReceipt, Signer } from 'ethers';
 import { getProvider, NetworkName, getNetworkConfig } from '../network/index.js';
-import { encryptAmount, EncryptedAmount } from '../fhe/EncryptionService.js';
+import { encryptAmount } from '../fhe/EncryptionService.js';
 import { decryptBalance } from '../fhe/DecryptionService.js';
 import { CHAIN_IDS } from '../network/NetworkConfig.js';
 import { logEvent } from '../../storage/AuditLog.js';
-import { recordLocalTransaction, Transaction } from '../../storage/TransactionStore.js';
+import { recordLocalTransaction } from '../../storage/TransactionStore.js';
 import { getCachedBalance, setCachedBalance, invalidateBalance } from './BalanceCache.js';
 
 // ERC-7984 ABI (minimal interface)
@@ -51,10 +51,7 @@ function getTokenContract(tokenAddress: string, network: NetworkName, signer?: S
 /**
  * Get token information (name, symbol, decimals)
  */
-export async function getTokenInfo(
-  tokenAddress: string,
-  network: NetworkName,
-): Promise<TokenInfo> {
+export async function getTokenInfo(tokenAddress: string, network: NetworkName): Promise<TokenInfo> {
   const contract = getTokenContract(tokenAddress, network);
 
   const [name, symbol, decimals] = await Promise.all([
@@ -98,11 +95,7 @@ export async function getDecryptedBalance(
   const { forceRefresh = false } = options;
 
   // Always fetch the encrypted handle first (cheap RPC call)
-  const encryptedHandle = await getEncryptedBalance(
-    tokenAddress,
-    wallet.address,
-    network,
-  );
+  const encryptedHandle = await getEncryptedBalance(tokenAddress, wallet.address, network);
 
   // If handle is zero, no balance
   if (encryptedHandle === 0n) {
@@ -140,12 +133,7 @@ export async function confidentialTransfer(
   const chainId = network === 'mainnet' ? CHAIN_IDS.MAINNET : CHAIN_IDS.SEPOLIA;
 
   // Encrypt the amount
-  const encrypted = await encryptAmount(
-    chainId,
-    tokenAddress,
-    wallet.address,
-    amount,
-  );
+  const encrypted = await encryptAmount(chainId, tokenAddress, wallet.address, amount);
 
   // Get contract with signer
   const provider = getProvider(network);
@@ -247,7 +235,8 @@ const ETHERSCAN_V2_API = 'https://api.etherscan.io/v2/api';
 
 // ConfidentialTransfer event signature hash
 // keccak256("ConfidentialTransfer(address,address,bytes32)")
-const CONFIDENTIAL_TRANSFER_TOPIC = '0x67500e8d0ed826d2194f514dd0d8124f35648ab6e3fb5e6ed867134cffe661e9';
+const CONFIDENTIAL_TRANSFER_TOPIC =
+  '0x67500e8d0ed826d2194f514dd0d8124f35648ab6e3fb5e6ed867134cffe661e9';
 
 // Zero address for mint/burn detection
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
@@ -405,7 +394,7 @@ export async function getWalletTransactions(
   ethUrl.searchParams.set('apikey', apiKey);
 
   const ethRes = await fetch(ethUrl.toString());
-  const ethData = await ethRes.json() as EtherscanTxResponse;
+  const ethData = (await ethRes.json()) as EtherscanTxResponse;
 
   if (ethData.status === '1' && Array.isArray(ethData.result)) {
     for (const tx of ethData.result) {
@@ -444,12 +433,7 @@ export async function confidentialApprove(
   const chainId = network === 'mainnet' ? CHAIN_IDS.MAINNET : CHAIN_IDS.SEPOLIA;
 
   // Encrypt the amount
-  const encrypted = await encryptAmount(
-    chainId,
-    tokenAddress,
-    wallet.address,
-    amount,
-  );
+  const encrypted = await encryptAmount(chainId, tokenAddress, wallet.address, amount);
 
   // Get contract with signer
   const provider = getProvider(network);
@@ -457,11 +441,7 @@ export async function confidentialApprove(
   const contract = getTokenContract(tokenAddress, network, connectedWallet);
 
   // Execute approval
-  const tx = await contract.approve(
-    spenderAddress,
-    encrypted.handleHex,
-    encrypted.inputProofHex,
-  );
+  const tx = await contract.approve(spenderAddress, encrypted.handleHex, encrypted.inputProofHex);
 
   const receipt = await tx.wait();
 

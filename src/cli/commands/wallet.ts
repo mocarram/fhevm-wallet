@@ -17,13 +17,18 @@ import {
   exportWalletPrivateKey,
 } from '../../core/wallet/index.js';
 import { setDefaultWallet, getDefaultWallet } from '../../storage/ConfigStore.js';
-import { formatAddress, formatDate, success, error, warning, bold } from '../../utils/formatting.js';
+import {
+  formatAddress,
+  formatDate,
+  success,
+  error,
+  warning,
+  bold,
+} from '../../utils/formatting.js';
 import { isValidWalletName, isValidMnemonic, isValidPrivateKey } from '../../utils/validation.js';
 
 export function registerWalletCommands(program: Command): void {
-  const wallet = program
-    .command('wallet')
-    .description('Manage wallets');
+  const wallet = program.command('wallet').description('Manage wallets');
 
   // Create new wallet
   wallet
@@ -111,129 +116,134 @@ export function registerWalletCommands(program: Command): void {
     .option('-m, --mnemonic', 'Import from mnemonic phrase')
     .option('-k, --key', 'Import from private key')
     .option('--set-default', 'Set as default wallet')
-    .action(async (name?: string, options?: { mnemonic?: boolean; key?: boolean; setDefault?: boolean }) => {
-      try {
-        // Determine import type
-        let importType = options?.mnemonic ? 'mnemonic' : options?.key ? 'key' : null;
+    .action(
+      async (
+        name?: string,
+        options?: { mnemonic?: boolean; key?: boolean; setDefault?: boolean },
+      ) => {
+        try {
+          // Determine import type
+          let importType = options?.mnemonic ? 'mnemonic' : options?.key ? 'key' : null;
 
-        if (!importType) {
-          const { type } = await inquirer.prompt([
-            {
-              type: 'list',
-              name: 'type',
-              message: 'Import from:',
-              choices: [
-                { name: 'Mnemonic phrase (12 or 24 words)', value: 'mnemonic' },
-                { name: 'Private key', value: 'key' },
-              ],
-            },
-          ]);
-          importType = type;
-        }
-
-        // Prompt for name if not provided
-        if (!name) {
-          const answers = await inquirer.prompt([
-            {
-              type: 'input',
-              name: 'name',
-              message: 'Enter wallet name:',
-              validate: (input) => {
-                if (!isValidWalletName(input)) {
-                  return 'Wallet name must be 1-32 alphanumeric characters, hyphens, or underscores';
-                }
-                if (hasWallet(input)) {
-                  return `Wallet "${input}" already exists`;
-                }
-                return true;
+          if (!importType) {
+            const { type } = await inquirer.prompt([
+              {
+                type: 'list',
+                name: 'type',
+                message: 'Import from:',
+                choices: [
+                  { name: 'Mnemonic phrase (12 or 24 words)', value: 'mnemonic' },
+                  { name: 'Private key', value: 'key' },
+                ],
               },
-            },
-          ]);
-          name = answers.name;
-        }
-
-        let address: string;
-
-        if (importType === 'mnemonic') {
-          const { mnemonic, password, confirmPassword } = await inquirer.prompt([
-            {
-              type: 'password',
-              name: 'mnemonic',
-              message: 'Enter mnemonic phrase:',
-              mask: '*',
-              validate: (input) => isValidMnemonic(input) || 'Invalid mnemonic phrase',
-            },
-            {
-              type: 'password',
-              name: 'password',
-              message: 'Enter password to encrypt wallet:',
-              mask: '*',
-              validate: (input) => input.length >= 8 || 'Password must be at least 8 characters',
-            },
-            {
-              type: 'password',
-              name: 'confirmPassword',
-              message: 'Confirm password:',
-              mask: '*',
-            },
-          ]);
-
-          if (password !== confirmPassword) {
-            console.log(error('Passwords do not match'));
-            return;
+            ]);
+            importType = type;
           }
 
-          const spinner = ora('Importing wallet...').start();
-          address = await importWalletFromMnemonic(name!, mnemonic, password);
-          spinner.succeed('Wallet imported');
-        } else {
-          const { privateKey, password, confirmPassword } = await inquirer.prompt([
-            {
-              type: 'password',
-              name: 'privateKey',
-              message: 'Enter private key:',
-              mask: '*',
-              validate: (input) => isValidPrivateKey(input) || 'Invalid private key',
-            },
-            {
-              type: 'password',
-              name: 'password',
-              message: 'Enter password to encrypt wallet:',
-              mask: '*',
-              validate: (input) => input.length >= 8 || 'Password must be at least 8 characters',
-            },
-            {
-              type: 'password',
-              name: 'confirmPassword',
-              message: 'Confirm password:',
-              mask: '*',
-            },
-          ]);
-
-          if (password !== confirmPassword) {
-            console.log(error('Passwords do not match'));
-            return;
+          // Prompt for name if not provided
+          if (!name) {
+            const answers = await inquirer.prompt([
+              {
+                type: 'input',
+                name: 'name',
+                message: 'Enter wallet name:',
+                validate: (input) => {
+                  if (!isValidWalletName(input)) {
+                    return 'Wallet name must be 1-32 alphanumeric characters, hyphens, or underscores';
+                  }
+                  if (hasWallet(input)) {
+                    return `Wallet "${input}" already exists`;
+                  }
+                  return true;
+                },
+              },
+            ]);
+            name = answers.name;
           }
 
-          const spinner = ora('Importing wallet...').start();
-          address = await importWalletFromPrivateKey(name!, privateKey, password);
-          spinner.succeed('Wallet imported');
-        }
+          let address: string;
 
-        console.log();
-        console.log(bold('Wallet Details'));
-        console.log(`  Name:    ${name}`);
-        console.log(`  Address: ${address}`);
-        console.log();
+          if (importType === 'mnemonic') {
+            const { mnemonic, password, confirmPassword } = await inquirer.prompt([
+              {
+                type: 'password',
+                name: 'mnemonic',
+                message: 'Enter mnemonic phrase:',
+                mask: '*',
+                validate: (input) => isValidMnemonic(input) || 'Invalid mnemonic phrase',
+              },
+              {
+                type: 'password',
+                name: 'password',
+                message: 'Enter password to encrypt wallet:',
+                mask: '*',
+                validate: (input) => input.length >= 8 || 'Password must be at least 8 characters',
+              },
+              {
+                type: 'password',
+                name: 'confirmPassword',
+                message: 'Confirm password:',
+                mask: '*',
+              },
+            ]);
 
-        if (options?.setDefault) {
-          setDefaultWallet(name!);
-          console.log(success(`Set "${name}" as default wallet`));
+            if (password !== confirmPassword) {
+              console.log(error('Passwords do not match'));
+              return;
+            }
+
+            const spinner = ora('Importing wallet...').start();
+            address = await importWalletFromMnemonic(name!, mnemonic, password);
+            spinner.succeed('Wallet imported');
+          } else {
+            const { privateKey, password, confirmPassword } = await inquirer.prompt([
+              {
+                type: 'password',
+                name: 'privateKey',
+                message: 'Enter private key:',
+                mask: '*',
+                validate: (input) => isValidPrivateKey(input) || 'Invalid private key',
+              },
+              {
+                type: 'password',
+                name: 'password',
+                message: 'Enter password to encrypt wallet:',
+                mask: '*',
+                validate: (input) => input.length >= 8 || 'Password must be at least 8 characters',
+              },
+              {
+                type: 'password',
+                name: 'confirmPassword',
+                message: 'Confirm password:',
+                mask: '*',
+              },
+            ]);
+
+            if (password !== confirmPassword) {
+              console.log(error('Passwords do not match'));
+              return;
+            }
+
+            const spinner = ora('Importing wallet...').start();
+            address = await importWalletFromPrivateKey(name!, privateKey, password);
+            spinner.succeed('Wallet imported');
+          }
+
+          console.log();
+          console.log(bold('Wallet Details'));
+          console.log(`  Name:    ${name}`);
+          console.log(`  Address: ${address}`);
+          console.log();
+
+          if (options?.setDefault) {
+            setDefaultWallet(name!);
+            console.log(success(`Set "${name}" as default wallet`));
+          }
+        } catch (err) {
+          console.log(error(err instanceof Error ? err.message : 'Failed to import wallet'));
         }
-      } catch (err) {
-        console.log(error(err instanceof Error ? err.message : 'Failed to import wallet'));
-      }
-    });
+      },
+    );
 
   // List wallets
   wallet

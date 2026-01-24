@@ -60,7 +60,7 @@ export function getAuditLog(limit?: number): string[] {
   }
 
   const content = readFileSync(AUDIT_LOG_FILE, 'utf-8');
-  const lines = content.split('\n').filter(line => line.trim() !== '');
+  const lines = content.split('\n').filter((line) => line.trim() !== '');
 
   if (limit !== undefined && limit > 0) {
     return lines.slice(-limit);

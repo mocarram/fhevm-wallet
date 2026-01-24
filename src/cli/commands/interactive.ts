@@ -2,11 +2,11 @@
  * Interactive CLI mode
  */
 
-import { Command } from "commander";
-import inquirer from "inquirer";
-import chalk from "chalk";
-import ora from "ora";
-import Table from "cli-table3";
+import { Command } from 'commander';
+import inquirer from 'inquirer';
+import chalk from 'chalk';
+import ora from 'ora';
+import Table from 'cli-table3';
 import {
   createWallet,
   importWalletFromMnemonic,
@@ -16,29 +16,29 @@ import {
   hasWallet,
   loadWallet,
   exportWalletPrivateKey,
-} from "../../core/wallet/index.js";
+} from '../../core/wallet/index.js';
 import {
   addToken,
   removeToken,
   listTokens,
   getToken,
   TokenEntry,
-} from "../../core/token/TokenRegistry.js";
+} from '../../core/token/TokenRegistry.js';
 import {
   getDecryptedBalance,
   confidentialTransfer,
   getTxExplorerUrl,
   recordTransferTransaction,
-} from "../../core/token/TokenService.js";
-import { NetworkName } from "../../core/network/NetworkConfig.js";
-import { getProvider } from "../../core/network/ProviderFactory.js";
+} from '../../core/token/TokenService.js';
+import { NetworkName } from '../../core/network/NetworkConfig.js';
+import { getProvider } from '../../core/network/ProviderFactory.js';
 import {
   loadConfig,
   updateConfig,
   getDefaultNetwork,
   getDefaultWallet,
   setDefaultWallet,
-} from "../../storage/ConfigStore.js";
+} from '../../storage/ConfigStore.js';
 import {
   formatAddress,
   formatDate,
@@ -48,51 +48,44 @@ import {
   error,
   warning,
   bold,
-} from "../../utils/formatting.js";
+} from '../../utils/formatting.js';
 import {
   isValidWalletName,
   isValidMnemonic,
   isValidPrivateKey,
   isValidAddress,
   isValidAmount,
-  isValidNetwork,
   isValidContactName,
-} from "../../utils/validation.js";
-import {
-  addAddress,
-  listAddresses,
-  getAddressByName,
-  removeAddress,
-  AddressEntry,
-} from "../../storage/AddressBook.js";
-import { DynamicBalanceTable } from "../utils/DynamicBalanceTable.js";
-import { displayHistoryInteractive } from "./history.js";
+} from '../../utils/validation.js';
+import { addAddress, listAddresses, removeAddress } from '../../storage/AddressBook.js';
+import { DynamicBalanceTable } from '../utils/DynamicBalanceTable.js';
+import { displayHistoryInteractive } from './history.js';
 
 type MenuChoice =
-  | "wallet"
-  | "token"
-  | "balance"
-  | "send"
-  | "history"
-  | "config"
-  | "addressbook"
-  | "exit"
-  | "back"
-  | "wallet-create"
-  | "wallet-import"
-  | "wallet-list"
-  | "wallet-remove"
-  | "wallet-set-default"
-  | "wallet-export"
-  | "token-add"
-  | "token-list"
-  | "token-remove"
-  | "config-show"
-  | "config-network"
-  | "config-wallet"
-  | "addressbook-add"
-  | "addressbook-list"
-  | "addressbook-remove";
+  | 'wallet'
+  | 'token'
+  | 'balance'
+  | 'send'
+  | 'history'
+  | 'config'
+  | 'addressbook'
+  | 'exit'
+  | 'back'
+  | 'wallet-create'
+  | 'wallet-import'
+  | 'wallet-list'
+  | 'wallet-remove'
+  | 'wallet-set-default'
+  | 'wallet-export'
+  | 'token-add'
+  | 'token-list'
+  | 'token-remove'
+  | 'config-show'
+  | 'config-network'
+  | 'config-wallet'
+  | 'addressbook-add'
+  | 'addressbook-list'
+  | 'addressbook-remove';
 
 function clearScreen(): void {
   console.clear();
@@ -102,33 +95,31 @@ function printHeader(): void {
   const config = loadConfig();
   const defaultWallet = getDefaultWallet();
 
-  console.log(chalk.cyan.bold("\n  FHE Wallet - Interactive Mode\n"));
+  console.log(chalk.cyan.bold('\n  FHE Wallet - Interactive Mode\n'));
   console.log(
-    chalk.dim(
-      `  Network: ${config.defaultNetwork}  |  Wallet: ${defaultWallet || "(none)"}`,
-    ),
+    chalk.dim(`  Network: ${config.defaultNetwork}  |  Wallet: ${defaultWallet || '(none)'}`),
   );
-  console.log(chalk.dim("  ─".repeat(30)));
+  console.log(chalk.dim('  ─'.repeat(30)));
   console.log();
 }
 
 async function mainMenu(): Promise<MenuChoice> {
   const { choice } = await inquirer.prompt([
     {
-      type: "list",
-      name: "choice",
-      message: "What would you like to do?",
+      type: 'list',
+      name: 'choice',
+      message: 'What would you like to do?',
       choices: [
-        { name: "💰  View Balances", value: "balance" },
-        { name: "📤  Send Tokens", value: "send" },
-        { name: "📜  Transaction History", value: "history" },
+        { name: '💰  View Balances', value: 'balance' },
+        { name: '📤  Send Tokens', value: 'send' },
+        { name: '📜  Transaction History', value: 'history' },
         new inquirer.Separator(),
-        { name: "👛  Wallet Management", value: "wallet" },
-        { name: "🪙  Token Management", value: "token" },
-        { name: "📒  Address Book", value: "addressbook" },
-        { name: "⚙️   Configuration", value: "config" },
+        { name: '👛  Wallet Management', value: 'wallet' },
+        { name: '🪙  Token Management', value: 'token' },
+        { name: '📒  Address Book', value: 'addressbook' },
+        { name: '⚙️   Configuration', value: 'config' },
         new inquirer.Separator(),
-        { name: "🚪  Exit", value: "exit" },
+        { name: '🚪  Exit', value: 'exit' },
       ],
       loop: false,
     },
@@ -139,18 +130,18 @@ async function mainMenu(): Promise<MenuChoice> {
 async function walletMenu(): Promise<MenuChoice> {
   const { choice } = await inquirer.prompt([
     {
-      type: "list",
-      name: "choice",
-      message: "Wallet Management",
+      type: 'list',
+      name: 'choice',
+      message: 'Wallet Management',
       choices: [
-        { name: "➕  Create New Wallet", value: "wallet-create" },
-        { name: "📥  Import Wallet", value: "wallet-import" },
-        { name: "📋  List Wallets", value: "wallet-list" },
-        { name: "⭐  Set Default Wallet", value: "wallet-set-default" },
-        { name: "🔑  Export Private Key", value: "wallet-export" },
-        { name: "🗑️   Remove Wallet", value: "wallet-remove" },
+        { name: '➕  Create New Wallet', value: 'wallet-create' },
+        { name: '📥  Import Wallet', value: 'wallet-import' },
+        { name: '📋  List Wallets', value: 'wallet-list' },
+        { name: '⭐  Set Default Wallet', value: 'wallet-set-default' },
+        { name: '🔑  Export Private Key', value: 'wallet-export' },
+        { name: '🗑️   Remove Wallet', value: 'wallet-remove' },
         new inquirer.Separator(),
-        { name: "← Back", value: "back" },
+        { name: '← Back', value: 'back' },
       ],
       loop: false,
     },
@@ -161,15 +152,15 @@ async function walletMenu(): Promise<MenuChoice> {
 async function tokenMenu(): Promise<MenuChoice> {
   const { choice } = await inquirer.prompt([
     {
-      type: "list",
-      name: "choice",
-      message: "Token Management",
+      type: 'list',
+      name: 'choice',
+      message: 'Token Management',
       choices: [
-        { name: "➕  Add Token", value: "token-add" },
-        { name: "📋  List Tokens", value: "token-list" },
-        { name: "🗑️   Remove Token", value: "token-remove" },
+        { name: '➕  Add Token', value: 'token-add' },
+        { name: '📋  List Tokens', value: 'token-list' },
+        { name: '🗑️   Remove Token', value: 'token-remove' },
         new inquirer.Separator(),
-        { name: "← Back", value: "back" },
+        { name: '← Back', value: 'back' },
       ],
       loop: false,
     },
@@ -180,15 +171,15 @@ async function tokenMenu(): Promise<MenuChoice> {
 async function configMenu(): Promise<MenuChoice> {
   const { choice } = await inquirer.prompt([
     {
-      type: "list",
-      name: "choice",
-      message: "Configuration",
+      type: 'list',
+      name: 'choice',
+      message: 'Configuration',
       choices: [
-        { name: "👁️   Show Current Config", value: "config-show" },
-        { name: "🌐  Change Network", value: "config-network" },
-        { name: "👛  Change Default Wallet", value: "config-wallet" },
+        { name: '👁️   Show Current Config', value: 'config-show' },
+        { name: '🌐  Change Network', value: 'config-network' },
+        { name: '👛  Change Default Wallet', value: 'config-wallet' },
         new inquirer.Separator(),
-        { name: "← Back", value: "back" },
+        { name: '← Back', value: 'back' },
       ],
       loop: false,
     },
@@ -199,15 +190,15 @@ async function configMenu(): Promise<MenuChoice> {
 async function addressBookMenu(): Promise<MenuChoice> {
   const { choice } = await inquirer.prompt([
     {
-      type: "list",
-      name: "choice",
-      message: "Address Book",
+      type: 'list',
+      name: 'choice',
+      message: 'Address Book',
       choices: [
-        { name: "➕  Add Contact", value: "addressbook-add" },
-        { name: "📋  List Contacts", value: "addressbook-list" },
-        { name: "🗑️   Remove Contact", value: "addressbook-remove" },
+        { name: '➕  Add Contact', value: 'addressbook-add' },
+        { name: '📋  List Contacts', value: 'addressbook-list' },
+        { name: '🗑️   Remove Contact', value: 'addressbook-remove' },
         new inquirer.Separator(),
-        { name: "← Back", value: "back" },
+        { name: '← Back', value: 'back' },
       ],
       loop: false,
     },
@@ -218,12 +209,12 @@ async function addressBookMenu(): Promise<MenuChoice> {
 async function handleCreateWallet(): Promise<void> {
   const { name } = await inquirer.prompt([
     {
-      type: "input",
-      name: "name",
-      message: "Enter wallet name:",
+      type: 'input',
+      name: 'name',
+      message: 'Enter wallet name:',
       validate: (input) => {
         if (!isValidWalletName(input)) {
-          return "Wallet name must be 1-32 alphanumeric characters, hyphens, or underscores";
+          return 'Wallet name must be 1-32 alphanumeric characters, hyphens, or underscores';
         }
         if (hasWallet(input)) {
           return `Wallet "${input}" already exists`;
@@ -235,47 +226,46 @@ async function handleCreateWallet(): Promise<void> {
 
   const { password, confirmPassword } = await inquirer.prompt([
     {
-      type: "password",
-      name: "password",
-      message: "Enter password to encrypt wallet:",
-      mask: "*",
-      validate: (input) =>
-        input.length >= 8 || "Password must be at least 8 characters",
+      type: 'password',
+      name: 'password',
+      message: 'Enter password to encrypt wallet:',
+      mask: '*',
+      validate: (input) => input.length >= 8 || 'Password must be at least 8 characters',
     },
     {
-      type: "password",
-      name: "confirmPassword",
-      message: "Confirm password:",
-      mask: "*",
+      type: 'password',
+      name: 'confirmPassword',
+      message: 'Confirm password:',
+      mask: '*',
     },
   ]);
 
   if (password !== confirmPassword) {
-    console.log(error("\nPasswords do not match"));
+    console.log(error('\nPasswords do not match'));
     return;
   }
 
-  const spinner = ora("Creating wallet...").start();
+  const spinner = ora('Creating wallet...').start();
   const result = await createWallet(name, password);
-  spinner.succeed("Wallet created");
+  spinner.succeed('Wallet created');
 
   console.log();
-  console.log(bold("Wallet Details"));
+  console.log(bold('Wallet Details'));
   console.log(`  Name:    ${name}`);
   console.log(`  Address: ${result.address}`);
   console.log();
-  console.log(warning("IMPORTANT: Save your recovery phrase securely!"));
-  console.log(warning("Anyone with this phrase can access your wallet."));
+  console.log(warning('IMPORTANT: Save your recovery phrase securely!'));
+  console.log(warning('Anyone with this phrase can access your wallet.'));
   console.log();
-  console.log(bold("Recovery Phrase:"));
+  console.log(bold('Recovery Phrase:'));
   console.log(chalk.cyan(`  ${result.mnemonic}`));
   console.log();
 
   const { setAsDefault } = await inquirer.prompt([
     {
-      type: "confirm",
-      name: "setAsDefault",
-      message: "Set as default wallet?",
+      type: 'confirm',
+      name: 'setAsDefault',
+      message: 'Set as default wallet?',
       default: true,
     },
   ]);
@@ -289,24 +279,24 @@ async function handleCreateWallet(): Promise<void> {
 async function handleImportWallet(): Promise<void> {
   const { importType } = await inquirer.prompt([
     {
-      type: "list",
-      name: "importType",
-      message: "Import from:",
+      type: 'list',
+      name: 'importType',
+      message: 'Import from:',
       choices: [
-        { name: "Mnemonic phrase (12 or 24 words)", value: "mnemonic" },
-        { name: "Private key", value: "key" },
+        { name: 'Mnemonic phrase (12 or 24 words)', value: 'mnemonic' },
+        { name: 'Private key', value: 'key' },
       ],
     },
   ]);
 
   const { name } = await inquirer.prompt([
     {
-      type: "input",
-      name: "name",
-      message: "Enter wallet name:",
+      type: 'input',
+      name: 'name',
+      message: 'Enter wallet name:',
       validate: (input) => {
         if (!isValidWalletName(input)) {
-          return "Wallet name must be 1-32 alphanumeric characters, hyphens, or underscores";
+          return 'Wallet name must be 1-32 alphanumeric characters, hyphens, or underscores';
         }
         if (hasWallet(input)) {
           return `Wallet "${input}" already exists`;
@@ -318,85 +308,82 @@ async function handleImportWallet(): Promise<void> {
 
   let address: string;
 
-  if (importType === "mnemonic") {
+  if (importType === 'mnemonic') {
     const { mnemonic, password, confirmPassword } = await inquirer.prompt([
       {
-        type: "password",
-        name: "mnemonic",
-        message: "Enter mnemonic phrase:",
-        mask: "*",
-        validate: (input) =>
-          isValidMnemonic(input) || "Invalid mnemonic phrase",
+        type: 'password',
+        name: 'mnemonic',
+        message: 'Enter mnemonic phrase:',
+        mask: '*',
+        validate: (input) => isValidMnemonic(input) || 'Invalid mnemonic phrase',
       },
       {
-        type: "password",
-        name: "password",
-        message: "Enter password to encrypt wallet:",
-        mask: "*",
-        validate: (input) =>
-          input.length >= 8 || "Password must be at least 8 characters",
+        type: 'password',
+        name: 'password',
+        message: 'Enter password to encrypt wallet:',
+        mask: '*',
+        validate: (input) => input.length >= 8 || 'Password must be at least 8 characters',
       },
       {
-        type: "password",
-        name: "confirmPassword",
-        message: "Confirm password:",
-        mask: "*",
+        type: 'password',
+        name: 'confirmPassword',
+        message: 'Confirm password:',
+        mask: '*',
       },
     ]);
 
     if (password !== confirmPassword) {
-      console.log(error("\nPasswords do not match"));
+      console.log(error('\nPasswords do not match'));
       return;
     }
 
-    const spinner = ora("Importing wallet...").start();
+    const spinner = ora('Importing wallet...').start();
     address = await importWalletFromMnemonic(name, mnemonic, password);
-    spinner.succeed("Wallet imported");
+    spinner.succeed('Wallet imported');
   } else {
     const { privateKey, password, confirmPassword } = await inquirer.prompt([
       {
-        type: "password",
-        name: "privateKey",
-        message: "Enter private key:",
-        mask: "*",
-        validate: (input) => isValidPrivateKey(input) || "Invalid private key",
+        type: 'password',
+        name: 'privateKey',
+        message: 'Enter private key:',
+        mask: '*',
+        validate: (input) => isValidPrivateKey(input) || 'Invalid private key',
       },
       {
-        type: "password",
-        name: "password",
-        message: "Enter password to encrypt wallet:",
-        mask: "*",
-        validate: (input) =>
-          input.length >= 8 || "Password must be at least 8 characters",
+        type: 'password',
+        name: 'password',
+        message: 'Enter password to encrypt wallet:',
+        mask: '*',
+        validate: (input) => input.length >= 8 || 'Password must be at least 8 characters',
       },
       {
-        type: "password",
-        name: "confirmPassword",
-        message: "Confirm password:",
-        mask: "*",
+        type: 'password',
+        name: 'confirmPassword',
+        message: 'Confirm password:',
+        mask: '*',
       },
     ]);
 
     if (password !== confirmPassword) {
-      console.log(error("\nPasswords do not match"));
+      console.log(error('\nPasswords do not match'));
       return;
     }
 
-    const spinner = ora("Importing wallet...").start();
+    const spinner = ora('Importing wallet...').start();
     address = await importWalletFromPrivateKey(name, privateKey, password);
-    spinner.succeed("Wallet imported");
+    spinner.succeed('Wallet imported');
   }
 
   console.log();
-  console.log(bold("Wallet Details"));
+  console.log(bold('Wallet Details'));
   console.log(`  Name:    ${name}`);
   console.log(`  Address: ${address}`);
 
   const { setAsDefault } = await inquirer.prompt([
     {
-      type: "confirm",
-      name: "setAsDefault",
-      message: "Set as default wallet?",
+      type: 'confirm',
+      name: 'setAsDefault',
+      message: 'Set as default wallet?',
       default: true,
     },
   ]);
@@ -412,13 +399,13 @@ async function handleListWallets(): Promise<void> {
   const defaultWallet = getDefaultWallet();
 
   if (wallets.length === 0) {
-    console.log("\nNo wallets found. Create one first.");
+    console.log('\nNo wallets found. Create one first.');
     return;
   }
 
   const table = new Table({
-    head: ["Name", "Address", "Created", "Default"],
-    style: { head: ["cyan"] },
+    head: ['Name', 'Address', 'Created', 'Default'],
+    style: { head: ['cyan'] },
   });
 
   for (const w of wallets) {
@@ -427,7 +414,7 @@ async function handleListWallets(): Promise<void> {
       w.name,
       formatAddress(w.address),
       formatDate(w.createdAt),
-      isDefault ? chalk.green("*") : "",
+      isDefault ? chalk.green('*') : '',
     ]);
   }
 
@@ -439,30 +426,30 @@ async function handleRemoveWallet(): Promise<void> {
   const wallets = listWallets();
 
   if (wallets.length === 0) {
-    console.log("\nNo wallets to remove.");
+    console.log('\nNo wallets to remove.');
     return;
   }
 
   const { walletName, confirm } = await inquirer.prompt([
     {
-      type: "list",
-      name: "walletName",
-      message: "Select wallet to remove:",
+      type: 'list',
+      name: 'walletName',
+      message: 'Select wallet to remove:',
       choices: wallets.map((w) => ({
         name: `${w.name} (${formatAddress(w.address)})`,
         value: w.name,
       })),
     },
     {
-      type: "confirm",
-      name: "confirm",
-      message: "Are you sure? This cannot be undone.",
+      type: 'confirm',
+      name: 'confirm',
+      message: 'Are you sure? This cannot be undone.',
       default: false,
     },
   ]);
 
   if (!confirm) {
-    console.log("Cancelled");
+    console.log('Cancelled');
     return;
   }
 
@@ -470,10 +457,10 @@ async function handleRemoveWallet(): Promise<void> {
   if (removed) {
     console.log(success(`Wallet "${walletName}" removed`));
     if (getDefaultWallet() === walletName) {
-      setDefaultWallet("");
+      setDefaultWallet('');
     }
   } else {
-    console.log(error("Failed to remove wallet"));
+    console.log(error('Failed to remove wallet'));
   }
 }
 
@@ -481,7 +468,7 @@ async function handleSetDefaultWallet(): Promise<void> {
   const wallets = listWallets();
 
   if (wallets.length === 0) {
-    console.log("\nNo wallets available.");
+    console.log('\nNo wallets available.');
     return;
   }
 
@@ -489,11 +476,11 @@ async function handleSetDefaultWallet(): Promise<void> {
 
   const { walletName } = await inquirer.prompt([
     {
-      type: "list",
-      name: "walletName",
-      message: "Select default wallet:",
+      type: 'list',
+      name: 'walletName',
+      message: 'Select default wallet:',
       choices: wallets.map((w) => ({
-        name: `${w.name} (${formatAddress(w.address)})${w.name === defaultWallet ? " - current" : ""}`,
+        name: `${w.name} (${formatAddress(w.address)})${w.name === defaultWallet ? ' - current' : ''}`,
         value: w.name,
       })),
     },
@@ -507,61 +494,61 @@ async function handleExportWallet(): Promise<void> {
   const wallets = listWallets();
 
   if (wallets.length === 0) {
-    console.log("\nNo wallets available.");
+    console.log('\nNo wallets available.');
     return;
   }
 
   console.log();
-  console.log(warning("WARNING: Your private key grants full access to your wallet."));
-  console.log(warning("Never share it with anyone or enter it on untrusted websites."));
+  console.log(warning('WARNING: Your private key grants full access to your wallet.'));
+  console.log(warning('Never share it with anyone or enter it on untrusted websites.'));
   console.log();
 
   const { walletName, confirm } = await inquirer.prompt([
     {
-      type: "list",
-      name: "walletName",
-      message: "Select wallet to export:",
+      type: 'list',
+      name: 'walletName',
+      message: 'Select wallet to export:',
       choices: wallets.map((w) => ({
         name: `${w.name} (${formatAddress(w.address)})`,
         value: w.name,
       })),
     },
     {
-      type: "confirm",
-      name: "confirm",
-      message: "Do you understand the risks and want to continue?",
+      type: 'confirm',
+      name: 'confirm',
+      message: 'Do you understand the risks and want to continue?',
       default: false,
     },
   ]);
 
   if (!confirm) {
-    console.log("Cancelled");
+    console.log('Cancelled');
     return;
   }
 
   const { password } = await inquirer.prompt([
     {
-      type: "password",
-      name: "password",
-      message: "Enter wallet password:",
-      mask: "*",
+      type: 'password',
+      name: 'password',
+      message: 'Enter wallet password:',
+      mask: '*',
     },
   ]);
 
-  const spinner = ora("Decrypting wallet...").start();
+  const spinner = ora('Decrypting wallet...').start();
 
   try {
     const privateKey = await exportWalletPrivateKey(walletName, password);
-    spinner.succeed("Wallet decrypted");
+    spinner.succeed('Wallet decrypted');
 
     console.log();
-    console.log(bold("Private Key:"));
+    console.log(bold('Private Key:'));
     console.log(chalk.yellow(privateKey));
     console.log();
-    console.log(warning("Copy this key securely and clear your terminal history."));
+    console.log(warning('Copy this key securely and clear your terminal history.'));
   } catch (err) {
-    spinner.fail("Failed to decrypt wallet");
-    console.log(error(err instanceof Error ? err.message : "Invalid password"));
+    spinner.fail('Failed to decrypt wallet');
+    console.log(error(err instanceof Error ? err.message : 'Invalid password'));
   }
 }
 
@@ -570,10 +557,10 @@ async function handleAddToken(): Promise<void> {
 
   const { address } = await inquirer.prompt([
     {
-      type: "input",
-      name: "address",
+      type: 'input',
+      name: 'address',
       message: `Enter token contract address (${network}):`,
-      validate: (input) => isValidAddress(input) || "Invalid Ethereum address",
+      validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
     },
   ]);
 
@@ -581,7 +568,7 @@ async function handleAddToken(): Promise<void> {
 
   try {
     const entry = await addToken(address, network);
-    spinner.succeed("Token added");
+    spinner.succeed('Token added');
 
     console.log();
     console.log(`  Name:     ${entry.name}`);
@@ -590,8 +577,8 @@ async function handleAddToken(): Promise<void> {
     console.log(`  Address:  ${entry.address}`);
     console.log(`  Network:  ${entry.network}`);
   } catch (err) {
-    spinner.fail("Failed to add token");
-    console.log(error(err instanceof Error ? err.message : "Unknown error"));
+    spinner.fail('Failed to add token');
+    console.log(error(err instanceof Error ? err.message : 'Unknown error'));
   }
 }
 
@@ -605,18 +592,12 @@ async function handleListTokens(): Promise<void> {
   }
 
   const table = new Table({
-    head: ["Symbol", "Name", "Address", "Network", "Decimals"],
-    style: { head: ["cyan"] },
+    head: ['Symbol', 'Name', 'Address', 'Network', 'Decimals'],
+    style: { head: ['cyan'] },
   });
 
   for (const t of tokens) {
-    table.push([
-      t.symbol,
-      t.name,
-      formatAddress(t.address),
-      t.network,
-      t.decimals.toString(),
-    ]);
+    table.push([t.symbol, t.name, formatAddress(t.address), t.network, t.decimals.toString()]);
   }
 
   console.log();
@@ -634,40 +615,40 @@ async function handleRemoveToken(): Promise<void> {
 
   const { tokenAddress, confirm } = await inquirer.prompt([
     {
-      type: "list",
-      name: "tokenAddress",
-      message: "Select token to remove:",
+      type: 'list',
+      name: 'tokenAddress',
+      message: 'Select token to remove:',
       choices: tokens.map((t) => ({
         name: `${t.symbol} - ${t.name} (${formatAddress(t.address)})`,
         value: t.address,
       })),
     },
     {
-      type: "confirm",
-      name: "confirm",
-      message: "Are you sure?",
+      type: 'confirm',
+      name: 'confirm',
+      message: 'Are you sure?',
       default: false,
     },
   ]);
 
   if (!confirm) {
-    console.log("Cancelled");
+    console.log('Cancelled');
     return;
   }
 
   const removed = removeToken(tokenAddress, network);
   if (removed) {
-    console.log(success("Token removed"));
+    console.log(success('Token removed'));
   } else {
-    console.log(error("Token not found"));
+    console.log(error('Token not found'));
   }
 }
 
 async function handleShowConfig(): Promise<void> {
   const config = loadConfig();
-  console.log("\nCurrent configuration:");
+  console.log('\nCurrent configuration:');
   console.log(`  Default network: ${config.defaultNetwork}`);
-  console.log(`  Default wallet:  ${config.defaultWallet || "(none)"}`);
+  console.log(`  Default wallet:  ${config.defaultWallet || '(none)'}`);
 }
 
 async function handleChangeNetwork(): Promise<void> {
@@ -675,17 +656,17 @@ async function handleChangeNetwork(): Promise<void> {
 
   const { network } = await inquirer.prompt([
     {
-      type: "list",
-      name: "network",
-      message: "Select network:",
+      type: 'list',
+      name: 'network',
+      message: 'Select network:',
       choices: [
         {
-          name: `Sepolia (testnet)${currentNetwork === "sepolia" ? " - current" : ""}`,
-          value: "sepolia",
+          name: `Sepolia (testnet)${currentNetwork === 'sepolia' ? ' - current' : ''}`,
+          value: 'sepolia',
         },
         {
-          name: `Mainnet${currentNetwork === "mainnet" ? " - current" : ""}`,
-          value: "mainnet",
+          name: `Mainnet${currentNetwork === 'mainnet' ? ' - current' : ''}`,
+          value: 'mainnet',
         },
       ],
     },
@@ -698,12 +679,12 @@ async function handleChangeNetwork(): Promise<void> {
 async function handleAddContact(): Promise<void> {
   const { name } = await inquirer.prompt([
     {
-      type: "input",
-      name: "name",
-      message: "Enter contact name:",
+      type: 'input',
+      name: 'name',
+      message: 'Enter contact name:',
       validate: (input) => {
         if (!isValidContactName(input)) {
-          return "Contact name must be 1-32 alphanumeric characters or spaces";
+          return 'Contact name must be 1-32 alphanumeric characters or spaces';
         }
         return true;
       },
@@ -712,10 +693,10 @@ async function handleAddContact(): Promise<void> {
 
   const { address } = await inquirer.prompt([
     {
-      type: "input",
-      name: "address",
-      message: "Enter address:",
-      validate: (input) => isValidAddress(input) || "Invalid Ethereum address",
+      type: 'input',
+      name: 'address',
+      message: 'Enter address:',
+      validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
     },
   ]);
 
@@ -723,7 +704,7 @@ async function handleAddContact(): Promise<void> {
     addAddress(name.trim(), address);
     console.log(success(`Contact "${name.trim()}" added`));
   } catch (err) {
-    console.log(error(err instanceof Error ? err.message : "Failed to add contact"));
+    console.log(error(err instanceof Error ? err.message : 'Failed to add contact'));
   }
 }
 
@@ -731,21 +712,17 @@ async function handleListContacts(): Promise<void> {
   const contacts = listAddresses();
 
   if (contacts.length === 0) {
-    console.log("\nNo contacts saved. Add one first.");
+    console.log('\nNo contacts saved. Add one first.');
     return;
   }
 
   const table = new Table({
-    head: ["Name", "Address", "Added"],
-    style: { head: ["cyan"] },
+    head: ['Name', 'Address', 'Added'],
+    style: { head: ['cyan'] },
   });
 
   for (const contact of contacts) {
-    table.push([
-      contact.name,
-      formatAddress(contact.address),
-      formatDate(contact.addedAt),
-    ]);
+    table.push([contact.name, formatAddress(contact.address), formatDate(contact.addedAt)]);
   }
 
   console.log();
@@ -756,30 +733,30 @@ async function handleRemoveContact(): Promise<void> {
   const contacts = listAddresses();
 
   if (contacts.length === 0) {
-    console.log("\nNo contacts to remove.");
+    console.log('\nNo contacts to remove.');
     return;
   }
 
   const { contactName, confirm } = await inquirer.prompt([
     {
-      type: "list",
-      name: "contactName",
-      message: "Select contact to remove:",
+      type: 'list',
+      name: 'contactName',
+      message: 'Select contact to remove:',
       choices: contacts.map((c) => ({
         name: `${c.name} (${formatAddress(c.address)})`,
         value: c.name,
       })),
     },
     {
-      type: "confirm",
-      name: "confirm",
-      message: "Are you sure?",
+      type: 'confirm',
+      name: 'confirm',
+      message: 'Are you sure?',
       default: false,
     },
   ]);
 
   if (!confirm) {
-    console.log("Cancelled");
+    console.log('Cancelled');
     return;
   }
 
@@ -787,7 +764,7 @@ async function handleRemoveContact(): Promise<void> {
   if (removed) {
     console.log(success(`Contact "${contactName}" removed`));
   } else {
-    console.log(error("Contact not found"));
+    console.log(error('Contact not found'));
   }
 }
 
@@ -801,10 +778,10 @@ async function selectRecipient(): Promise<string | null> {
     // No contacts, just prompt for address
     const { to } = await inquirer.prompt([
       {
-        type: "input",
-        name: "to",
-        message: "Enter recipient address:",
-        validate: (input) => isValidAddress(input) || "Invalid Ethereum address",
+        type: 'input',
+        name: 'to',
+        message: 'Enter recipient address:',
+        validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
       },
     ]);
     return to;
@@ -817,26 +794,26 @@ async function selectRecipient(): Promise<string | null> {
       value: c.address,
     })),
     new inquirer.Separator(),
-    { name: "Enter new address...", value: "__new__" },
+    { name: 'Enter new address...', value: '__new__' },
   ];
 
   const { recipient } = await inquirer.prompt([
     {
-      type: "list",
-      name: "recipient",
-      message: "Select recipient:",
+      type: 'list',
+      name: 'recipient',
+      message: 'Select recipient:',
       choices,
       loop: false,
     },
   ]);
 
-  if (recipient === "__new__") {
+  if (recipient === '__new__') {
     const { to } = await inquirer.prompt([
       {
-        type: "input",
-        name: "to",
-        message: "Enter recipient address:",
-        validate: (input) => isValidAddress(input) || "Invalid Ethereum address",
+        type: 'input',
+        name: 'to',
+        message: 'Enter recipient address:',
+        validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
       },
     ]);
     return to;
@@ -850,7 +827,7 @@ async function handleBalance(): Promise<void> {
   const wallets = listWallets();
 
   if (wallets.length === 0) {
-    console.log(error("\nNo wallets found. Create one first."));
+    console.log(error('\nNo wallets found. Create one first.'));
     return;
   }
 
@@ -868,11 +845,11 @@ async function handleBalance(): Promise<void> {
   } else {
     const { selectedWallet } = await inquirer.prompt([
       {
-        type: "list",
-        name: "selectedWallet",
-        message: "Select wallet:",
+        type: 'list',
+        name: 'selectedWallet',
+        message: 'Select wallet:',
         choices: wallets.map((w) => ({
-          name: `${w.name} (${formatAddress(w.address)})${w.name === defaultWallet ? " - default" : ""}`,
+          name: `${w.name} (${formatAddress(w.address)})${w.name === defaultWallet ? ' - default' : ''}`,
           value: w.name,
         })),
         default: defaultWallet,
@@ -883,27 +860,27 @@ async function handleBalance(): Promise<void> {
 
   const { password, forceRefresh } = await inquirer.prompt([
     {
-      type: "password",
-      name: "password",
-      message: "Enter wallet password:",
-      mask: "*",
+      type: 'password',
+      name: 'password',
+      message: 'Enter wallet password:',
+      mask: '*',
     },
     {
-      type: "confirm",
-      name: "forceRefresh",
-      message: "Force refresh (bypass cache)?",
+      type: 'confirm',
+      name: 'forceRefresh',
+      message: 'Force refresh (bypass cache)?',
       default: false,
     },
   ]);
 
-  const loadSpinner = ora("Decrypting wallet...").start();
+  const loadSpinner = ora('Decrypting wallet...').start();
   let wallet;
   try {
     wallet = await loadWallet(walletName, password, network);
-    loadSpinner.succeed("Wallet loaded");
+    loadSpinner.succeed('Wallet loaded');
   } catch (err) {
-    loadSpinner.fail("Failed to decrypt wallet");
-    console.log(error(err instanceof Error ? err.message : "Invalid password"));
+    loadSpinner.fail('Failed to decrypt wallet');
+    console.log(error(err instanceof Error ? err.message : 'Invalid password'));
     return;
   }
 
@@ -917,9 +894,11 @@ async function handleBalance(): Promise<void> {
     bold(`Balances for ${walletName}`),
     chalk.dim(`Address: ${wallet.address}`),
     chalk.dim(`Network: ${network}`),
-    forceRefresh ? chalk.dim("Mode: Force refresh") : '',
-    ''
-  ].filter(line => line !== '').join('\n');
+    forceRefresh ? chalk.dim('Mode: Force refresh') : '',
+    '',
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
 
   const dynamicTable = new DynamicBalanceTable({
     tokens,
@@ -949,7 +928,7 @@ async function handleSend(): Promise<void> {
   const wallets = listWallets();
 
   if (wallets.length === 0) {
-    console.log(error("\nNo wallets found. Create one first."));
+    console.log(error('\nNo wallets found. Create one first.'));
     return;
   }
 
@@ -967,9 +946,9 @@ async function handleSend(): Promise<void> {
   } else {
     const { tokenAddress } = await inquirer.prompt([
       {
-        type: "list",
-        name: "tokenAddress",
-        message: "Select token:",
+        type: 'list',
+        name: 'tokenAddress',
+        message: 'Select token:',
         choices: tokens.map((t) => ({
           name: `${t.symbol} - ${t.name} (${formatAddress(t.address)})`,
           value: t.address,
@@ -988,11 +967,11 @@ async function handleSend(): Promise<void> {
   } else {
     const { selectedWallet } = await inquirer.prompt([
       {
-        type: "list",
-        name: "selectedWallet",
-        message: "Select wallet:",
+        type: 'list',
+        name: 'selectedWallet',
+        message: 'Select wallet:',
         choices: wallets.map((w) => ({
-          name: `${w.name} (${formatAddress(w.address)})${w.name === defaultWallet ? " - default" : ""}`,
+          name: `${w.name} (${formatAddress(w.address)})${w.name === defaultWallet ? ' - default' : ''}`,
           value: w.name,
         })),
         default: defaultWallet,
@@ -1004,39 +983,39 @@ async function handleSend(): Promise<void> {
   // Get recipient from address book or manual entry
   const to = await selectRecipient();
   if (!to) {
-    console.log("Cancelled");
+    console.log('Cancelled');
     return;
   }
 
   // Get amount
   const { amount } = await inquirer.prompt([
     {
-      type: "input",
-      name: "amount",
+      type: 'input',
+      name: 'amount',
       message: `Enter amount (${token.symbol}):`,
-      validate: (input) => isValidAmount(input) || "Invalid amount",
+      validate: (input) => isValidAmount(input) || 'Invalid amount',
     },
   ]);
 
   // Get password
   const { password } = await inquirer.prompt([
     {
-      type: "password",
-      name: "password",
-      message: "Enter wallet password:",
-      mask: "*",
+      type: 'password',
+      name: 'password',
+      message: 'Enter wallet password:',
+      mask: '*',
     },
   ]);
 
   // Load wallet
-  const loadSpinner = ora("Decrypting wallet...").start();
+  const loadSpinner = ora('Decrypting wallet...').start();
   let wallet;
   try {
     wallet = await loadWallet(walletName, password, network);
-    loadSpinner.succeed("Wallet loaded");
+    loadSpinner.succeed('Wallet loaded');
   } catch (err) {
-    loadSpinner.fail("Failed to decrypt wallet");
-    console.log(error(err instanceof Error ? err.message : "Invalid password"));
+    loadSpinner.fail('Failed to decrypt wallet');
+    console.log(error(err instanceof Error ? err.message : 'Invalid password'));
     return;
   }
 
@@ -1045,7 +1024,7 @@ async function handleSend(): Promise<void> {
 
   // Confirm transaction
   console.log();
-  console.log(bold("Transaction Summary"));
+  console.log(bold('Transaction Summary'));
   console.log(`  From:    ${wallet.address}`);
   console.log(`  To:      ${to}`);
   console.log(`  Amount:  ${amount} ${token.symbol}`);
@@ -1055,34 +1034,28 @@ async function handleSend(): Promise<void> {
 
   const { confirm } = await inquirer.prompt([
     {
-      type: "confirm",
-      name: "confirm",
-      message: "Confirm transaction?",
+      type: 'confirm',
+      name: 'confirm',
+      message: 'Confirm transaction?',
       default: false,
     },
   ]);
 
   if (!confirm) {
-    console.log("Transaction cancelled");
+    console.log('Transaction cancelled');
     return;
   }
 
   // Execute transfer
   console.log();
-  const encryptSpinner = ora("Encrypting amount...").start();
+  const encryptSpinner = ora('Encrypting amount...').start();
 
   try {
-    encryptSpinner.text = "Sending transaction...";
+    encryptSpinner.text = 'Sending transaction...';
 
-    const result = await confidentialTransfer(
-      wallet,
-      token.address,
-      to,
-      amountBigInt,
-      network,
-    );
+    const result = await confidentialTransfer(wallet, token.address, to, amountBigInt, network);
 
-    encryptSpinner.succeed("Transaction sent");
+    encryptSpinner.succeed('Transaction sent');
 
     // Record transaction in history
     recordTransferTransaction({
@@ -1097,19 +1070,19 @@ async function handleSend(): Promise<void> {
     });
 
     console.log();
-    console.log(success("Transfer successful!"));
+    console.log(success('Transfer successful!'));
     console.log(`  Transaction: ${result.txHash}`);
     console.log(`  Explorer:    ${getTxExplorerUrl(result.txHash, network)}`);
     console.log();
 
     if (result.receipt.status === 1) {
-      console.log(chalk.green("Transaction confirmed"));
+      console.log(chalk.green('Transaction confirmed'));
     } else {
-      console.log(chalk.red("Transaction may have failed"));
+      console.log(chalk.red('Transaction may have failed'));
     }
   } catch (err) {
-    encryptSpinner.fail("Transaction failed");
-    console.log(error(err instanceof Error ? err.message : "Unknown error"));
+    encryptSpinner.fail('Transaction failed');
+    console.log(error(err instanceof Error ? err.message : 'Unknown error'));
   }
 }
 
@@ -1118,7 +1091,7 @@ async function handleHistory(): Promise<void> {
   const wallets = listWallets();
 
   if (wallets.length === 0) {
-    console.log(error("\nNo wallets found. Create one first."));
+    console.log(error('\nNo wallets found. Create one first.'));
     return;
   }
 
@@ -1130,14 +1103,14 @@ async function handleHistory(): Promise<void> {
   } else {
     const { selectedAddress } = await inquirer.prompt([
       {
-        type: "list",
-        name: "selectedAddress",
-        message: "Select wallet:",
+        type: 'list',
+        name: 'selectedAddress',
+        message: 'Select wallet:',
         choices: wallets.map((w) => ({
-          name: `${w.name} (${formatAddress(w.address)})${w.name === defaultWallet ? " - default" : ""}`,
+          name: `${w.name} (${formatAddress(w.address)})${w.name === defaultWallet ? ' - default' : ''}`,
           value: w.address,
         })),
-        default: wallets.find(w => w.name === defaultWallet)?.address,
+        default: wallets.find((w) => w.name === defaultWallet)?.address,
       },
     ]);
     walletAddress = selectedAddress;
@@ -1149,9 +1122,9 @@ async function handleHistory(): Promise<void> {
 async function waitForKey(): Promise<void> {
   await inquirer.prompt([
     {
-      type: "input",
-      name: "continue",
-      message: chalk.dim("Press Enter to continue..."),
+      type: 'input',
+      name: 'continue',
+      message: chalk.dim('Press Enter to continue...'),
     },
   ]);
 }
@@ -1166,7 +1139,7 @@ async function runInteractiveMode(): Promise<void> {
     const choice = await mainMenu();
 
     switch (choice) {
-      case "wallet": {
+      case 'wallet': {
         let inWalletMenu = true;
         while (inWalletMenu) {
           clearScreen();
@@ -1174,31 +1147,31 @@ async function runInteractiveMode(): Promise<void> {
           const walletChoice = await walletMenu();
 
           switch (walletChoice) {
-            case "wallet-create":
+            case 'wallet-create':
               await handleCreateWallet();
               await waitForKey();
               break;
-            case "wallet-import":
+            case 'wallet-import':
               await handleImportWallet();
               await waitForKey();
               break;
-            case "wallet-list":
+            case 'wallet-list':
               await handleListWallets();
               await waitForKey();
               break;
-            case "wallet-remove":
+            case 'wallet-remove':
               await handleRemoveWallet();
               await waitForKey();
               break;
-            case "wallet-set-default":
+            case 'wallet-set-default':
               await handleSetDefaultWallet();
               await waitForKey();
               break;
-            case "wallet-export":
+            case 'wallet-export':
               await handleExportWallet();
               await waitForKey();
               break;
-            case "back":
+            case 'back':
               inWalletMenu = false;
               break;
           }
@@ -1206,7 +1179,7 @@ async function runInteractiveMode(): Promise<void> {
         break;
       }
 
-      case "token": {
+      case 'token': {
         let inTokenMenu = true;
         while (inTokenMenu) {
           clearScreen();
@@ -1214,19 +1187,19 @@ async function runInteractiveMode(): Promise<void> {
           const tokenChoice = await tokenMenu();
 
           switch (tokenChoice) {
-            case "token-add":
+            case 'token-add':
               await handleAddToken();
               await waitForKey();
               break;
-            case "token-list":
+            case 'token-list':
               await handleListTokens();
               await waitForKey();
               break;
-            case "token-remove":
+            case 'token-remove':
               await handleRemoveToken();
               await waitForKey();
               break;
-            case "back":
+            case 'back':
               inTokenMenu = false;
               break;
           }
@@ -1234,7 +1207,7 @@ async function runInteractiveMode(): Promise<void> {
         break;
       }
 
-      case "config": {
+      case 'config': {
         let inConfigMenu = true;
         while (inConfigMenu) {
           clearScreen();
@@ -1242,19 +1215,19 @@ async function runInteractiveMode(): Promise<void> {
           const configChoice = await configMenu();
 
           switch (configChoice) {
-            case "config-show":
+            case 'config-show':
               await handleShowConfig();
               await waitForKey();
               break;
-            case "config-network":
+            case 'config-network':
               await handleChangeNetwork();
               await waitForKey();
               break;
-            case "config-wallet":
+            case 'config-wallet':
               await handleSetDefaultWallet();
               await waitForKey();
               break;
-            case "back":
+            case 'back':
               inConfigMenu = false;
               break;
           }
@@ -1262,7 +1235,7 @@ async function runInteractiveMode(): Promise<void> {
         break;
       }
 
-      case "addressbook": {
+      case 'addressbook': {
         let inAddressBookMenu = true;
         while (inAddressBookMenu) {
           clearScreen();
@@ -1270,19 +1243,19 @@ async function runInteractiveMode(): Promise<void> {
           const addressBookChoice = await addressBookMenu();
 
           switch (addressBookChoice) {
-            case "addressbook-add":
+            case 'addressbook-add':
               await handleAddContact();
               await waitForKey();
               break;
-            case "addressbook-list":
+            case 'addressbook-list':
               await handleListContacts();
               await waitForKey();
               break;
-            case "addressbook-remove":
+            case 'addressbook-remove':
               await handleRemoveContact();
               await waitForKey();
               break;
-            case "back":
+            case 'back':
               inAddressBookMenu = false;
               break;
           }
@@ -1290,25 +1263,25 @@ async function runInteractiveMode(): Promise<void> {
         break;
       }
 
-      case "balance":
+      case 'balance':
         await handleBalance();
         await waitForKey();
         break;
 
-      case "send":
+      case 'send':
         await handleSend();
         await waitForKey();
         break;
 
-      case "history":
+      case 'history':
         await handleHistory();
         await waitForKey();
         break;
 
-      case "exit":
+      case 'exit':
         running = false;
         clearScreen();
-        console.log(chalk.cyan("\nGoodbye!\n"));
+        console.log(chalk.cyan('\nGoodbye!\n'));
         break;
     }
   }
@@ -1316,9 +1289,9 @@ async function runInteractiveMode(): Promise<void> {
 
 export function registerInteractiveCommand(program: Command): void {
   program
-    .command("interactive")
-    .alias("i")
-    .description("Launch interactive mode")
+    .command('interactive')
+    .alias('i')
+    .description('Launch interactive mode')
     .action(async () => {
       await runInteractiveMode();
     });

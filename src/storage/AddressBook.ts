@@ -66,17 +66,13 @@ export function addAddress(name: string, address: string): AddressEntry {
   const normalizedAddress = address.toLowerCase();
 
   // Check if address already exists
-  const existingByAddress = book.entries.find(
-    e => e.address.toLowerCase() === normalizedAddress
-  );
+  const existingByAddress = book.entries.find((e) => e.address.toLowerCase() === normalizedAddress);
   if (existingByAddress) {
     throw new Error(`Address already saved as "${existingByAddress.name}"`);
   }
 
   // Check if name already exists
-  const existingByName = book.entries.find(
-    e => e.name.toLowerCase() === name.toLowerCase()
-  );
+  const existingByName = book.entries.find((e) => e.name.toLowerCase() === name.toLowerCase());
   if (existingByName) {
     throw new Error(`Contact name "${name}" already exists`);
   }
@@ -106,9 +102,7 @@ export function listAddresses(): AddressEntry[] {
  */
 export function getAddressByName(name: string): AddressEntry | null {
   const book = loadAddressBook();
-  return book.entries.find(
-    e => e.name.toLowerCase() === name.toLowerCase()
-  ) ?? null;
+  return book.entries.find((e) => e.name.toLowerCase() === name.toLowerCase()) ?? null;
 }
 
 /**
@@ -116,9 +110,7 @@ export function getAddressByName(name: string): AddressEntry | null {
  */
 export function getNameByAddress(address: string): string | null {
   const book = loadAddressBook();
-  const entry = book.entries.find(
-    e => e.address.toLowerCase() === address.toLowerCase()
-  );
+  const entry = book.entries.find((e) => e.address.toLowerCase() === address.toLowerCase());
   return entry?.name ?? null;
 }
 
@@ -127,9 +119,7 @@ export function getNameByAddress(address: string): string | null {
  */
 export function removeAddress(name: string): boolean {
   const book = loadAddressBook();
-  const index = book.entries.findIndex(
-    e => e.name.toLowerCase() === name.toLowerCase()
-  );
+  const index = book.entries.findIndex((e) => e.name.toLowerCase() === name.toLowerCase());
 
   if (index === -1) {
     return false;
@@ -145,9 +135,7 @@ export function removeAddress(name: string): boolean {
  */
 export function hasAddress(address: string): boolean {
   const book = loadAddressBook();
-  return book.entries.some(
-    e => e.address.toLowerCase() === address.toLowerCase()
-  );
+  return book.entries.some((e) => e.address.toLowerCase() === address.toLowerCase());
 }
 
 /**
@@ -155,7 +143,5 @@ export function hasAddress(address: string): boolean {
  */
 export function hasContactName(name: string): boolean {
   const book = loadAddressBook();
-  return book.entries.some(
-    e => e.name.toLowerCase() === name.toLowerCase()
-  );
+  return book.entries.some((e) => e.name.toLowerCase() === name.toLowerCase());
 }

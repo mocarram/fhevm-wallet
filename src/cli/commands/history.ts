@@ -38,10 +38,14 @@ function formatShortDate(timestamp: string): string {
  */
 function getTypeIcon(type: string): string {
   switch (type) {
-    case 'mint': return chalk.green('⬇');
-    case 'burn': return chalk.red('🔥');
-    case 'eth': return chalk.cyan('◆');
-    default: return chalk.green('✔');
+    case 'mint':
+      return chalk.green('⬇');
+    case 'burn':
+      return chalk.red('🔥');
+    case 'eth':
+      return chalk.cyan('◆');
+    default:
+      return chalk.green('✔');
   }
 }
 
@@ -105,8 +109,8 @@ async function syncTransactions(
   const currentBlock = await provider.getBlockNumber();
 
   // Get token addresses and create a lookup map
-  const tokenAddresses = tokens.map(t => t.address);
-  const tokenMap = new Map(tokens.map(t => [t.address.toLowerCase(), { symbol: t.symbol }]));
+  const tokenAddresses = tokens.map((t) => t.address);
+  const tokenMap = new Map(tokens.map((t) => [t.address.toLowerCase(), { symbol: t.symbol }]));
 
   // Fetch transactions from Etherscan
   const walletTxs = await getWalletTransactions(
@@ -118,7 +122,7 @@ async function syncTransactions(
   );
 
   // Convert to our transaction format
-  const transactions: Transaction[] = walletTxs.map(tx => ({
+  const transactions: Transaction[] = walletTxs.map((tx) => ({
     txHash: tx.txHash,
     type: tx.type,
     tokenAddress: tx.tokenAddress,
@@ -154,8 +158,11 @@ function displayTransactionTable(transactions: Transaction[], walletAddress: str
     head: ['', 'Date', 'Token', 'To/From', 'Amount'],
     style: { head: ['cyan'] },
     chars: {
-      'mid': '─', 'left-mid': '├', 'mid-mid': '┼', 'right-mid': '┤'
-    }
+      mid: '─',
+      'left-mid': '├',
+      'mid-mid': '┼',
+      'right-mid': '┤',
+    },
   });
 
   for (const tx of transactions) {
@@ -163,13 +170,7 @@ function displayTransactionTable(transactions: Transaction[], walletAddress: str
     const { label } = getDirectionInfo(tx, walletAddress);
     const amount = formatAmount(tx, walletAddress);
 
-    table.push([
-      icon,
-      formatShortDate(tx.timestamp),
-      tx.tokenSymbol,
-      label,
-      amount,
-    ]);
+    table.push([icon, formatShortDate(tx.timestamp), tx.tokenSymbol, label, amount]);
   }
 
   console.log(table.toString());
@@ -181,10 +182,7 @@ export function registerHistoryCommand(program: Command): void {
     .description('View transaction history')
     .option('-n, --network <network>', 'Network (sepolia or mainnet)')
     .option('-a, --address <address>', 'Wallet address to view')
-    .action(async (options: {
-      network?: string;
-      address?: string;
-    }) => {
+    .action(async (options: { network?: string; address?: string }) => {
       try {
         // Validate network if provided
         let network: NetworkName = getDefaultNetwork();
@@ -211,7 +209,9 @@ export function registerHistoryCommand(program: Command): void {
         const tokens = listTokens(network);
 
         if (tokens.length === 0) {
-          console.log(error(`No tokens tracked on ${network}. Add one with: fhe-wallet token add <address>`));
+          console.log(
+            error(`No tokens tracked on ${network}. Add one with: fhe-wallet token add <address>`),
+          );
           return;
         }
 
@@ -223,7 +223,9 @@ export function registerHistoryCommand(program: Command): void {
           const newTxCount = await syncTransactions(walletAddress, network, tokens);
           syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
         } else {
-          console.log(chalk.dim('Tip: Set ETHERSCAN_API_KEY in .env to sync on-chain transactions'));
+          console.log(
+            chalk.dim('Tip: Set ETHERSCAN_API_KEY in .env to sync on-chain transactions'),
+          );
         }
 
         // Get last 10 transactions
@@ -286,4 +288,3 @@ export async function displayHistoryInteractive(
 
   displayTransactionTable(transactions, walletAddress);
 }
-

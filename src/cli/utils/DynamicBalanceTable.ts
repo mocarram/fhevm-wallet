@@ -32,7 +32,7 @@ export class DynamicBalanceTable {
   private ethBalance?: string;
 
   constructor(options: DynamicBalanceTableOptions) {
-    this.tokens = options.tokens.map(t => ({ token: t, status: 'pending' }));
+    this.tokens = options.tokens.map((t) => ({ token: t, status: 'pending' }));
     this.header = options.header;
     this.ethBalance = options.ethBalance;
   }
@@ -71,10 +71,14 @@ export class DynamicBalanceTable {
 
   private getStatusIcon(status: TokenStatus): string {
     switch (status.status) {
-      case 'pending': return chalk.dim('-');
-      case 'loading': return chalk.cyan(SPINNER_FRAMES[this.frameIndex]);
-      case 'success': return chalk.green('✔');
-      case 'error': return chalk.red('✗');
+      case 'pending':
+        return chalk.dim('-');
+      case 'loading':
+        return chalk.cyan(SPINNER_FRAMES[this.frameIndex]);
+      case 'success':
+        return chalk.green('✔');
+      case 'error':
+        return chalk.red('✗');
     }
   }
 
@@ -83,8 +87,11 @@ export class DynamicBalanceTable {
       head: ['', 'Token', 'Balance', 'Address'],
       style: { head: ['cyan'] },
       chars: {
-        'mid': '─', 'left-mid': '├', 'mid-mid': '┼', 'right-mid': '┤'
-      }
+        mid: '─',
+        'left-mid': '├',
+        'mid-mid': '┼',
+        'right-mid': '┤',
+      },
     });
 
     // Add ETH row first if provided
@@ -94,11 +101,12 @@ export class DynamicBalanceTable {
 
     for (const ts of this.tokens) {
       const icon = this.getStatusIcon(ts);
-      const balance = ts.status === 'success'
-        ? ts.balance
-        : ts.status === 'error'
-          ? chalk.red('Error')
-          : chalk.dim('-');
+      const balance =
+        ts.status === 'success'
+          ? ts.balance
+          : ts.status === 'error'
+            ? chalk.red('Error')
+            : chalk.dim('-');
 
       table.push([icon, ts.token.symbol, balance, formatAddress(ts.token.address)]);
     }

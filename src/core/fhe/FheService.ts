@@ -2,8 +2,13 @@
  * FHE instance management
  */
 
-import { createInstance, FhevmInstance, MainnetConfig, SepoliaConfig } from '@zama-fhe/relayer-sdk/node';
-import { CHAIN_IDS, isSupportedChainId, getNetworkNameFromChainId } from '../network/NetworkConfig.js';
+import {
+  createInstance,
+  FhevmInstance,
+  MainnetConfig,
+  SepoliaConfig,
+} from '@zama-fhe/relayer-sdk/node';
+import { CHAIN_IDS, isSupportedChainId } from '../network/NetworkConfig.js';
 
 // Cache instances per chain ID
 const fheInstanceCache = new Map<bigint, FhevmInstance>();
@@ -32,7 +37,9 @@ export async function getFheInstance(chainId: bigint): Promise<FhevmInstance> {
 /**
  * Get FHE instance for a network name
  */
-export async function getFheInstanceForNetwork(network: 'mainnet' | 'sepolia'): Promise<FhevmInstance> {
+export async function getFheInstanceForNetwork(
+  network: 'mainnet' | 'sepolia',
+): Promise<FhevmInstance> {
   const chainId = network === 'mainnet' ? CHAIN_IDS.MAINNET : CHAIN_IDS.SEPOLIA;
   return getFheInstance(chainId);
 }

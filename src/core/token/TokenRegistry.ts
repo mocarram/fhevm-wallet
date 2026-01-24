@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { z } from 'zod';
 import { NetworkName } from '../network/NetworkConfig.js';
-import { getTokenInfo, TokenInfo } from './TokenService.js';
+import { getTokenInfo } from './TokenService.js';
 import { logEvent } from '../../storage/AuditLog.js';
 
 const TokenEntrySchema = z.object({
@@ -66,15 +66,12 @@ function saveRegistry(registry: TokenRegistry): void {
 /**
  * Add a token to the registry
  */
-export async function addToken(
-  tokenAddress: string,
-  network: NetworkName,
-): Promise<TokenEntry> {
+export async function addToken(tokenAddress: string, network: NetworkName): Promise<TokenEntry> {
   const registry = loadRegistry();
 
   // Check if already exists
   const existing = registry.tokens.find(
-    t => t.address.toLowerCase() === tokenAddress.toLowerCase() && t.network === network,
+    (t) => t.address.toLowerCase() === tokenAddress.toLowerCase() && t.network === network,
   );
 
   if (existing) {
@@ -108,7 +105,7 @@ export function removeToken(tokenAddress: string, network: NetworkName): boolean
   const registry = loadRegistry();
 
   const index = registry.tokens.findIndex(
-    t => t.address.toLowerCase() === tokenAddress.toLowerCase() && t.network === network,
+    (t) => t.address.toLowerCase() === tokenAddress.toLowerCase() && t.network === network,
   );
 
   if (index === -1) {
@@ -130,7 +127,7 @@ export function listTokens(network?: NetworkName): TokenEntry[] {
   const registry = loadRegistry();
 
   if (network) {
-    return registry.tokens.filter(t => t.network === network);
+    return registry.tokens.filter((t) => t.network === network);
   }
 
   return registry.tokens;
@@ -142,9 +139,11 @@ export function listTokens(network?: NetworkName): TokenEntry[] {
 export function getToken(tokenAddress: string, network: NetworkName): TokenEntry | null {
   const registry = loadRegistry();
 
-  return registry.tokens.find(
-    t => t.address.toLowerCase() === tokenAddress.toLowerCase() && t.network === network,
-  ) ?? null;
+  return (
+    registry.tokens.find(
+      (t) => t.address.toLowerCase() === tokenAddress.toLowerCase() && t.network === network,
+    ) ?? null
+  );
 }
 
 /**

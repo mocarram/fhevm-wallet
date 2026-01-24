@@ -8,10 +8,14 @@ import ora from 'ora';
 import chalk from 'chalk';
 import { loadWallet, listWallets, hasWallet } from '../../core/wallet/index.js';
 import { listTokens, getToken, TokenEntry } from '../../core/token/TokenRegistry.js';
-import { confidentialTransfer, getTxExplorerUrl, recordTransferTransaction } from '../../core/token/TokenService.js';
+import {
+  confidentialTransfer,
+  getTxExplorerUrl,
+  recordTransferTransaction,
+} from '../../core/token/TokenService.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.js';
-import { formatTokenAmount, parseTokenAmount, formatAddress, error, success, warning, bold } from '../../utils/formatting.js';
+import { parseTokenAmount, formatAddress, error, success, bold } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork, isValidAmount } from '../../utils/validation.js';
 import { listAddresses, getAddressByName } from '../../storage/AddressBook.js';
 
@@ -25,265 +29,279 @@ export function registerTransferCommand(program: Command): void {
     .option('-w, --wallet <name>', 'Wallet to use')
     .option('-n, --network <network>', 'Network (sepolia or mainnet)')
     .option('-c, --contact <name>', 'Use address book contact as recipient')
-    .action(async (to?: string, amount?: string, options?: {
-      token?: string;
-      wallet?: string;
-      network?: string;
-      contact?: string;
-    }) => {
-      try {
-        // Determine network
-        let network: NetworkName = getDefaultNetwork();
-        if (options?.network) {
-          if (!isValidNetwork(options.network)) {
-            console.log(error('Invalid network. Use "sepolia" or "mainnet"'));
+    .action(
+      async (
+        to?: string,
+        amount?: string,
+        options?: {
+          token?: string;
+          wallet?: string;
+          network?: string;
+          contact?: string;
+        },
+      ) => {
+        try {
+          // Determine network
+          let network: NetworkName = getDefaultNetwork();
+          if (options?.network) {
+            if (!isValidNetwork(options.network)) {
+              console.log(error('Invalid network. Use "sepolia" or "mainnet"'));
+              return;
+            }
+            network = options.network;
+          }
+
+          // Get tokens for this network
+          const tokens = listTokens(network);
+          if (tokens.length === 0) {
+            console.log(
+              error(
+                `No tokens tracked on ${network}. Add one with: fhe-wallet token add <address>`,
+              ),
+            );
             return;
           }
-          network = options.network;
-        }
 
-        // Get tokens for this network
-        const tokens = listTokens(network);
-        if (tokens.length === 0) {
-          console.log(error(`No tokens tracked on ${network}. Add one with: fhe-wallet token add <address>`));
-          return;
-        }
-
-        // Determine token
-        let token: TokenEntry | null = null;
-        if (options?.token) {
-          if (!isValidAddress(options.token)) {
-            console.log(error('Invalid token address'));
-            return;
-          }
-          token = getToken(options.token, network);
-          if (!token) {
-            console.log(error(`Token ${options.token} not tracked. Add it with: fhe-wallet token add ${options.token}`));
-            return;
-          }
-        } else if (tokens.length === 1) {
-          token = tokens[0];
-        } else {
-          const { tokenAddress } = await inquirer.prompt([
-            {
-              type: 'list',
-              name: 'tokenAddress',
-              message: 'Select token:',
-              choices: tokens.map(t => ({
-                name: `${t.symbol} - ${t.name} (${formatAddress(t.address)})`,
-                value: t.address,
-              })),
-            },
-          ]);
-          token = getToken(tokenAddress, network)!;
-        }
-
-        // Resolve recipient from contact or prompt
-        if (options?.contact) {
-          const contact = getAddressByName(options.contact);
-          if (!contact) {
-            console.log(error(`Contact "${options.contact}" not found`));
-            return;
-          }
-          to = contact.address;
-          console.log(`Using contact: ${contact.name} (${formatAddress(contact.address)})`);
-        } else if (!to) {
-          // Offer address book selection if contacts exist
-          const contacts = listAddresses();
-
-          if (contacts.length > 0) {
-            const choices = [
-              ...contacts.map(c => ({
-                name: `${c.name} (${formatAddress(c.address)})`,
-                value: c.address,
-              })),
-              { name: 'Enter new address...', value: '__new__' },
-            ];
-
-            const { recipient } = await inquirer.prompt([
+          // Determine token
+          let token: TokenEntry | null = null;
+          if (options?.token) {
+            if (!isValidAddress(options.token)) {
+              console.log(error('Invalid token address'));
+              return;
+            }
+            token = getToken(options.token, network);
+            if (!token) {
+              console.log(
+                error(
+                  `Token ${options.token} not tracked. Add it with: fhe-wallet token add ${options.token}`,
+                ),
+              );
+              return;
+            }
+          } else if (tokens.length === 1) {
+            token = tokens[0];
+          } else {
+            const { tokenAddress } = await inquirer.prompt([
               {
                 type: 'list',
-                name: 'recipient',
-                message: 'Select recipient:',
-                choices,
+                name: 'tokenAddress',
+                message: 'Select token:',
+                choices: tokens.map((t) => ({
+                  name: `${t.symbol} - ${t.name} (${formatAddress(t.address)})`,
+                  value: t.address,
+                })),
               },
             ]);
+            token = getToken(tokenAddress, network)!;
+          }
 
-            if (recipient === '__new__') {
-              const { address } = await inquirer.prompt([
+          // Resolve recipient from contact or prompt
+          if (options?.contact) {
+            const contact = getAddressByName(options.contact);
+            if (!contact) {
+              console.log(error(`Contact "${options.contact}" not found`));
+              return;
+            }
+            to = contact.address;
+            console.log(`Using contact: ${contact.name} (${formatAddress(contact.address)})`);
+          } else if (!to) {
+            // Offer address book selection if contacts exist
+            const contacts = listAddresses();
+
+            if (contacts.length > 0) {
+              const choices = [
+                ...contacts.map((c) => ({
+                  name: `${c.name} (${formatAddress(c.address)})`,
+                  value: c.address,
+                })),
+                { name: 'Enter new address...', value: '__new__' },
+              ];
+
+              const { recipient } = await inquirer.prompt([
+                {
+                  type: 'list',
+                  name: 'recipient',
+                  message: 'Select recipient:',
+                  choices,
+                },
+              ]);
+
+              if (recipient === '__new__') {
+                const { address } = await inquirer.prompt([
+                  {
+                    type: 'input',
+                    name: 'address',
+                    message: 'Enter recipient address:',
+                    validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
+                  },
+                ]);
+                to = address;
+              } else {
+                to = recipient;
+              }
+            } else {
+              const answers = await inquirer.prompt([
                 {
                   type: 'input',
-                  name: 'address',
+                  name: 'to',
                   message: 'Enter recipient address:',
                   validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
                 },
               ]);
-              to = address;
-            } else {
-              to = recipient;
+              to = answers.to;
             }
-          } else {
-            const answers = await inquirer.prompt([
-              {
-                type: 'input',
-                name: 'to',
-                message: 'Enter recipient address:',
-                validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
-              },
-            ]);
-            to = answers.to;
           }
-        }
 
-        if (!isValidAddress(to!)) {
-          console.log(error('Invalid recipient address'));
-          return;
-        }
-
-        // Prompt for amount if not provided
-        if (!amount) {
-          const answers = await inquirer.prompt([
-            {
-              type: 'input',
-              name: 'amount',
-              message: `Enter amount (${token.symbol}):`,
-              validate: (input) => isValidAmount(input) || 'Invalid amount',
-            },
-          ]);
-          amount = answers.amount;
-        }
-
-        if (!isValidAmount(amount!)) {
-          console.log(error('Invalid amount'));
-          return;
-        }
-
-        // Determine wallet
-        let walletName = options?.wallet || getDefaultWallet();
-
-        if (!walletName) {
-          const wallets = listWallets();
-          if (wallets.length === 0) {
-            console.log(error('No wallets found. Create one with: fhe-wallet wallet create'));
+          if (!isValidAddress(to!)) {
+            console.log(error('Invalid recipient address'));
             return;
           }
 
-          const { name } = await inquirer.prompt([
+          // Prompt for amount if not provided
+          if (!amount) {
+            const answers = await inquirer.prompt([
+              {
+                type: 'input',
+                name: 'amount',
+                message: `Enter amount (${token.symbol}):`,
+                validate: (input) => isValidAmount(input) || 'Invalid amount',
+              },
+            ]);
+            amount = answers.amount;
+          }
+
+          if (!isValidAmount(amount!)) {
+            console.log(error('Invalid amount'));
+            return;
+          }
+
+          // Determine wallet
+          let walletName = options?.wallet || getDefaultWallet();
+
+          if (!walletName) {
+            const wallets = listWallets();
+            if (wallets.length === 0) {
+              console.log(error('No wallets found. Create one with: fhe-wallet wallet create'));
+              return;
+            }
+
+            const { name } = await inquirer.prompt([
+              {
+                type: 'list',
+                name: 'name',
+                message: 'Select wallet:',
+                choices: wallets.map((w) => ({
+                  name: `${w.name} (${formatAddress(w.address)})`,
+                  value: w.name,
+                })),
+              },
+            ]);
+            walletName = name;
+          }
+
+          const selectedWallet = walletName!;
+
+          if (!hasWallet(selectedWallet)) {
+            console.log(error(`Wallet "${selectedWallet}" not found`));
+            return;
+          }
+
+          // Get password
+          const { password } = await inquirer.prompt([
             {
-              type: 'list',
-              name: 'name',
-              message: 'Select wallet:',
-              choices: wallets.map(w => ({
-                name: `${w.name} (${formatAddress(w.address)})`,
-                value: w.name,
-              })),
+              type: 'password',
+              name: 'password',
+              message: 'Enter wallet password:',
+              mask: '*',
             },
           ]);
-          walletName = name;
-        }
 
-        const selectedWallet = walletName!;
+          // Load wallet
+          const loadSpinner = ora('Decrypting wallet...').start();
+          let wallet;
+          try {
+            wallet = await loadWallet(selectedWallet, password, network);
+            loadSpinner.succeed('Wallet loaded');
+          } catch (err) {
+            loadSpinner.fail('Failed to decrypt wallet');
+            console.log(error(err instanceof Error ? err.message : 'Invalid password'));
+            return;
+          }
 
-        if (!hasWallet(selectedWallet)) {
-          console.log(error(`Wallet "${selectedWallet}" not found`));
-          return;
-        }
+          // Parse amount
+          const amountBigInt = parseTokenAmount(amount!, token.decimals);
 
-        // Get password
-        const { password } = await inquirer.prompt([
-          {
-            type: 'password',
-            name: 'password',
-            message: 'Enter wallet password:',
-            mask: '*',
-          },
-        ]);
-
-        // Load wallet
-        const loadSpinner = ora('Decrypting wallet...').start();
-        let wallet;
-        try {
-          wallet = await loadWallet(selectedWallet, password, network);
-          loadSpinner.succeed('Wallet loaded');
-        } catch (err) {
-          loadSpinner.fail('Failed to decrypt wallet');
-          console.log(error(err instanceof Error ? err.message : 'Invalid password'));
-          return;
-        }
-
-        // Parse amount
-        const amountBigInt = parseTokenAmount(amount!, token.decimals);
-
-        // Confirm transaction
-        console.log();
-        console.log(bold('Transaction Summary'));
-        console.log(`  From:    ${wallet.address}`);
-        console.log(`  To:      ${to}`);
-        console.log(`  Amount:  ${amount} ${token.symbol}`);
-        console.log(`  Token:   ${token.name}`);
-        console.log(`  Network: ${network}`);
-        console.log();
-
-        const { confirm } = await inquirer.prompt([
-          {
-            type: 'confirm',
-            name: 'confirm',
-            message: 'Confirm transaction?',
-            default: false,
-          },
-        ]);
-
-        if (!confirm) {
-          console.log('Transaction cancelled');
-          return;
-        }
-
-        // Execute transfer
-        console.log();
-        const encryptSpinner = ora('Encrypting amount...').start();
-
-        try {
-          encryptSpinner.text = 'Sending transaction...';
-
-          const result = await confidentialTransfer(
-            wallet,
-            token.address,
-            to!,
-            amountBigInt,
-            network,
-          );
-
-          encryptSpinner.succeed('Transaction sent');
-
-          // Record transaction in history
-          recordTransferTransaction({
-            tokenAddress: token.address,
-            tokenSymbol: token.symbol,
-            from: wallet.address,
-            to: to!,
-            amount: amount!,
-            txHash: result.txHash,
-            network,
-            blockNumber: result.receipt.blockNumber,
-          });
-
+          // Confirm transaction
           console.log();
-          console.log(success('Transfer successful!'));
-          console.log(`  Transaction: ${result.txHash}`);
-          console.log(`  Explorer:    ${getTxExplorerUrl(result.txHash, network)}`);
+          console.log(bold('Transaction Summary'));
+          console.log(`  From:    ${wallet.address}`);
+          console.log(`  To:      ${to}`);
+          console.log(`  Amount:  ${amount} ${token.symbol}`);
+          console.log(`  Token:   ${token.name}`);
+          console.log(`  Network: ${network}`);
           console.log();
 
-          if (result.receipt.status === 1) {
-            console.log(chalk.green('Transaction confirmed'));
-          } else {
-            console.log(chalk.red('Transaction may have failed'));
+          const { confirm } = await inquirer.prompt([
+            {
+              type: 'confirm',
+              name: 'confirm',
+              message: 'Confirm transaction?',
+              default: false,
+            },
+          ]);
+
+          if (!confirm) {
+            console.log('Transaction cancelled');
+            return;
+          }
+
+          // Execute transfer
+          console.log();
+          const encryptSpinner = ora('Encrypting amount...').start();
+
+          try {
+            encryptSpinner.text = 'Sending transaction...';
+
+            const result = await confidentialTransfer(
+              wallet,
+              token.address,
+              to!,
+              amountBigInt,
+              network,
+            );
+
+            encryptSpinner.succeed('Transaction sent');
+
+            // Record transaction in history
+            recordTransferTransaction({
+              tokenAddress: token.address,
+              tokenSymbol: token.symbol,
+              from: wallet.address,
+              to: to!,
+              amount: amount!,
+              txHash: result.txHash,
+              network,
+              blockNumber: result.receipt.blockNumber,
+            });
+
+            console.log();
+            console.log(success('Transfer successful!'));
+            console.log(`  Transaction: ${result.txHash}`);
+            console.log(`  Explorer:    ${getTxExplorerUrl(result.txHash, network)}`);
+            console.log();
+
+            if (result.receipt.status === 1) {
+              console.log(chalk.green('Transaction confirmed'));
+            } else {
+              console.log(chalk.red('Transaction may have failed'));
+            }
+          } catch (err) {
+            encryptSpinner.fail('Transaction failed');
+            console.log(error(err instanceof Error ? err.message : 'Unknown error'));
           }
         } catch (err) {
-          encryptSpinner.fail('Transaction failed');
-          console.log(error(err instanceof Error ? err.message : 'Unknown error'));
+          console.log(error(err instanceof Error ? err.message : 'Failed to send transaction'));
         }
-      } catch (err) {
-        console.log(error(err instanceof Error ? err.message : 'Failed to send transaction'));
-      }
-    });
+      },
+    );
 }

@@ -3,7 +3,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { join, dirname } from 'path';
+import { join } from 'path';
 import { z } from 'zod';
 import { NetworkName } from '../core/network/NetworkConfig.js';
 
