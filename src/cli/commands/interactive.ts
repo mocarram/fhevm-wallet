@@ -693,12 +693,18 @@ async function handleBalance(): Promise<void> {
     walletName = selectedWallet;
   }
 
-  const { password } = await inquirer.prompt([
+  const { password, forceRefresh } = await inquirer.prompt([
     {
       type: "password",
       name: "password",
       message: "Enter wallet password:",
       mask: "*",
+    },
+    {
+      type: "confirm",
+      name: "forceRefresh",
+      message: "Force refresh (bypass cache)?",
+      default: false,
     },
   ]);
 
@@ -717,6 +723,9 @@ async function handleBalance(): Promise<void> {
   console.log(bold(`Balances for ${walletName}`));
   console.log(chalk.dim(`Address: ${wallet.address}`));
   console.log(chalk.dim(`Network: ${network}`));
+  if (forceRefresh) {
+    console.log(chalk.dim("Mode: Force refresh"));
+  }
   console.log();
 
   const table = new Table({
@@ -728,7 +737,9 @@ async function handleBalance(): Promise<void> {
     const spinner = ora(`Fetching ${token.symbol} balance...`).start();
 
     try {
-      const balance = await getDecryptedBalance(token.address, wallet, network);
+      const balance = await getDecryptedBalance(token.address, wallet, network, {
+        forceRefresh,
+      });
       const formatted = formatTokenAmount(balance, token.decimals);
 
       spinner.succeed(`${token.symbol}: ${formatted}`);

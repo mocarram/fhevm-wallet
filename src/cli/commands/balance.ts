@@ -22,7 +22,8 @@ export function registerBalanceCommand(program: Command): void {
     .option('-w, --wallet <name>', 'Wallet to use')
     .option('-t, --token <address>', 'Specific token address')
     .option('-n, --network <network>', 'Network (sepolia or mainnet)')
-    .action(async (options: { wallet?: string; token?: string; network?: string }) => {
+    .option('-r, --refresh', 'Force refresh balances (bypass cache)')
+    .action(async (options: { wallet?: string; token?: string; network?: string; refresh?: boolean }) => {
       try {
         // Determine network
         let network: NetworkName = getDefaultNetwork();
@@ -124,7 +125,9 @@ export function registerBalanceCommand(program: Command): void {
           const spinner = ora(`Fetching ${token.symbol} balance...`).start();
 
           try {
-            const balance = await getDecryptedBalance(token.address, wallet, network);
+            const balance = await getDecryptedBalance(token.address, wallet, network, {
+              forceRefresh: options.refresh,
+            });
             const formatted = formatTokenAmount(balance, token.decimals);
 
             spinner.succeed(`${token.symbol}: ${formatted}`);

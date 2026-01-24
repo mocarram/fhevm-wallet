@@ -8,6 +8,7 @@ import { encryptAmount, EncryptedAmount } from '../fhe/EncryptionService.js';
 import { decryptBalance } from '../fhe/DecryptionService.js';
 import { CHAIN_IDS } from '../network/NetworkConfig.js';
 import { logEvent } from '../../storage/AuditLog.js';
+import { getCachedBalance, setCachedBalance, invalidateBalance } from './BalanceCache.js';
 
 // ERC-7984 ABI (minimal interface)
 const ERC7984_ABI = [
@@ -32,6 +33,10 @@ export interface TokenInfo {
 export interface TransferResult {
   txHash: string;
   receipt: TransactionReceipt;
+}
+
+export interface GetBalanceOptions {
+  forceRefresh?: boolean;
 }
 
 /**
@@ -81,27 +86,44 @@ export async function getEncryptedBalance(
 
 /**
  * Get decrypted balance for a user
- * This performs the full reencryption flow
+ * Uses handle-based caching: only decrypts if the encrypted handle changed
  */
 export async function getDecryptedBalance(
   tokenAddress: string,
   wallet: Wallet | HDNodeWallet,
   network: NetworkName,
+  options: GetBalanceOptions = {},
 ): Promise<bigint> {
-  // Get the encrypted balance handle
+  const { forceRefresh = false } = options;
+
+  // Always fetch the encrypted handle first (cheap RPC call)
   const encryptedHandle = await getEncryptedBalance(
     tokenAddress,
     wallet.address,
     network,
   );
 
-  // If balance is zero, return immediately
+  // If handle is zero, no balance
   if (encryptedHandle === 0n) {
     return 0n;
   }
 
-  // Decrypt the balance
-  return decryptBalance(encryptedHandle, tokenAddress, wallet, network);
+  // Check cache using handle comparison (unless force refresh)
+  if (!forceRefresh) {
+    const cached = getCachedBalance(wallet.address, tokenAddress, network, encryptedHandle);
+    if (cached !== null) {
+      // Handle matches = balance unchanged, return cached value
+      return cached;
+    }
+  }
+
+  // Handle changed or no cache - decrypt the balance (expensive)
+  const balance = await decryptBalance(encryptedHandle, tokenAddress, wallet, network);
+
+  // Cache with the current handle
+  setCachedBalance(wallet.address, tokenAddress, network, encryptedHandle, balance);
+
+  return balance;
 }
 
 /**
@@ -138,6 +160,9 @@ export async function confidentialTransfer(
   );
 
   const receipt = await tx.wait();
+
+  // Invalidate sender's cached balance after successful transfer
+  invalidateBalance(wallet.address, tokenAddress, network);
 
   logEvent('TRANSFER', {
     token: tokenAddress,
