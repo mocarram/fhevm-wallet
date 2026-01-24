@@ -28,6 +28,7 @@ import {
   getDecryptedBalance,
   confidentialTransfer,
   getTxExplorerUrl,
+  recordTransferTransaction,
 } from "../../core/token/TokenService.js";
 import { NetworkName } from "../../core/network/NetworkConfig.js";
 import { getProvider } from "../../core/network/ProviderFactory.js";
@@ -57,12 +58,14 @@ import {
   isValidNetwork,
 } from "../../utils/validation.js";
 import { DynamicBalanceTable } from "../utils/DynamicBalanceTable.js";
+import { displayHistoryInteractive } from "./history.js";
 
 type MenuChoice =
   | "wallet"
   | "token"
   | "balance"
   | "send"
+  | "history"
   | "config"
   | "exit"
   | "back"
@@ -106,6 +109,7 @@ async function mainMenu(): Promise<MenuChoice> {
       choices: [
         { name: "💰  View Balances", value: "balance" },
         { name: "📤  Send Tokens", value: "send" },
+        { name: "📜  Transaction History", value: "history" },
         new inquirer.Separator(),
         { name: "👛  Wallet Management", value: "wallet" },
         { name: "🪙  Token Management", value: "token" },
@@ -897,6 +901,18 @@ async function handleSend(): Promise<void> {
 
     encryptSpinner.succeed("Transaction sent");
 
+    // Record transaction in history
+    recordTransferTransaction({
+      tokenAddress: token.address,
+      tokenSymbol: token.symbol,
+      from: wallet.address,
+      to,
+      amount,
+      txHash: result.txHash,
+      network,
+      blockNumber: result.receipt.blockNumber,
+    });
+
     console.log();
     console.log(success("Transfer successful!"));
     console.log(`  Transaction: ${result.txHash}`);
@@ -912,6 +928,39 @@ async function handleSend(): Promise<void> {
     encryptSpinner.fail("Transaction failed");
     console.log(error(err instanceof Error ? err.message : "Unknown error"));
   }
+}
+
+async function handleHistory(): Promise<void> {
+  const network = getDefaultNetwork();
+  const wallets = listWallets();
+
+  if (wallets.length === 0) {
+    console.log(error("\nNo wallets found. Create one first."));
+    return;
+  }
+
+  const defaultWallet = getDefaultWallet();
+  let walletAddress: string;
+
+  if (wallets.length === 1) {
+    walletAddress = wallets[0].address;
+  } else {
+    const { selectedAddress } = await inquirer.prompt([
+      {
+        type: "list",
+        name: "selectedAddress",
+        message: "Select wallet:",
+        choices: wallets.map((w) => ({
+          name: `${w.name} (${formatAddress(w.address)})${w.name === defaultWallet ? " - default" : ""}`,
+          value: w.address,
+        })),
+        default: wallets.find(w => w.name === defaultWallet)?.address,
+      },
+    ]);
+    walletAddress = selectedAddress;
+  }
+
+  await displayHistoryInteractive(walletAddress, network);
 }
 
 async function waitForKey(): Promise<void> {
@@ -1037,6 +1086,11 @@ async function runInteractiveMode(): Promise<void> {
 
       case "send":
         await handleSend();
+        await waitForKey();
+        break;
+
+      case "history":
+        await handleHistory();
         await waitForKey();
         break;
 

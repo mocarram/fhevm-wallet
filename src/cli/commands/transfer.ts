@@ -8,7 +8,7 @@ import ora from 'ora';
 import chalk from 'chalk';
 import { loadWallet, listWallets, hasWallet } from '../../core/wallet/index.js';
 import { listTokens, getToken, TokenEntry } from '../../core/token/TokenRegistry.js';
-import { confidentialTransfer, getTxExplorerUrl } from '../../core/token/TokenService.js';
+import { confidentialTransfer, getTxExplorerUrl, recordTransferTransaction } from '../../core/token/TokenService.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.js';
 import { formatTokenAmount, parseTokenAmount, formatAddress, error, success, warning, bold } from '../../utils/formatting.js';
@@ -207,6 +207,18 @@ export function registerTransferCommand(program: Command): void {
           );
 
           encryptSpinner.succeed('Transaction sent');
+
+          // Record transaction in history
+          recordTransferTransaction({
+            tokenAddress: token.address,
+            tokenSymbol: token.symbol,
+            from: wallet.address,
+            to: to!,
+            amount: amount!,
+            txHash: result.txHash,
+            network,
+            blockNumber: result.receipt.blockNumber,
+          });
 
           console.log();
           console.log(success('Transfer successful!'));

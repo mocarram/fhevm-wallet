@@ -5,6 +5,7 @@
 export interface NetworkConfig {
   name: string;
   chainId: bigint;
+  chainIdNumber: number;
   rpcUrl: string;
   explorerUrl: string;
   isTestnet: boolean;
@@ -21,12 +22,14 @@ export const NETWORK_CONFIGS: Record<NetworkName, Omit<NetworkConfig, 'rpcUrl'>>
   mainnet: {
     name: 'Ethereum Mainnet',
     chainId: CHAIN_IDS.MAINNET,
+    chainIdNumber: 1,
     explorerUrl: 'https://etherscan.io',
     isTestnet: false,
   },
   sepolia: {
     name: 'Sepolia',
     chainId: CHAIN_IDS.SEPOLIA,
+    chainIdNumber: 11155111,
     explorerUrl: 'https://sepolia.etherscan.io',
     isTestnet: true,
   },
