@@ -14,25 +14,6 @@ A CLI wallet for managing encrypted ERC-7984 tokens using Zama's Fully Homomorph
 
 ## Quick Start
 
-### Option 1: Docker (Recommended)
-
-No local dependencies required - just Docker.
-
-```bash
-# 1. Clone and enter the directory
-git clone <repository-url>
-cd fhevm-wallet
-
-# 2. Create environment file
-make env
-# Edit .env with your RPC URLs and API keys
-
-# 3. Run
-make docker-run
-```
-
-### Option 2: Local Installation
-
 Requires Node.js >= 22.
 
 ```bash
@@ -51,20 +32,7 @@ make env
 make run
 ```
 
-## Docker vs Local Development
-
-| Task                  | Docker                              | Local                             |
-| --------------------- | ----------------------------------- | --------------------------------- |
-| **Prerequisites**     | Docker only                         | Node.js >= 22                     |
-| **Setup**             | `make env`                          | `make install && make env`        |
-| **Run (interactive)** | `make docker-run`                   | `make run`                        |
-| **Run (with args)**   | `make docker-send ARGS="0x... 100"` | `npm run start -- send 0x... 100` |
-| **Check balance**     | `make docker-balance`               | `npm run start -- balance`        |
-| **View history**      | `make docker-history`               | `npm run start -- history`        |
-| **Shell access**      | `make docker-shell`                 | N/A                               |
-| **Build image/code**  | `make docker-build`                 | `make build`                      |
-| **Clean up**          | `make docker-clean`                 | `make clean`                      |
-| **Run all checks**    | N/A                                 | `make check`                      |
+> For Docker setup, see [docs/docker.md](docs/docker.md).
 
 ## Configuration
 
@@ -97,22 +65,16 @@ DEFAULT_WALLET=my-wallet
 ## Usage
 
 > **Note:** Examples below use `fhevm-wallet` which requires global installation via `npm link`.
-> Alternatively, use `npm run start --` or `make` commands as shown in the Quick Start section.
+> Alternatively, use `npm run start --` or `make run`.
 
 ### Interactive Mode
 
 The easiest way to use fhEVM Wallet is through the interactive menu:
 
 ```bash
-# Docker
-make docker-run
-
-# Local
 make run
 # or: npm run start
 ```
-
-Interactive mode provides a menu-driven interface with keyboard navigation for all operations.
 
 ### Wallet Commands
 
@@ -214,36 +176,9 @@ fhevm-wallet balance --network mainnet
 fhevm-wallet send 0x... 100 -n sepolia
 ```
 
-## How It Works
-
-### Fully Homomorphic Encryption (FHE)
-
-FHE allows computations on encrypted data without decrypting it first. This enables confidential token transfers where:
-
-1. Token balances are stored encrypted on-chain
-2. Transfer amounts are encrypted before submission
-3. The blockchain processes encrypted values directly
-4. Only the token holder can decrypt their balance
-
-### ERC-7984 Standard
-
-ERC-7984 is a token standard for confidential tokens using FHE. It provides:
-
-- Encrypted balance storage
-- Confidential transfer operations
-- Decryption capabilities for authorized users
-
-### Encryption Flow
-
-1. **Wallet Creation**: A standard Ethereum wallet is created and encrypted locally with your password
-2. **Balance Query**: Encrypted balances are fetched from the blockchain and decrypted using your private key
-3. **Transfers**: Amounts are encrypted client-side before being sent to the token contract
-
 ## Make Commands
 
 Run `make help` to see all available commands:
-
-### Development
 
 | Command         | Description                          |
 | --------------- | ------------------------------------ |
@@ -257,63 +192,30 @@ Run `make help` to see all available commands:
 | `make check`    | Run all checks (lint, format, build) |
 | `make clean`    | Clean build artifacts                |
 
-### Docker
+## How It Works
 
-| Command                       | Description                 |
-| ----------------------------- | --------------------------- |
-| `make docker-build`           | Build Docker image          |
-| `make docker-run`             | Run in Docker (interactive) |
-| `make docker-shell`           | Open shell in container     |
-| `make docker-send ARGS="..."` | Send tokens via Docker      |
-| `make docker-balance`         | Check balance via Docker    |
-| `make docker-history`         | View history via Docker     |
-| `make docker-clean`           | Remove Docker image         |
+### Fully Homomorphic Encryption (FHE)
 
-### Docker Compose
+FHE allows computations on encrypted data without decrypting it first. This enables confidential token transfers where:
 
-| Command              | Description               |
-| -------------------- | ------------------------- |
-| `make up`            | Start with docker-compose |
-| `make down`          | Stop services             |
-| `make compose-build` | Build with docker-compose |
-| `make compose-clean` | Clean all resources       |
+1. Token balances are stored encrypted on-chain
+2. Transfer amounts are encrypted before submission
+3. The blockchain processes encrypted values directly
+4. Only the token holder can decrypt their balance
 
-## Project Structure
+### ERC-7984 Standard
 
-```
-fhevm-wallet/
-├── src/
-│   ├── cli/
-│   │   ├── commands/
-│   │   │   ├── wallet.ts      # Wallet management commands
-│   │   │   ├── token.ts       # Token tracking commands
-│   │   │   ├── balance.ts     # Balance viewing command
-│   │   │   ├── transfer.ts    # Token transfer command
-│   │   │   ├── history.ts     # Transaction history command
-│   │   │   └── interactive.ts # Interactive TUI mode
-│   │   └── index.ts           # CLI setup
-│   ├── core/
-│   │   ├── fhe/               # FHE encryption services
-│   │   ├── network/           # Network configuration
-│   │   ├── token/             # Token operations
-│   │   └── wallet/            # Wallet operations
-│   ├── storage/               # Data persistence
-│   │   ├── AddressBook.ts     # Address book storage
-│   │   ├── ConfigStore.ts     # Configuration storage
-│   │   ├── TransactionStore.ts # Transaction history
-│   │   └── WalletStore.ts     # Wallet storage
-│   └── utils/                 # Formatting and validation
-├── data/                      # Local data storage (created at runtime)
-│   ├── wallets/               # Encrypted keystores
-│   ├── addressbook.json       # Saved contacts
-│   ├── tokens.json            # Tracked tokens
-│   ├── transactions.json      # Transaction history
-│   └── config.json            # CLI configuration
-├── Dockerfile                 # Docker build configuration
-├── docker-compose.yml         # Docker Compose configuration
-├── Makefile                   # Make commands
-└── package.json
-```
+[ERC-7984](https://eips.ethereum.org/EIPS/eip-7984) is a token standard for confidential tokens using FHE. It provides:
+
+- Encrypted balance storage
+- Confidential transfer operations
+- Decryption capabilities for authorized users
+
+### Encryption Flow
+
+1. **Wallet Creation**: A standard Ethereum wallet is created and encrypted locally with your password
+2. **Balance Query**: Encrypted balances are fetched from the blockchain and decrypted using your private key
+3. **Transfers**: Amounts are encrypted client-side before being sent to the token contract
 
 ## Security Notes
 
