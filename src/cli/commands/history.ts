@@ -6,6 +6,7 @@ import { Command } from 'commander';
 import ora from 'ora';
 import Table from 'cli-table3';
 import chalk from 'chalk';
+import inquirer from 'inquirer';
 import {
   listTransactions,
   getLastSyncedBlock,
@@ -13,14 +14,18 @@ import {
   upsertTransactions,
   Transaction,
 } from '../../storage/TransactionStore.js';
-import { getWalletTransactions } from '../../core/token/TokenService.js';
+import {
+  getWalletTransactions,
+  getWalletTransactionsViaRPC,
+} from '../../core/token/TokenService.js';
 import { listTokens, TokenEntry } from '../../core/token/TokenRegistry.js';
 import { getDefaultNetwork } from '../../storage/ConfigStore.js';
-import { getProvider } from '../../core/network/ProviderFactory.js';
+import { getProvider, clearProviderForNetwork } from '../../core/network/ProviderFactory.js';
 import { formatAddress, error, bold } from '../../utils/formatting.js';
 import { isValidNetwork, isValidAddress } from '../../utils/validation.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getNameByAddress } from '../../storage/AddressBook.js';
+import { saveEnvVar, loadEnv } from '../../storage/paths.js';
 
 /**
  * Format date for display
@@ -96,6 +101,8 @@ function formatAmount(tx: Transaction, walletAddress: string): string {
   return color(`${prefix}${tx.amount}`);
 }
 
+type SyncMethod = 'etherscan' | 'rpc';
+
 /**
  * Sync transactions from blockchain via Etherscan API
  */
@@ -103,6 +110,7 @@ async function syncTransactions(
   walletAddress: string,
   network: NetworkName,
   tokens: TokenEntry[],
+  method: SyncMethod = 'etherscan',
 ): Promise<number> {
   const lastBlock = getLastSyncedBlock(walletAddress, network);
   const provider = getProvider(network);
@@ -112,14 +120,23 @@ async function syncTransactions(
   const tokenAddresses = tokens.map((t) => t.address);
   const tokenMap = new Map(tokens.map((t) => [t.address.toLowerCase(), { symbol: t.symbol }]));
 
-  // Fetch transactions from Etherscan
-  const walletTxs = await getWalletTransactions(
-    walletAddress,
-    tokenAddresses,
-    tokenMap,
-    network,
-    lastBlock > 0 ? lastBlock + 1 : 0,
-  );
+  // Fetch transactions using the specified method
+  const walletTxs =
+    method === 'etherscan'
+      ? await getWalletTransactions(
+          walletAddress,
+          tokenAddresses,
+          tokenMap,
+          network,
+          lastBlock > 0 ? lastBlock + 1 : 0,
+        )
+      : await getWalletTransactionsViaRPC(
+          walletAddress,
+          tokenAddresses,
+          tokenMap,
+          network,
+          lastBlock > 0 ? lastBlock + 1 : 0,
+        );
 
   // Convert to our transaction format
   const transactions: Transaction[] = walletTxs.map((tx) => ({
@@ -143,6 +160,73 @@ async function syncTransactions(
   updateSyncState(walletAddress, network, currentBlock);
 
   return transactions.length;
+}
+
+/**
+ * Handle sync errors gracefully and offer recovery options
+ */
+async function handleSyncError(
+  err: unknown,
+  walletAddress: string,
+  network: NetworkName,
+  tokens: TokenEntry[],
+): Promise<void> {
+  // Clear the broken provider from cache to stop retry loop
+  clearProviderForNetwork(network);
+
+  const message = err instanceof Error ? err.message : 'Unknown error';
+
+  // Check for common RPC block range errors
+  const isBlockRangeError =
+    message.includes('block range') ||
+    message.includes('query returned more than') ||
+    message.includes('exceed maximum') ||
+    message.includes('Log response size exceeded');
+
+  if (isBlockRangeError) {
+    console.log(chalk.yellow('\nRPC provider limits the block range for queries.'));
+  } else {
+    console.log(chalk.yellow(`\nSync error: ${message}`));
+  }
+
+  const { action } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'action',
+      message: 'How would you like to proceed?',
+      choices: [
+        { name: 'Set Etherscan API key (recommended)', value: 'set_key' },
+        { name: 'Skip sync for now', value: 'skip' },
+      ],
+    },
+  ]);
+
+  if (action === 'set_key') {
+    const { apiKey } = await inquirer.prompt([
+      {
+        type: 'password',
+        name: 'apiKey',
+        message: 'Enter Etherscan API key:',
+        mask: '*',
+        validate: (input: string) => input.trim().length > 0 || 'API key cannot be empty',
+      },
+    ]);
+
+    saveEnvVar('ETHERSCAN_API_KEY', apiKey.trim());
+    loadEnv();
+    console.log(chalk.green('✓ API key saved'));
+
+    // Retry with Etherscan
+    const retrySpinner = ora('Retrying sync with Etherscan...').start();
+    try {
+      const newTxCount = await syncTransactions(walletAddress, network, tokens, 'etherscan');
+      retrySpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+    } catch (retryErr) {
+      retrySpinner.fail('Sync failed');
+      console.log(error(retryErr instanceof Error ? retryErr.message : 'Unknown error'));
+    }
+  }
+  // 'skip' action: do nothing, proceed to show cached transactions
 }
 
 /**
@@ -217,17 +301,27 @@ export function registerHistoryCommand(program: Command): void {
           return;
         }
 
-        // Sync from blockchain (requires ETHERSCAN_API_KEY)
+        // Sync from blockchain
         const hasApiKey = !!process.env.ETHERSCAN_API_KEY;
 
         if (hasApiKey) {
+          // Use Etherscan API (fast)
           const syncSpinner = ora('Syncing transactions from blockchain...').start();
-          const newTxCount = await syncTransactions(walletAddress, network, tokens);
+          const newTxCount = await syncTransactions(walletAddress, network, tokens, 'etherscan');
           syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
         } else {
-          console.log(
-            chalk.dim('Tip: Set ETHERSCAN_API_KEY in .env to sync on-chain transactions'),
+          // Default to RPC with hint
+          const syncSpinner = ora('Syncing via RPC...').start();
+          syncSpinner.suffixText = chalk.dim(
+            '(tip: set Etherscan API key in Settings for faster sync)',
           );
+          try {
+            const newTxCount = await syncTransactions(walletAddress, network, tokens, 'rpc');
+            syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+          } catch (err) {
+            syncSpinner.fail('RPC sync failed');
+            await handleSyncError(err, walletAddress, network, tokens);
+          }
         }
 
         // Get last 10 transactions
@@ -264,15 +358,25 @@ export async function displayHistoryInteractive(
     return;
   }
 
-  // Sync from blockchain (requires ETHERSCAN_API_KEY)
+  // Check for API key
   const hasApiKey = !!process.env.ETHERSCAN_API_KEY;
 
   if (hasApiKey) {
+    // Use Etherscan API (fast)
     const syncSpinner = ora('Syncing transactions from blockchain...').start();
-    const newTxCount = await syncTransactions(walletAddress, network, tokens);
+    const newTxCount = await syncTransactions(walletAddress, network, tokens, 'etherscan');
     syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
   } else {
-    console.log(chalk.dim('Tip: Set ETHERSCAN_API_KEY in .env to sync on-chain transactions'));
+    // Default to RPC with hint
+    const syncSpinner = ora('Syncing via RPC...').start();
+    syncSpinner.suffixText = chalk.dim('(tip: set Etherscan API key in Settings for faster sync)');
+    try {
+      const newTxCount = await syncTransactions(walletAddress, network, tokens, 'rpc');
+      syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+    } catch (err) {
+      syncSpinner.fail('RPC sync failed');
+      await handleSyncError(err, walletAddress, network, tokens);
+    }
   }
 
   // Get last 10 transactions

@@ -48,8 +48,8 @@ Configure your environment in `.env`:
 
 | Variable            | Description                              | Required |
 | ------------------- | ---------------------------------------- | -------- |
-| `SEPOLIA_RPC_URL`   | Sepolia testnet RPC endpoint             | Yes      |
-| `MAINNET_RPC_URL`   | Ethereum mainnet RPC endpoint            | Yes      |
+| `SEPOLIA_RPC_URL`   | Sepolia testnet RPC endpoint             | No       |
+| `MAINNET_RPC_URL`   | Ethereum mainnet RPC endpoint            | No       |
 | `ETHERSCAN_API_KEY` | Etherscan API key (for tx history sync)  | No       |
 | `DEFAULT_NETWORK`   | Default network (`sepolia` or `mainnet`) | No       |
 | `DEFAULT_WALLET`    | Default wallet name                      | No       |

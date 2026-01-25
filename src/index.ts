@@ -6,7 +6,11 @@
  * A CLI wallet for managing encrypted ERC-7984 tokens using Zama's FHE technology.
  */
 
-import 'dotenv/config';
+import { loadEnv } from './storage/paths.js';
+
+// Load environment variables (checks ~/.fhevm-wallet/.env first, then cwd)
+loadEnv();
+
 import { createProgram, runInteractiveMode } from './cli/index.js';
 
 const program = createProgram();

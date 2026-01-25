@@ -18,6 +18,14 @@ export const CHAIN_IDS = {
 
 export type NetworkName = 'mainnet' | 'sepolia';
 
+/**
+ * Default RPC URLs used when no custom URL is configured
+ */
+export const DEFAULT_RPC_URLS: Record<NetworkName, string> = {
+  mainnet: 'https://eth-mainnet.public.blastapi.io',
+  sepolia: 'https://ethereum-sepolia-public.nodies.app',
+};
+
 export const NETWORK_CONFIGS: Record<NetworkName, Omit<NetworkConfig, 'rpcUrl'>> = {
   mainnet: {
     name: 'Ethereum Mainnet',
@@ -53,9 +61,9 @@ export function getNetworkConfig(network: NetworkName): NetworkConfig {
  */
 function getRpcUrl(network: NetworkName): string {
   if (network === 'mainnet') {
-    return process.env.MAINNET_RPC_URL || 'https://eth-mainnet.public.blastapi.io';
+    return process.env.MAINNET_RPC_URL || DEFAULT_RPC_URLS.mainnet;
   }
-  return process.env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-public.nodies.app';
+  return process.env.SEPOLIA_RPC_URL || DEFAULT_RPC_URLS.sepolia;
 }
 
 /**

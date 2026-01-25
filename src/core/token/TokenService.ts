@@ -421,6 +421,108 @@ export async function getWalletTransactions(
 }
 
 /**
+ * Get transactions via RPC (eth_getLogs) - no API key required
+ * Slower than Etherscan but works without configuration
+ */
+export async function getWalletTransactionsViaRPC(
+  walletAddress: string,
+  tokenAddresses: string[],
+  tokenMap: Map<string, { symbol: string }>,
+  network: NetworkName,
+  startBlock: number = 0,
+): Promise<WalletTransaction[]> {
+  const provider = getProvider(network);
+  const currentBlock = await provider.getBlockNumber();
+
+  const transactions: WalletTransaction[] = [];
+  const seenTxHashes = new Set<string>();
+
+  // Pad wallet address to 32 bytes for topic matching
+  const paddedWallet = '0x' + walletAddress.slice(2).toLowerCase().padStart(64, '0');
+
+  // Process in chunks of 10,000 blocks to avoid RPC limits
+  const CHUNK_SIZE = 10000;
+
+  for (const tokenAddress of tokenAddresses) {
+    const tokenInfo = tokenMap.get(tokenAddress.toLowerCase());
+    if (!tokenInfo) continue;
+
+    // Query in chunks
+    for (let fromBlock = startBlock; fromBlock <= currentBlock; fromBlock += CHUNK_SIZE) {
+      const toBlock = Math.min(fromBlock + CHUNK_SIZE - 1, currentBlock);
+
+      // Query outgoing transfers (wallet is sender - topic1)
+      const outgoingFilter = {
+        address: tokenAddress,
+        topics: [CONFIDENTIAL_TRANSFER_TOPIC, paddedWallet, null],
+        fromBlock,
+        toBlock,
+      };
+
+      // Query incoming transfers (wallet is recipient - topic2)
+      const incomingFilter = {
+        address: tokenAddress,
+        topics: [CONFIDENTIAL_TRANSFER_TOPIC, null, paddedWallet],
+        fromBlock,
+        toBlock,
+      };
+
+      const [outgoingLogs, incomingLogs] = await Promise.all([
+        provider.getLogs(outgoingFilter),
+        provider.getLogs(incomingFilter),
+      ]);
+
+      const allLogs = [...outgoingLogs, ...incomingLogs];
+
+      // Collect unique block numbers for timestamp fetching
+      const blockNumbers = new Set<number>();
+      for (const log of allLogs) {
+        if (!seenTxHashes.has(log.transactionHash)) {
+          blockNumbers.add(log.blockNumber);
+        }
+      }
+
+      // Batch fetch block timestamps
+      const blockTimestamps = new Map<number, number>();
+      const blockPromises = Array.from(blockNumbers).map(async (blockNum) => {
+        const block = await provider.getBlock(blockNum);
+        if (block) {
+          blockTimestamps.set(blockNum, block.timestamp);
+        }
+      });
+      await Promise.all(blockPromises);
+
+      // Process logs
+      for (const log of allLogs) {
+        if (seenTxHashes.has(log.transactionHash)) continue;
+        seenTxHashes.add(log.transactionHash);
+
+        const from = parseAddressFromTopic(log.topics[1]);
+        const to = parseAddressFromTopic(log.topics[2]);
+        const timestamp = blockTimestamps.get(log.blockNumber) || 0;
+
+        transactions.push({
+          txHash: log.transactionHash,
+          type: getTransactionType(from, to),
+          from,
+          to,
+          blockNumber: log.blockNumber,
+          timestamp,
+          tokenAddress: log.address,
+          tokenSymbol: tokenInfo.symbol,
+          amount: null, // Encrypted
+        });
+      }
+    }
+  }
+
+  // Sort by block number descending (newest first)
+  transactions.sort((a, b) => b.blockNumber - a.blockNumber);
+
+  return transactions;
+}
+
+/**
  * Approve tokens confidentially
  */
 export async function confidentialApprove(

@@ -30,8 +30,9 @@ import {
   getTxExplorerUrl,
   recordTransferTransaction,
 } from '../../core/token/TokenService.js';
-import { NetworkName } from '../../core/network/NetworkConfig.js';
-import { getProvider } from '../../core/network/ProviderFactory.js';
+import { NetworkName, DEFAULT_RPC_URLS } from '../../core/network/NetworkConfig.js';
+import { getProvider, clearProviderCache } from '../../core/network/ProviderFactory.js';
+import { getEnvVar, removeEnvVar, saveEnvVar } from '../../storage/paths.js';
 import {
   loadConfig,
   updateConfig,
@@ -86,7 +87,16 @@ type MenuChoice =
   | 'config-wallet'
   | 'addressbook-add'
   | 'addressbook-list'
-  | 'addressbook-remove';
+  | 'addressbook-remove'
+  | 'config-settings'
+  | 'settings-rpc'
+  | 'settings-etherscan'
+  | 'rpc-view'
+  | 'rpc-set'
+  | 'rpc-reset'
+  | 'etherscan-view'
+  | 'etherscan-set'
+  | 'etherscan-remove';
 
 function clearScreen(): void {
   console.clear();
@@ -181,6 +191,7 @@ async function configMenu(): Promise<MenuChoice> {
         { name: '👁️   Show Current Config', value: 'config-show' },
         { name: '🌐  Change Network', value: 'config-network' },
         { name: '👛  Change Default Wallet', value: 'config-wallet' },
+        { name: '⚙️   Settings (RPC, API Keys)', value: 'config-settings' },
         new inquirer.Separator(),
         { name: '← Back', value: 'back' },
       ],
@@ -209,6 +220,193 @@ async function addressBookMenu(): Promise<MenuChoice> {
     },
   ]);
   return choice;
+}
+
+async function settingsMenu(): Promise<MenuChoice> {
+  const { choice } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'choice',
+      message: 'Settings',
+      choices: [
+        { name: '🌐  RPC Endpoints', value: 'settings-rpc' },
+        { name: '🔑  Etherscan API Key', value: 'settings-etherscan' },
+        new inquirer.Separator(),
+        { name: '← Back', value: 'back' },
+      ],
+      pageSize: 10,
+      loop: false,
+    },
+  ]);
+  return choice;
+}
+
+async function rpcEndpointsMenu(): Promise<MenuChoice> {
+  const { choice } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'choice',
+      message: 'RPC Endpoints',
+      choices: [
+        { name: '👁️   View Current RPC Endpoints', value: 'rpc-view' },
+        { name: '✏️   Set Custom RPC Endpoint', value: 'rpc-set' },
+        { name: '🔄  Reset to Defaults', value: 'rpc-reset' },
+        new inquirer.Separator(),
+        { name: '← Back', value: 'back' },
+      ],
+      pageSize: 10,
+      loop: false,
+    },
+  ]);
+  return choice;
+}
+
+async function etherscanKeyMenu(): Promise<MenuChoice> {
+  const { choice } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'choice',
+      message: 'Etherscan API Key',
+      choices: [
+        { name: '👁️   View API Key Status', value: 'etherscan-view' },
+        { name: '✏️   Set API Key', value: 'etherscan-set' },
+        { name: '🗑️   Remove API Key', value: 'etherscan-remove' },
+        new inquirer.Separator(),
+        { name: '← Back', value: 'back' },
+      ],
+      pageSize: 10,
+      loop: false,
+    },
+  ]);
+  return choice;
+}
+
+async function handleViewRpcEndpoints(): Promise<void> {
+  const mainnetCustom = getEnvVar('MAINNET_RPC_URL');
+  const sepoliaCustom = getEnvVar('SEPOLIA_RPC_URL');
+
+  console.log();
+  console.log(bold('Current RPC Endpoints:'));
+  console.log();
+
+  if (mainnetCustom) {
+    console.log(`  Mainnet: ${mainnetCustom} ${chalk.cyan('(custom)')}`);
+  } else {
+    console.log(`  Mainnet: ${DEFAULT_RPC_URLS.mainnet} ${chalk.dim('(default)')}`);
+  }
+
+  if (sepoliaCustom) {
+    console.log(`  Sepolia: ${sepoliaCustom} ${chalk.cyan('(custom)')}`);
+  } else {
+    console.log(`  Sepolia: ${DEFAULT_RPC_URLS.sepolia} ${chalk.dim('(default)')}`);
+  }
+  console.log();
+}
+
+async function handleSetRpcEndpoint(): Promise<void> {
+  const { network } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'network',
+      message: 'Select network:',
+      choices: [
+        { name: 'Mainnet', value: 'mainnet' },
+        { name: 'Sepolia', value: 'sepolia' },
+      ],
+    },
+  ]);
+
+  const envKey = network === 'mainnet' ? 'MAINNET_RPC_URL' : 'SEPOLIA_RPC_URL';
+  const currentCustom = getEnvVar(envKey);
+
+  const { url } = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'url',
+      message: 'Enter RPC URL:',
+      default: currentCustom,
+      validate: (input) => {
+        if (!input.trim()) {
+          return 'URL cannot be empty';
+        }
+        try {
+          new URL(input);
+          return true;
+        } catch {
+          return 'Invalid URL format';
+        }
+      },
+    },
+  ]);
+
+  saveEnvVar(envKey, url.trim());
+  clearProviderCache();
+
+  console.log();
+  console.log(success(`${network.charAt(0).toUpperCase() + network.slice(1)} RPC updated`));
+}
+
+async function handleResetRpcEndpoints(): Promise<void> {
+  const mainnetRemoved = removeEnvVar('MAINNET_RPC_URL');
+  const sepoliaRemoved = removeEnvVar('SEPOLIA_RPC_URL');
+
+  clearProviderCache();
+
+  console.log();
+  if (mainnetRemoved || sepoliaRemoved) {
+    console.log(success('RPC endpoints reset to defaults'));
+    console.log();
+    console.log(`  Mainnet: ${DEFAULT_RPC_URLS.mainnet}`);
+    console.log(`  Sepolia: ${DEFAULT_RPC_URLS.sepolia}`);
+  } else {
+    console.log('No custom RPC endpoints configured');
+  }
+}
+
+async function handleViewEtherscanKey(): Promise<void> {
+  const apiKey = getEnvVar('ETHERSCAN_API_KEY');
+
+  console.log();
+  if (apiKey) {
+    const masked = '****' + apiKey.slice(-4);
+    console.log(`Etherscan API Key: ${chalk.cyan(masked)} ${chalk.green('(set)')}`);
+  } else {
+    console.log(`Etherscan API Key: ${chalk.dim('Not configured')}`);
+  }
+  console.log();
+}
+
+async function handleSetEtherscanKey(): Promise<void> {
+  const { apiKey } = await inquirer.prompt([
+    {
+      type: 'password',
+      name: 'apiKey',
+      message: 'Enter Etherscan API Key:',
+      mask: '*',
+      validate: (input) => {
+        if (!input.trim()) {
+          return 'API key cannot be empty';
+        }
+        return true;
+      },
+    },
+  ]);
+
+  saveEnvVar('ETHERSCAN_API_KEY', apiKey.trim());
+
+  console.log();
+  console.log(success('Etherscan API key saved'));
+}
+
+async function handleRemoveEtherscanKey(): Promise<void> {
+  const removed = removeEnvVar('ETHERSCAN_API_KEY');
+
+  console.log();
+  if (removed) {
+    console.log(success('Etherscan API key removed'));
+  } else {
+    console.log('No Etherscan API key configured');
+  }
 }
 
 async function handleCreateWallet(): Promise<void> {
@@ -1369,6 +1567,75 @@ async function runInteractiveMode(): Promise<void> {
               await handleSetDefaultWallet();
               await waitForKey();
               break;
+            case 'config-settings': {
+              let inSettingsMenu = true;
+              while (inSettingsMenu) {
+                clearScreen();
+                printHeader();
+                const settingsChoice = await settingsMenu();
+
+                switch (settingsChoice) {
+                  case 'settings-rpc': {
+                    let inRpcMenu = true;
+                    while (inRpcMenu) {
+                      clearScreen();
+                      printHeader();
+                      const rpcChoice = await rpcEndpointsMenu();
+
+                      switch (rpcChoice) {
+                        case 'rpc-view':
+                          await handleViewRpcEndpoints();
+                          await waitForKey();
+                          break;
+                        case 'rpc-set':
+                          await handleSetRpcEndpoint();
+                          await waitForKey();
+                          break;
+                        case 'rpc-reset':
+                          await handleResetRpcEndpoints();
+                          await waitForKey();
+                          break;
+                        case 'back':
+                          inRpcMenu = false;
+                          break;
+                      }
+                    }
+                    break;
+                  }
+                  case 'settings-etherscan': {
+                    let inEtherscanMenu = true;
+                    while (inEtherscanMenu) {
+                      clearScreen();
+                      printHeader();
+                      const etherscanChoice = await etherscanKeyMenu();
+
+                      switch (etherscanChoice) {
+                        case 'etherscan-view':
+                          await handleViewEtherscanKey();
+                          await waitForKey();
+                          break;
+                        case 'etherscan-set':
+                          await handleSetEtherscanKey();
+                          await waitForKey();
+                          break;
+                        case 'etherscan-remove':
+                          await handleRemoveEtherscanKey();
+                          await waitForKey();
+                          break;
+                        case 'back':
+                          inEtherscanMenu = false;
+                          break;
+                      }
+                    }
+                    break;
+                  }
+                  case 'back':
+                    inSettingsMenu = false;
+                    break;
+                }
+              }
+              break;
+            }
             case 'back':
               inConfigMenu = false;
               break;
