@@ -210,7 +210,9 @@ export function registerHistoryCommand(program: Command): void {
 
         if (tokens.length === 0) {
           console.log(
-            error(`No tokens tracked on ${network}. Add one with: fhevm-wallet token add <address>`),
+            error(
+              `No tokens tracked on ${network}. Add one with: fhevm-wallet token add <address>`,
+            ),
           );
           return;
         }

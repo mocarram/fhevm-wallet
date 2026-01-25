@@ -12,7 +12,14 @@ import { getDecryptedBalance } from '../../core/token/TokenService.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getProvider } from '../../core/network/ProviderFactory.js';
 import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.js';
-import { formatTokenAmount, formatAddress, error, warning, bold, shortErrorMessage } from '../../utils/formatting.js';
+import {
+  formatTokenAmount,
+  formatAddress,
+  error,
+  warning,
+  bold,
+  shortErrorMessage,
+} from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
 import { DynamicBalanceTable } from '../utils/DynamicBalanceTable.js';
 
