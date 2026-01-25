@@ -5,6 +5,13 @@
 import chalk from 'chalk';
 
 /**
+ * Format network name for display (adds beta tag for mainnet)
+ */
+export function formatNetworkName(network: string): string {
+  return network === 'mainnet' ? 'mainnet (beta)' : network;
+}
+
+/**
  * Format an address for display (shortened)
  */
 export function formatAddress(address: string, length = 8): string {
