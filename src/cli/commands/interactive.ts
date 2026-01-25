@@ -882,18 +882,12 @@ async function handleBalance(): Promise<void> {
     walletName = selectedWallet;
   }
 
-  const { password, forceRefresh } = await inquirer.prompt([
+  const { password } = await inquirer.prompt([
     {
       type: 'password',
       name: 'password',
       message: 'Enter wallet password:',
       mask: '*',
-    },
-    {
-      type: 'confirm',
-      name: 'forceRefresh',
-      message: 'Force refresh (bypass cache)?',
-      default: false,
     },
   ]);
 
@@ -910,20 +904,18 @@ async function handleBalance(): Promise<void> {
 
   // Fetch ETH balance
   const provider = getProvider(network);
-  const ethBalance = await provider.getBalance(wallet.address);
-  const ethFormatted = formatTokenAmount(ethBalance, 18);
+  let ethBalance = await provider.getBalance(wallet.address);
+  let ethFormatted = formatTokenAmount(ethBalance, 18);
 
   const headerLines = [
     '',
     bold(`Balances for ${walletName}`),
     chalk.dim(`Address: ${wallet.address}`),
     chalk.dim(`Network: ${network}`),
-    forceRefresh ? chalk.dim('Mode: Force refresh') : '',
     '',
-  ]
-    .filter((line) => line !== '')
-    .join('\n');
+  ].join('\n');
 
+  // Initial balance fetch (uses cache)
   const dynamicTable = new DynamicBalanceTable({
     tokens,
     header: headerLines,
@@ -935,7 +927,7 @@ async function handleBalance(): Promise<void> {
     dynamicTable.setLoading(i);
     try {
       const balance = await getDecryptedBalance(tokens[i].address, wallet, network, {
-        forceRefresh,
+        forceRefresh: false,
       });
       const formatted = formatTokenAmount(balance, tokens[i].decimals);
       dynamicTable.setSuccess(i, formatted);
@@ -945,6 +937,57 @@ async function handleBalance(): Promise<void> {
   }
 
   dynamicTable.stop();
+
+  // Show interactive menu after displaying balances
+  let continueLoop = true;
+  while (continueLoop) {
+    console.log('');
+    const { action } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'action',
+        message: 'What would you like to do?',
+        choices: [
+          { name: '🔄  Refresh', value: 'refresh' },
+          { name: '🔓  Force decrypt', value: 'force' },
+          { name: '← Back', value: 'back' },
+        ],
+      },
+    ]);
+
+    if (action === 'back') {
+      continueLoop = false;
+    } else if (action === 'refresh' || action === 'force') {
+      const forceRefresh = action === 'force';
+
+      // Refresh ETH balance
+      ethBalance = await provider.getBalance(wallet.address);
+      ethFormatted = formatTokenAmount(ethBalance, 18);
+
+      // Refresh balances
+      const refreshTable = new DynamicBalanceTable({
+        tokens,
+        header: headerLines,
+        ethBalance: ethFormatted,
+      });
+      refreshTable.start();
+
+      for (let i = 0; i < tokens.length; i++) {
+        refreshTable.setLoading(i);
+        try {
+          const balance = await getDecryptedBalance(tokens[i].address, wallet, network, {
+            forceRefresh,
+          });
+          const formatted = formatTokenAmount(balance, tokens[i].decimals);
+          refreshTable.setSuccess(i, formatted);
+        } catch (err) {
+          refreshTable.setError(i, shortErrorMessage(err));
+        }
+      }
+
+      refreshTable.stop();
+    }
+  }
 }
 
 async function handleSend(): Promise<void> {
@@ -1316,7 +1359,6 @@ async function runInteractiveMode(): Promise<void> {
 
       case 'balance':
         await handleBalance();
-        await waitForKey();
         break;
 
       case 'send':

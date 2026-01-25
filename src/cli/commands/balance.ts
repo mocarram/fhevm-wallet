@@ -150,6 +150,57 @@ export function registerBalanceCommand(program: Command): void {
           }
 
           dynamicTable.stop();
+
+          // Show interactive menu after displaying balances
+          let continueLoop = true;
+          while (continueLoop) {
+            console.log('');
+            const { action } = await inquirer.prompt([
+              {
+                type: 'list',
+                name: 'action',
+                message: 'What would you like to do?',
+                choices: [
+                  { name: 'Refresh', value: 'refresh' },
+                  { name: 'Force decrypt', value: 'force' },
+                  { name: 'Back', value: 'back' },
+                ],
+              },
+            ]);
+
+            if (action === 'back') {
+              continueLoop = false;
+            } else if (action === 'refresh' || action === 'force') {
+              const forceRefresh = action === 'force';
+
+              // Refresh ETH balance
+              const refreshedEthBalance = await provider.getBalance(wallet.address);
+              const refreshedEthFormatted = formatTokenAmount(refreshedEthBalance, 18);
+
+              // Refresh balances
+              const refreshTable = new DynamicBalanceTable({
+                tokens,
+                header: headerLines,
+                ethBalance: refreshedEthFormatted,
+              });
+              refreshTable.start();
+
+              for (let i = 0; i < tokens.length; i++) {
+                refreshTable.setLoading(i);
+                try {
+                  const balance = await getDecryptedBalance(tokens[i].address, wallet, network, {
+                    forceRefresh,
+                  });
+                  const formatted = formatTokenAmount(balance, tokens[i].decimals);
+                  refreshTable.setSuccess(i, formatted);
+                } catch (err) {
+                  refreshTable.setError(i, shortErrorMessage(err));
+                }
+              }
+
+              refreshTable.stop();
+            }
+          }
         } catch (err) {
           console.log(error(shortErrorMessage(err)));
         }
