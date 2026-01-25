@@ -53,7 +53,7 @@ export function getNetworkConfig(network: NetworkName): NetworkConfig {
  */
 function getRpcUrl(network: NetworkName): string {
   if (network === 'mainnet') {
-    return process.env.MAINNET_RPC_URL || 'https://eth.llamarpc.com';
+    return process.env.MAINNET_RPC_URL || 'https://eth.drpc.org';
   }
   return process.env.SEPOLIA_RPC_URL || 'https://rpc.sepolia.org';
 }

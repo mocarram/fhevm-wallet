@@ -32,7 +32,7 @@ make env
 make run
 ```
 
-> For Docker setup, see [docs/docker.md](docs/docker.md).
+> **Documentation:**  [Wallet guide](docs/wallet.md) | [Docker setup](docs/docker.md)
 
 ## Configuration
 
