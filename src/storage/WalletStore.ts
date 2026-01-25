@@ -4,8 +4,8 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { DATA_DIR } from './paths.js';
 
-const DATA_DIR = join(process.cwd(), 'data');
 const WALLETS_DIR = join(DATA_DIR, 'wallets');
 
 export interface WalletMetadata {

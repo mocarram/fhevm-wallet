@@ -2,12 +2,13 @@
  * Token registry for tracking user's tokens
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { z } from 'zod';
 import { NetworkName } from '../network/NetworkConfig.js';
 import { getTokenInfo } from './TokenService.js';
 import { logEvent } from '../../storage/AuditLog.js';
+import { DATA_DIR, ensureDataDir } from '../../storage/paths.js';
 
 const TokenEntrySchema = z.object({
   address: z.string(),
@@ -25,17 +26,7 @@ const TokenRegistrySchema = z.object({
 export type TokenEntry = z.infer<typeof TokenEntrySchema>;
 type TokenRegistry = z.infer<typeof TokenRegistrySchema>;
 
-const DATA_DIR = join(process.cwd(), 'data');
 const TOKENS_FILE = join(DATA_DIR, 'tokens.json');
-
-/**
- * Ensure data directory exists
- */
-function ensureDataDir(): void {
-  if (!existsSync(DATA_DIR)) {
-    mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
 
 /**
  * Load token registry from file

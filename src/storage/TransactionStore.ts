@@ -2,10 +2,11 @@
  * Transaction history storage with blockchain sync
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { z } from 'zod';
 import { NetworkName } from '../core/network/NetworkConfig.js';
+import { DATA_DIR, ensureDataDir } from './paths.js';
 
 export const TransactionType = z.enum(['transfer', 'mint', 'burn', 'eth']);
 
@@ -38,17 +39,7 @@ const TransactionStoreSchema = z.object({
 export type Transaction = z.infer<typeof TransactionSchema>;
 type TransactionStoreData = z.infer<typeof TransactionStoreSchema>;
 
-const DATA_DIR = join(process.cwd(), 'data');
 const TRANSACTIONS_FILE = join(DATA_DIR, 'transactions.json');
-
-/**
- * Ensure data directory exists
- */
-function ensureDataDir(): void {
-  if (!existsSync(DATA_DIR)) {
-    mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
 
 /**
  * Load transaction store from file

@@ -3,8 +3,9 @@
  * Uses encrypted handle comparison to detect stale cache entries
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import { DATA_DIR, ensureDataDir } from '../../storage/paths.js';
 
 interface CachedBalance {
   handle: string;
@@ -15,14 +16,7 @@ interface CacheData {
   [key: string]: CachedBalance;
 }
 
-const DATA_DIR = join(process.cwd(), 'data');
 const CACHE_FILE = join(DATA_DIR, 'balance-cache.json');
-
-function ensureDataDir(): void {
-  if (!existsSync(DATA_DIR)) {
-    mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
 
 function loadCache(): CacheData {
   ensureDataDir();

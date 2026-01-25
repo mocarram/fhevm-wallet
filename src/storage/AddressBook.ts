@@ -2,9 +2,10 @@
  * Address book storage for saving frequently used addresses
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { z } from 'zod';
+import { DATA_DIR, ensureDataDir } from './paths.js';
 
 const AddressEntrySchema = z.object({
   name: z.string(),
@@ -19,17 +20,7 @@ const AddressBookSchema = z.object({
 export type AddressEntry = z.infer<typeof AddressEntrySchema>;
 type AddressBookData = z.infer<typeof AddressBookSchema>;
 
-const DATA_DIR = join(process.cwd(), 'data');
 const ADDRESS_BOOK_FILE = join(DATA_DIR, 'addressbook.json');
-
-/**
- * Ensure data directory exists
- */
-function ensureDataDir(): void {
-  if (!existsSync(DATA_DIR)) {
-    mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
 
 /**
  * Load address book from file

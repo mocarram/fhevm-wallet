@@ -2,10 +2,11 @@
  * Configuration storage
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { z } from 'zod';
 import { NetworkName } from '../core/network/NetworkConfig.js';
+import { DATA_DIR, ensureDataDir } from './paths.js';
 
 const ConfigSchema = z.object({
   defaultNetwork: z.enum(['mainnet', 'sepolia']).default('sepolia'),
@@ -14,17 +15,7 @@ const ConfigSchema = z.object({
 
 export type Config = z.infer<typeof ConfigSchema>;
 
-const DATA_DIR = join(process.cwd(), 'data');
 const CONFIG_FILE = join(DATA_DIR, 'config.json');
-
-/**
- * Ensure data directory exists
- */
-function ensureDataDir(): void {
-  if (!existsSync(DATA_DIR)) {
-    mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
 
 /**
  * Load configuration from file

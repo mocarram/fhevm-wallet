@@ -2,10 +2,10 @@
  * Audit logging for wallet operations
  */
 
-import { existsSync, mkdirSync, appendFileSync, readFileSync } from 'fs';
+import { appendFileSync, existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import { DATA_DIR, ensureDataDir } from './paths.js';
 
-const DATA_DIR = join(process.cwd(), 'data');
 const AUDIT_LOG_FILE = join(DATA_DIR, 'audit.log');
 
 export type AuditEvent =
@@ -16,15 +16,6 @@ export type AuditEvent =
   | 'TRANSFER'
   | 'TOKEN_ADDED'
   | 'TOKEN_REMOVED';
-
-/**
- * Ensure data directory exists
- */
-function ensureDataDir(): void {
-  if (!existsSync(DATA_DIR)) {
-    mkdirSync(DATA_DIR, { recursive: true });
-  }
-}
 
 /**
  * Format details as key=value pairs
