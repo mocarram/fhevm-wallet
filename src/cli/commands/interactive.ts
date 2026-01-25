@@ -891,12 +891,14 @@ async function handleBalance(): Promise<void> {
 
   if (wallets.length === 0) {
     console.log(error('\nNo wallets found. Create one first.'));
+    await waitForKey();
     return;
   }
 
   const tokens = listTokens(network);
   if (tokens.length === 0) {
     console.log(error(`\nNo tokens tracked on ${network}. Add one first.`));
+    await waitForKey();
     return;
   }
 
