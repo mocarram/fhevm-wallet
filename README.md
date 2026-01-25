@@ -12,6 +12,8 @@ A CLI wallet for managing encrypted ERC-7984 tokens using Zama's Fully Homomorph
 - **Address Book** - Save frequently used addresses with friendly names
 - **Multi-Network Support** - Works on Ethereum Sepolia testnet and Mainnet
 
+![fhEVM Wallet CLI](docs/images/main-menu.png)
+
 ## Quick Start
 
 Requires Node.js >= 22.

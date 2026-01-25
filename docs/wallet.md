@@ -20,6 +20,8 @@ data/wallets/
 | **Import mnemonic**    | Restore from 12-word recovery phrase      |
 | **Import private key** | Import existing wallet directly           |
 
+![Wallet Creation](images/wallet-create.png)
+
 ### Default Wallet
 
 Set a default wallet to skip selection prompts:
@@ -119,6 +121,8 @@ To avoid unnecessary decryption, the wallet uses **smart caching**:
 
 The wallet compares encrypted **handles** (cheap RPC call) rather than decrypting every time. If the handle hasn't changed, your balance hasn't changed.
 
+![View Balance](images/view-balance.png)
+
 ### Cache Storage
 
 Cached balances are stored in `data/balance-cache.json`:
@@ -151,6 +155,8 @@ Transaction history is synced from Etherscan API which fetches:
 - ETH transfers (amounts visible)
 
 The wallet merges local and synced transactions, preserving known amounts when available.
+
+![Transaction History](images/transaction-history.png)
 
 ## Data Directory
 
