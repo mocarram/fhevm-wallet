@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * FHE Wallet CLI - Entry Point
+ * fhEVM Wallet CLI - Entry Point
  *
  * A CLI wallet for managing encrypted ERC-7984 tokens using Zama's FHE technology.
  */

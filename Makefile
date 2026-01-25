@@ -10,13 +10,13 @@ YELLOW := \033[33m
 RESET := \033[0m
 
 # Docker image name
-IMAGE_NAME := fhe-wallet
-CONTAINER_NAME := fhe-wallet
+IMAGE_NAME := fhevm-wallet
+CONTAINER_NAME := fhevm-wallet
 
 ##@ General
 
 help: ## Show this help message
-	@awk 'BEGIN {FS = ":.*##"; printf "\n$(CYAN)FHE Wallet CLI$(RESET)\n\nUsage:\n  make $(GREEN)<target>$(RESET)\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(GREEN)%-15s$(RESET) %s\n", $$1, $$2 } /^##@/ { printf "\n$(YELLOW)%s$(RESET)\n", substr($$0, 5) }' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\n$(CYAN)fhEVM Wallet CLI$(RESET)\n\nUsage:\n  make $(GREEN)<target>$(RESET)\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(GREEN)%-15s$(RESET) %s\n", $$1, $$2 } /^##@/ { printf "\n$(YELLOW)%s$(RESET)\n", substr($$0, 5) }' $(MAKEFILE_LIST)
 
 ##@ Development
 
@@ -99,7 +99,7 @@ docker-clean: ## Remove Docker image and containers
 ##@ Docker Compose
 
 up: ## Start with docker-compose (interactive)
-	docker-compose run --rm fhe-wallet
+	docker-compose run --rm fhevm-wallet
 
 down: ## Stop docker-compose services
 	docker-compose down

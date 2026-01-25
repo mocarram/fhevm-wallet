@@ -56,7 +56,7 @@ export function registerTransferCommand(program: Command): void {
           if (tokens.length === 0) {
             console.log(
               error(
-                `No tokens tracked on ${network}. Add one with: fhe-wallet token add <address>`,
+                `No tokens tracked on ${network}. Add one with: fhevm-wallet token add <address>`,
               ),
             );
             return;
@@ -73,7 +73,7 @@ export function registerTransferCommand(program: Command): void {
             if (!token) {
               console.log(
                 error(
-                  `Token ${options.token} not tracked. Add it with: fhe-wallet token add ${options.token}`,
+                  `Token ${options.token} not tracked. Add it with: fhevm-wallet token add ${options.token}`,
                 ),
               );
               return;
@@ -210,7 +210,7 @@ export function registerTransferCommand(program: Command): void {
           if (!walletName) {
             const wallets = listWallets();
             if (wallets.length === 0) {
-              console.log(error('No wallets found. Create one with: fhe-wallet wallet create'));
+              console.log(error('No wallets found. Create one with: fhevm-wallet wallet create'));
               return;
             }
 

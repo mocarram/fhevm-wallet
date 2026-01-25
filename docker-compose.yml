@@ -1,10 +1,10 @@
 services:
-  fhe-wallet:
+  fhevm-wallet:
     build:
       context: .
       dockerfile: Dockerfile
-    image: fhe-wallet:latest
-    container_name: fhe-wallet
+    image: fhevm-wallet:latest
+    container_name: fhevm-wallet
     stdin_open: true
     tty: true
     env_file:

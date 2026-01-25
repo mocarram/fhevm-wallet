@@ -96,7 +96,7 @@ function printHeader(): void {
   const config = loadConfig();
   const defaultWallet = getDefaultWallet();
 
-  console.log(chalk.cyan.bold('\n  FHE Wallet - Interactive Mode\n'));
+  console.log(chalk.cyan.bold('\n  fhEVM Wallet - Interactive Mode\n'));
   console.log(
     chalk.dim(`  Network: ${config.defaultNetwork}  |  Wallet: ${defaultWallet || '(none)'}`),
   );

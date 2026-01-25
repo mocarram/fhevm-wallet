@@ -87,7 +87,7 @@ export function registerTokenCommands(program: Command): void {
       const tokens = listTokens(network);
 
       if (tokens.length === 0) {
-        console.log('No tokens tracked. Add one with: fhe-wallet token add <address>');
+        console.log('No tokens tracked. Add one with: fhevm-wallet token add <address>');
         return;
       }
 

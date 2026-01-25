@@ -1,4 +1,4 @@
-# FHE Wallet
+# fhEVM Wallet CLI
 
 A CLI wallet for managing encrypted ERC-7984 tokens using Zama's Fully Homomorphic Encryption (FHE) technology.
 
@@ -21,7 +21,7 @@ No local dependencies required - just Docker.
 ```bash
 # 1. Clone and enter the directory
 git clone <repository-url>
-cd fhe-wallet
+cd fhevm-wallet
 
 # 2. Create environment file
 make env
@@ -38,7 +38,7 @@ Requires Node.js >= 22.
 ```bash
 # 1. Clone and enter the directory
 git clone <repository-url>
-cd fhe-wallet
+cd fhevm-wallet
 
 # 2. Install dependencies
 make install
@@ -96,12 +96,12 @@ DEFAULT_WALLET=my-wallet
 
 ## Usage
 
-> **Note:** Examples below use `fhe-cli-wallet` which requires global installation via `npm link`.
+> **Note:** Examples below use `fhevm-wallet` which requires global installation via `npm link`.
 > Alternatively, use `npm run start --` or `make` commands as shown in the Quick Start section.
 
 ### Interactive Mode
 
-The easiest way to use FHE Wallet is through the interactive menu:
+The easiest way to use fhEVM Wallet is through the interactive menu:
 
 ```bash
 # Docker
@@ -118,70 +118,70 @@ Interactive mode provides a menu-driven interface with keyboard navigation for a
 
 ```bash
 # Create a new wallet
-fhe-cli-wallet wallet create [name]
-fhe-cli-wallet wallet create my-wallet --set-default
+fhevm-wallet wallet create [name]
+fhevm-wallet wallet create my-wallet --set-default
 
 # Import wallet from mnemonic
-fhe-cli-wallet wallet import [name] --mnemonic
+fhevm-wallet wallet import [name] --mnemonic
 
 # Import wallet from private key
-fhe-cli-wallet wallet import [name] --key
+fhevm-wallet wallet import [name] --key
 
 # List all wallets
-fhe-cli-wallet wallet list
+fhevm-wallet wallet list
 
 # Set default wallet
-fhe-cli-wallet wallet set-default <name>
+fhevm-wallet wallet set-default <name>
 
 # Remove a wallet
-fhe-cli-wallet wallet remove <name>
+fhevm-wallet wallet remove <name>
 ```
 
 ### Token Commands
 
 ```bash
 # Add a token to track
-fhe-cli-wallet token add [address]
-fhe-cli-wallet token add 0x... --network sepolia
+fhevm-wallet token add [address]
+fhevm-wallet token add 0x... --network sepolia
 
 # List tracked tokens
-fhe-cli-wallet token list
+fhevm-wallet token list
 
 # Remove a tracked token
-fhe-cli-wallet token remove <address>
+fhevm-wallet token remove <address>
 ```
 
 ### Balance Command
 
 ```bash
 # View balances for all tracked tokens
-fhe-cli-wallet balance
+fhevm-wallet balance
 
 # View balance with specific wallet
-fhe-cli-wallet balance --wallet my-wallet
+fhevm-wallet balance --wallet my-wallet
 
 # View balance for specific token
-fhe-cli-wallet balance --token 0x...
+fhevm-wallet balance --token 0x...
 
 # View balance on specific network
-fhe-cli-wallet balance --network mainnet
+fhevm-wallet balance --network mainnet
 ```
 
 ### Send Command
 
 ```bash
 # Send tokens (interactive prompts)
-fhe-cli-wallet send
+fhevm-wallet send
 
 # Send tokens with arguments
-fhe-cli-wallet send <to-address> <amount>
-fhe-cli-wallet send 0x... 100 --token 0x... --wallet my-wallet
+fhevm-wallet send <to-address> <amount>
+fhevm-wallet send 0x... 100 --token 0x... --wallet my-wallet
 
 # Send to a saved contact
-fhe-cli-wallet send --contact Alice 100
+fhevm-wallet send --contact Alice 100
 
 # Send on specific network
-fhe-cli-wallet send 0x... 50 --network mainnet
+fhevm-wallet send 0x... 50 --network mainnet
 ```
 
 ### Address Book
@@ -193,25 +193,25 @@ Save frequently used addresses for quick access:
 # Contacts appear when selecting recipients in Send flow
 
 # Send to a saved contact via CLI
-fhe-cli-wallet send --contact Alice 100
+fhevm-wallet send --contact Alice 100
 ```
 
 ### Configuration Command
 
 ```bash
 # View current configuration
-fhe-cli-wallet config --show
+fhevm-wallet config --show
 
 # Set default network
-fhe-cli-wallet config --network sepolia
+fhevm-wallet config --network sepolia
 ```
 
 ### Global Flags
 
 ```bash
 # Use specific network for any command
-fhe-cli-wallet balance --network mainnet
-fhe-cli-wallet send 0x... 100 -n sepolia
+fhevm-wallet balance --network mainnet
+fhevm-wallet send 0x... 100 -n sepolia
 ```
 
 ## How It Works
@@ -281,7 +281,7 @@ Run `make help` to see all available commands:
 ## Project Structure
 
 ```
-fhe-wallet/
+fhevm-wallet/
 ├── src/
 │   ├── cli/
 │   │   ├── commands/

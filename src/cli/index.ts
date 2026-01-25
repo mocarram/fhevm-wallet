@@ -18,7 +18,7 @@ export function createProgram(): Command {
   const program = new Command();
 
   program
-    .name('fhe-wallet')
+    .name('fhevm-wallet')
     .description('CLI wallet for managing encrypted ERC-7984 tokens using Zama FHE')
     .version('1.0.0');
 

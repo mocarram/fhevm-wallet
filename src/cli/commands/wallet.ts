@@ -255,7 +255,7 @@ export function registerWalletCommands(program: Command): void {
       const defaultWallet = getDefaultWallet();
 
       if (wallets.length === 0) {
-        console.log('No wallets found. Create one with: fhe-wallet wallet create');
+        console.log('No wallets found. Create one with: fhevm-wallet wallet create');
         return;
       }
 
