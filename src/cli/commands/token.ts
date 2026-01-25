@@ -74,7 +74,8 @@ export function registerTokenCommands(program: Command): void {
     .alias('ls')
     .description('List tracked tokens')
     .option('-n, --network <network>', 'Filter by network')
-    .action((options?: { network?: string }) => {
+    .option('--full', 'Show full token addresses')
+    .action((options?: { network?: string; full?: boolean }) => {
       let network: NetworkName | undefined;
       if (options?.network) {
         if (!isValidNetwork(options.network)) {
@@ -97,7 +98,13 @@ export function registerTokenCommands(program: Command): void {
       });
 
       for (const t of tokens) {
-        table.push([t.symbol, t.name, formatAddress(t.address), t.network, t.decimals.toString()]);
+        table.push([
+          t.symbol,
+          t.name,
+          options?.full ? t.address : formatAddress(t.address),
+          t.network,
+          t.decimals.toString(),
+        ]);
       }
 
       console.log(table.toString());

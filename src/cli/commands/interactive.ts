@@ -436,7 +436,7 @@ async function handleListWallets(): Promise<void> {
       name: 'action',
       message: 'Options:',
       choices: [
-        { name: '🔍  Show full addresses', value: 'full' },
+        { name: '🔍 Show full addresses', value: 'full' },
         { name: '← Back', value: 'back' },
       ],
     },
@@ -616,17 +616,43 @@ async function handleListTokens(): Promise<void> {
     return;
   }
 
-  const table = new Table({
-    head: ['Symbol', 'Name', 'Address', 'Network', 'Decimals'],
-    style: { head: ['cyan'] },
-  });
+  const displayTokenTable = (showFull: boolean): void => {
+    const table = new Table({
+      head: ['Symbol', 'Name', 'Address', 'Network', 'Decimals'],
+      style: { head: ['cyan'] },
+    });
 
-  for (const t of tokens) {
-    table.push([t.symbol, t.name, formatAddress(t.address), t.network, t.decimals.toString()]);
+    for (const t of tokens) {
+      table.push([
+        t.symbol,
+        t.name,
+        showFull ? t.address : formatAddress(t.address),
+        t.network,
+        t.decimals.toString(),
+      ]);
+    }
+
+    console.log();
+    console.log(table.toString());
+  };
+
+  displayTokenTable(false);
+
+  const { action } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'action',
+      message: 'Options:',
+      choices: [
+        { name: '🔍 Show full addresses', value: 'full' },
+        { name: '← Back', value: 'back' },
+      ],
+    },
+  ]);
+
+  if (action === 'full') {
+    displayTokenTable(true);
   }
-
-  console.log();
-  console.log(table.toString());
 }
 
 async function handleRemoveToken(): Promise<void> {
