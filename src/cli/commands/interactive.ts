@@ -32,6 +32,7 @@ import {
 } from '../../core/token/TokenService.js';
 import { NetworkName, DEFAULT_RPC_URLS } from '../../core/network/NetworkConfig.js';
 import { getProvider, clearProviderCache } from '../../core/network/ProviderFactory.js';
+import { checkFheReadiness } from '../../core/fhe/FheService.js';
 import { getEnvVar, removeEnvVar, saveEnvVar } from '../../storage/paths.js';
 import {
   loadConfig,
@@ -44,6 +45,7 @@ import {
   formatAddress,
   formatDate,
   formatTokenAmount,
+  formatNetworkName,
   parseTokenAmount,
   success,
   error,
@@ -96,7 +98,11 @@ type MenuChoice =
   | 'rpc-reset'
   | 'etherscan-view'
   | 'etherscan-set'
-  | 'etherscan-remove';
+  | 'etherscan-remove'
+  | 'settings-mainnet-api'
+  | 'mainnet-api-view'
+  | 'mainnet-api-set'
+  | 'mainnet-api-remove';
 
 function clearScreen(): void {
   console.clear();
@@ -105,11 +111,10 @@ function clearScreen(): void {
 function printHeader(): void {
   const config = loadConfig();
   const defaultWallet = getDefaultWallet();
+  const networkDisplay = formatNetworkName(config.defaultNetwork);
 
   console.log(chalk.cyan.bold('\n  fhEVM Wallet - Interactive Mode\n'));
-  console.log(
-    chalk.dim(`  Network: ${config.defaultNetwork}  |  Wallet: ${defaultWallet || '(none)'}`),
-  );
+  console.log(chalk.dim(`  Network: ${networkDisplay}  |  Wallet: ${defaultWallet || '(none)'}`));
   console.log(chalk.dim('  ─'.repeat(15)));
 }
 
@@ -231,6 +236,7 @@ async function settingsMenu(): Promise<MenuChoice> {
       choices: [
         { name: '🌐  RPC Endpoints', value: 'settings-rpc' },
         { name: '🔑  Etherscan API Key', value: 'settings-etherscan' },
+        { name: '🔐  Zama Mainnet API Key', value: 'settings-mainnet-api' },
         new inquirer.Separator(),
         { name: '← Back', value: 'back' },
       ],
@@ -406,6 +412,75 @@ async function handleRemoveEtherscanKey(): Promise<void> {
     console.log(success('Etherscan API key removed'));
   } else {
     console.log('No Etherscan API key configured');
+  }
+}
+
+async function zamaApiKeyMenu(): Promise<MenuChoice> {
+  const { choice } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'choice',
+      message: 'Zama Mainnet API Key',
+      choices: [
+        { name: '👁️   View API Key Status', value: 'mainnet-api-view' },
+        { name: '✏️   Set API Key', value: 'mainnet-api-set' },
+        { name: '🗑️   Remove API Key', value: 'mainnet-api-remove' },
+        new inquirer.Separator(),
+        { name: '← Back', value: 'back' },
+      ],
+      pageSize: 10,
+      loop: false,
+    },
+  ]);
+  return choice;
+}
+
+async function handleViewZamaApiKey(): Promise<void> {
+  const apiKey = getEnvVar('ZAMA_MAINNET_API_KEY');
+
+  console.log();
+  if (apiKey) {
+    const masked = '****' + apiKey.slice(-4);
+    console.log(`Zama Mainnet API Key: ${chalk.cyan(masked)} ${chalk.green('(set)')}`);
+  } else {
+    console.log(`Zama Mainnet API Key: ${chalk.dim('Not configured')}`);
+  }
+  console.log();
+  console.log(chalk.dim('Required for mainnet FHE operations (encryption/decryption).'));
+  console.log(chalk.dim('Get your API key from Zama to use the mainnet relayer.'));
+  console.log();
+}
+
+async function handleSetZamaApiKey(): Promise<void> {
+  const { apiKey } = await inquirer.prompt([
+    {
+      type: 'password',
+      name: 'apiKey',
+      message: 'Enter Zama Mainnet API Key:',
+      mask: '*',
+      validate: (input) => {
+        if (!input.trim()) {
+          return 'API key cannot be empty';
+        }
+        return true;
+      },
+    },
+  ]);
+
+  saveEnvVar('ZAMA_MAINNET_API_KEY', apiKey.trim());
+
+  console.log();
+  console.log(success('Zama Mainnet API key saved'));
+}
+
+async function handleRemoveZamaApiKey(): Promise<void> {
+  const removed = removeEnvVar('ZAMA_MAINNET_API_KEY');
+
+  console.log();
+  if (removed) {
+    console.log(success('Zama Mainnet API key removed'));
+  } else {
+    console.log('No Zama Mainnet API key configured');
   }
 }
 
@@ -914,7 +989,7 @@ async function handleChangeNetwork(): Promise<void> {
           value: 'sepolia',
         },
         {
-          name: `Mainnet${currentNetwork === 'mainnet' ? ' - current' : ''}`,
+          name: `Mainnet (beta)${currentNetwork === 'mainnet' ? ' - current' : ''}`,
           value: 'mainnet',
         },
       ],
@@ -1093,6 +1168,14 @@ async function handleBalance(): Promise<void> {
     return;
   }
 
+  // Check if FHE operations are ready for this network
+  const fheError = checkFheReadiness(network);
+  if (fheError) {
+    console.log(error(`\n${fheError}`));
+    await waitForKey();
+    return;
+  }
+
   const tokens = listTokens(network);
   if (tokens.length === 0) {
     console.log(error(`\nNo tokens tracked on ${network}. Add one first.`));
@@ -1157,7 +1240,7 @@ async function handleBalance(): Promise<void> {
     '',
     bold(`Balances for ${walletName}`),
     chalk.dim(`Address: ${wallet.address}`),
-    chalk.dim(`Network: ${network}`),
+    chalk.dim(`Network: ${formatNetworkName(network)}`),
     '',
   ].join('\n');
 
@@ -1242,6 +1325,13 @@ async function handleSend(): Promise<void> {
 
   if (wallets.length === 0) {
     console.log(error('\nNo wallets found. Create one first.'));
+    return;
+  }
+
+  // Check if FHE operations are ready for this network
+  const fheError = checkFheReadiness(network);
+  if (fheError) {
+    console.log(error(`\n${fheError}`));
     return;
   }
 
@@ -1362,7 +1452,7 @@ async function handleSend(): Promise<void> {
   console.log(`  To:      ${to}`);
   console.log(`  Amount:  ${amount} ${token.symbol}`);
   console.log(`  Token:   ${token.name}`);
-  console.log(`  Network: ${network}`);
+  console.log(`  Network: ${formatNetworkName(network)}`);
   console.log();
 
   const { confirm } = await inquirer.prompt([
@@ -1624,6 +1714,33 @@ async function runInteractiveMode(): Promise<void> {
                           break;
                         case 'back':
                           inEtherscanMenu = false;
+                          break;
+                      }
+                    }
+                    break;
+                  }
+                  case 'settings-mainnet-api': {
+                    let inZamaApiMenu = true;
+                    while (inZamaApiMenu) {
+                      clearScreen();
+                      printHeader();
+                      const zamaApiChoice = await zamaApiKeyMenu();
+
+                      switch (zamaApiChoice) {
+                        case 'mainnet-api-view':
+                          await handleViewZamaApiKey();
+                          await waitForKey();
+                          break;
+                        case 'mainnet-api-set':
+                          await handleSetZamaApiKey();
+                          await waitForKey();
+                          break;
+                        case 'mainnet-api-remove':
+                          await handleRemoveZamaApiKey();
+                          await waitForKey();
+                          break;
+                        case 'back':
+                          inZamaApiMenu = false;
                           break;
                       }
                     }

@@ -78,3 +78,21 @@ export function clearFheInstanceCache(chainId?: bigint): void {
 export function isFheSupported(chainId: bigint): boolean {
   return isSupportedChainId(chainId);
 }
+
+/**
+ * Check if mainnet FHE operations are ready (API key is set)
+ */
+export function isMainnetReady(): boolean {
+  return !!process.env.ZAMA_MAINNET_API_KEY;
+}
+
+/**
+ * Check if FHE operations can proceed for the given network
+ * Returns an error message if not ready, or null if ready
+ */
+export function checkFheReadiness(network: 'mainnet' | 'sepolia'): string | null {
+  if (network === 'mainnet' && !isMainnetReady()) {
+    return 'Mainnet FHE operations require a Zama API key.\nSet it via: fhevm-wallet interactive → Configuration → Settings → Zama Mainnet API Key';
+  }
+  return null;
+}

@@ -9,12 +9,14 @@ import chalk from 'chalk';
 import { loadWallet, listWallets, hasWallet } from '../../core/wallet/index.js';
 import { listTokens, getToken, TokenEntry } from '../../core/token/TokenRegistry.js';
 import { getDecryptedBalance } from '../../core/token/TokenService.js';
+import { checkFheReadiness } from '../../core/fhe/FheService.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getProvider } from '../../core/network/ProviderFactory.js';
 import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.js';
 import {
   formatTokenAmount,
   formatAddress,
+  formatNetworkName,
   error,
   warning,
   bold,
@@ -42,6 +44,13 @@ export function registerBalanceCommand(program: Command): void {
               return;
             }
             network = options.network;
+          }
+
+          // Check if FHE operations are ready for this network
+          const fheError = checkFheReadiness(network);
+          if (fheError) {
+            console.log(error(fheError));
+            return;
           }
 
           // Determine wallet
@@ -132,7 +141,7 @@ export function registerBalanceCommand(program: Command): void {
             '',
             bold(`Balances for ${selectedWallet}`),
             chalk.dim(`Address: ${wallet.address}`),
-            chalk.dim(`Network: ${network}`),
+            chalk.dim(`Network: ${formatNetworkName(network)}`),
             '',
           ].join('\n');
 

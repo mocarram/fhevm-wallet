@@ -14,8 +14,16 @@ import {
   recordTransferTransaction,
 } from '../../core/token/TokenService.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
+import { checkFheReadiness } from '../../core/fhe/FheService.js';
 import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.js';
-import { parseTokenAmount, formatAddress, error, success, bold } from '../../utils/formatting.js';
+import {
+  parseTokenAmount,
+  formatAddress,
+  formatNetworkName,
+  error,
+  success,
+  bold,
+} from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork, isValidAmount } from '../../utils/validation.js';
 import { listAddresses, getAddressByName } from '../../storage/AddressBook.js';
 
@@ -49,6 +57,13 @@ export function registerTransferCommand(program: Command): void {
               return;
             }
             network = options.network;
+          }
+
+          // Check if FHE operations are ready for this network
+          const fheError = checkFheReadiness(network);
+          if (fheError) {
+            console.log(error(fheError));
+            return;
           }
 
           // Get tokens for this network
@@ -273,7 +288,7 @@ export function registerTransferCommand(program: Command): void {
           console.log(`  To:      ${to}`);
           console.log(`  Amount:  ${amount} ${token.symbol}`);
           console.log(`  Token:   ${token.name}`);
-          console.log(`  Network: ${network}`);
+          console.log(`  Network: ${formatNetworkName(network)}`);
           console.log();
 
           const { confirm } = await inquirer.prompt([

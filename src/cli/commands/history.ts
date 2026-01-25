@@ -21,7 +21,7 @@ import {
 import { listTokens, TokenEntry } from '../../core/token/TokenRegistry.js';
 import { getDefaultNetwork } from '../../storage/ConfigStore.js';
 import { getProvider, clearProviderForNetwork } from '../../core/network/ProviderFactory.js';
-import { formatAddress, error, bold } from '../../utils/formatting.js';
+import { formatAddress, formatNetworkName, error, bold } from '../../utils/formatting.js';
 import { isValidNetwork, isValidAddress } from '../../utils/validation.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getNameByAddress } from '../../storage/AddressBook.js';
@@ -334,7 +334,7 @@ export function registerHistoryCommand(program: Command): void {
         console.log();
         console.log(bold('Transaction History'));
         console.log(chalk.dim(`Wallet: ${formatAddress(walletAddress)}`));
-        console.log(chalk.dim(`Network: ${network}`));
+        console.log(chalk.dim(`Network: ${formatNetworkName(network)}`));
         console.log();
 
         displayTransactionTable(transactions, walletAddress);
@@ -389,7 +389,7 @@ export async function displayHistoryInteractive(
   console.log();
   console.log(bold('Transaction History'));
   console.log(chalk.dim(`Wallet: ${formatAddress(walletAddress)}`));
-  console.log(chalk.dim(`Network: ${network}`));
+  console.log(chalk.dim(`Network: ${formatNetworkName(network)}`));
   console.log();
 
   displayTransactionTable(transactions, walletAddress);
