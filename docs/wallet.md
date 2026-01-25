@@ -7,7 +7,7 @@ Wallets are stored locally using the standard Ethereum keystore format with scry
 ### Storage Structure
 
 ```
-data/wallets/
+~/.fhevm-wallet/wallets/
 ├── my-wallet.json       # Encrypted keystore
 └── my-wallet.meta.json  # Metadata (name, address, creation date)
 ```
@@ -34,7 +34,7 @@ Tokens are tracked per network. Adding a token fetches its metadata (name, symbo
 
 ### Storage
 
-Tracked tokens are stored in `data/tokens.json`:
+Tracked tokens are stored in `~/.fhevm-wallet/tokens.json`:
 
 ```json
 {
@@ -67,7 +67,7 @@ Save frequently used addresses with friendly names for quick access during trans
 
 ### Storage
 
-Contacts are stored in `data/addressbook.json`:
+Contacts are stored in `~/.fhevm-wallet/addressbook.json`:
 
 ```json
 {
@@ -83,7 +83,7 @@ Contacts are stored in `data/addressbook.json`:
 
 ## Configuration
 
-Configuration is stored in `data/config.json`:
+Configuration is stored in `~/.fhevm-wallet/config.json`:
 
 | Setting          | Description                       | Default   |
 | ---------------- | --------------------------------- | --------- |
@@ -125,7 +125,7 @@ The wallet compares encrypted **handles** (cheap RPC call) rather than decryptin
 
 ### Cache Storage
 
-Cached balances are stored in `data/balance-cache.json`:
+Cached balances are stored in `~/.fhevm-wallet/balance-cache.json`:
 
 ```json
 {
@@ -160,10 +160,10 @@ The wallet merges local and synced transactions, preserving known amounts when a
 
 ## Data Directory
 
-All data is stored in `./data` relative to where you run the CLI:
+All data is stored centrally in `~/.fhevm-wallet` in your home directory. This allows you to run the CLI from any directory while accessing the same wallets and configuration.
 
 ```
-data/
+~/.fhevm-wallet/
 ├── wallets/              # Encrypted keystores
 ├── config.json           # CLI configuration
 ├── tokens.json           # Tracked tokens
@@ -172,4 +172,4 @@ data/
 └── balance-cache.json    # Cached decrypted balances
 ```
 
-Back up `data/wallets/` to protect your encrypted keys.
+Back up `~/.fhevm-wallet/wallets/` to protect your encrypted keys.

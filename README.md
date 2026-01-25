@@ -231,13 +231,20 @@ When creating a new wallet, a 12-word mnemonic recovery phrase is displayed. **W
 
 ### Data Storage
 
-All wallet data is stored locally in the `./data` directory relative to where you run the CLI:
+All wallet data is stored in `~/.fhevm-wallet` in your home directory:
 
-- `data/wallets/` - Encrypted keystore files
-- `data/config.json` - CLI configuration
-- `data/tokens.json` - List of tracked tokens
+```
+~/.fhevm-wallet/
+├── wallets/           # Encrypted keystore files
+├── config.json        # CLI configuration
+├── tokens.json        # Tracked tokens
+├── addressbook.json   # Saved contacts
+└── balance-cache.json # Cached balances
+```
 
-Consider backing up the `data/wallets/` directory and keeping it secure.
+This centralized location means you can run `fhevm-wallet` from any directory and access the same wallets and configuration.
+
+Consider backing up `~/.fhevm-wallet/wallets/` to protect your encrypted keys.
 
 ### Best Practices
 
