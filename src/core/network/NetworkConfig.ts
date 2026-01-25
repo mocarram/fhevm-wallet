@@ -53,9 +53,9 @@ export function getNetworkConfig(network: NetworkName): NetworkConfig {
  */
 function getRpcUrl(network: NetworkName): string {
   if (network === 'mainnet') {
-    return process.env.MAINNET_RPC_URL || 'https://eth.drpc.org';
+    return process.env.MAINNET_RPC_URL || 'https://eth-mainnet.public.blastapi.io';
   }
-  return process.env.SEPOLIA_RPC_URL || 'https://rpc.sepolia.org';
+  return process.env.SEPOLIA_RPC_URL || 'https://ethereum-sepolia-public.nodies.app';
 }
 
 /**

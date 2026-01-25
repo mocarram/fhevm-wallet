@@ -100,7 +100,7 @@ function printHeader(): void {
   console.log(
     chalk.dim(`  Network: ${config.defaultNetwork}  |  Wallet: ${defaultWallet || '(none)'}`),
   );
-  console.log(chalk.dim('  ─'.repeat(30)));
+  console.log(chalk.dim('  ─'.repeat(15)));
 }
 
 async function mainMenu(): Promise<MenuChoice> {
