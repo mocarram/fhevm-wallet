@@ -408,23 +408,43 @@ async function handleListWallets(): Promise<void> {
     return;
   }
 
-  const table = new Table({
-    head: ['Name', 'Address', 'Created', 'Default'],
-    style: { head: ['cyan'] },
-  });
+  const displayWalletTable = (showFull: boolean): void => {
+    const table = new Table({
+      head: ['Name', 'Address', 'Created', 'Default'],
+      style: { head: ['cyan'] },
+    });
 
-  for (const w of wallets) {
-    const isDefault = w.name === defaultWallet;
-    table.push([
-      w.name,
-      formatAddress(w.address),
-      formatDate(w.createdAt),
-      isDefault ? chalk.green('*') : '',
-    ]);
+    for (const w of wallets) {
+      const isDefault = w.name === defaultWallet;
+      table.push([
+        w.name,
+        showFull ? w.address : formatAddress(w.address),
+        formatDate(w.createdAt),
+        isDefault ? chalk.green('*') : '',
+      ]);
+    }
+
+    console.log();
+    console.log(table.toString());
+  };
+
+  displayWalletTable(false);
+
+  const { action } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'action',
+      message: 'Options:',
+      choices: [
+        { name: '🔍  Show full addresses', value: 'full' },
+        { name: '← Back', value: 'back' },
+      ],
+    },
+  ]);
+
+  if (action === 'full') {
+    displayWalletTable(true);
   }
-
-  console.log();
-  console.log(table.toString());
 }
 
 async function handleRemoveWallet(): Promise<void> {

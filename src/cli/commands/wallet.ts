@@ -250,7 +250,8 @@ export function registerWalletCommands(program: Command): void {
     .command('list')
     .alias('ls')
     .description('List all wallets')
-    .action(() => {
+    .option('--full', 'Show full wallet addresses')
+    .action((options: { full?: boolean }) => {
       const wallets = listWallets();
       const defaultWallet = getDefaultWallet();
 
@@ -268,7 +269,7 @@ export function registerWalletCommands(program: Command): void {
         const isDefault = w.name === defaultWallet;
         table.push([
           w.name,
-          formatAddress(w.address),
+          options.full ? w.address : formatAddress(w.address),
           formatDate(w.createdAt),
           isDefault ? chalk.green('*') : '',
         ]);
