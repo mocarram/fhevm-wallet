@@ -1,12 +1,12 @@
 {
   "name": "fhevm-wallet",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CLI wallet for managing encrypted ERC-7984 tokens using Zama's FHE technology",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "fhevm-wallet": "./dist/index.js",
-    "fhew": "./dist/index.js"
+    "fhevm-wallet": "dist/index.js",
+    "fhew": "dist/index.js"
   },
   "files": [
     "dist",
@@ -68,7 +68,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mocarram/fhevm-wallet.git"
+    "url": "git+https://github.com/mocarram/fhevm-wallet.git"
   },
   "homepage": "https://github.com/mocarram/fhevm-wallet#readme",
   "bugs": {
