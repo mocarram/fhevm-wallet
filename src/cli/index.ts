@@ -12,7 +12,8 @@ import { registerHistoryCommand } from './commands/history.js';
 import { registerInteractiveCommand } from './commands/interactive.js';
 import { updateConfig, loadConfig } from '../storage/ConfigStore.js';
 import { isValidNetwork } from '../utils/validation.js';
-import { NetworkName } from '../core/network/NetworkConfig.js';
+import { NetworkName, DEFAULT_RPC_URLS } from '../core/network/NetworkConfig.js';
+import { saveEnvVar, getEnvVar } from '../storage/paths.js';
 
 export function createProgram(): Command {
   const program = new Command();
@@ -51,24 +52,85 @@ export function createProgram(): Command {
     .description('View or update configuration')
     .option('--network <network>', 'Set default network')
     .option('--show', 'Show current configuration')
-    .action((options: { network?: string; show?: boolean }) => {
-      if (options.show || !options.network) {
-        const config = loadConfig();
-        console.log('Current configuration:');
-        console.log(`  Default network: ${config.defaultNetwork}`);
-        console.log(`  Default wallet:  ${config.defaultWallet || '(none)'}`);
-        return;
-      }
+    .option('--rpc-mainnet <url>', 'Set Mainnet RPC URL')
+    .option('--rpc-sepolia <url>', 'Set Sepolia RPC URL')
+    .option('--etherscan-key <key>', 'Set Etherscan API key')
+    .option('--zama-key <key>', 'Set Zama Mainnet API key')
+    .action(
+      (options: {
+        network?: string;
+        show?: boolean;
+        rpcMainnet?: string;
+        rpcSepolia?: string;
+        etherscanKey?: string;
+        zamaKey?: string;
+      }) => {
+        const hasSetOption =
+          options.network ||
+          options.rpcMainnet ||
+          options.rpcSepolia ||
+          options.etherscanKey ||
+          options.zamaKey;
 
-      if (options.network) {
-        if (!isValidNetwork(options.network)) {
-          console.log(chalk.red('Invalid network. Use "sepolia" or "mainnet"'));
+        if (options.show || !hasSetOption) {
+          const config = loadConfig();
+          const mainnetRpc = getEnvVar('MAINNET_RPC_URL');
+          const sepoliaRpc = getEnvVar('SEPOLIA_RPC_URL');
+          const etherscanKey = getEnvVar('ETHERSCAN_API_KEY');
+          const zamaKey = getEnvVar('ZAMA_MAINNET_API_KEY');
+
+          console.log('Current configuration:');
+          console.log(`  Default network: ${config.defaultNetwork}`);
+          console.log(`  Default wallet:  ${config.defaultWallet || '(none)'}`);
+          console.log();
+          console.log('RPC Endpoints:');
+          console.log(
+            `  Mainnet: ${mainnetRpc || DEFAULT_RPC_URLS.mainnet}${mainnetRpc ? chalk.cyan(' (custom)') : chalk.dim(' (default)')}`,
+          );
+          console.log(
+            `  Sepolia: ${sepoliaRpc || DEFAULT_RPC_URLS.sepolia}${sepoliaRpc ? chalk.cyan(' (custom)') : chalk.dim(' (default)')}`,
+          );
+          console.log();
+          console.log('API Keys:');
+          console.log(
+            `  Etherscan: ${etherscanKey ? '••••' + etherscanKey.slice(-4) : chalk.dim('(not set)')}`,
+          );
+          console.log(
+            `  Zama:      ${zamaKey ? '••••' + zamaKey.slice(-4) : chalk.dim('(not set)')}`,
+          );
           return;
         }
-        updateConfig({ defaultNetwork: options.network as NetworkName });
-        console.log(chalk.green(`Default network set to ${options.network}`));
-      }
-    });
+
+        if (options.network) {
+          if (!isValidNetwork(options.network)) {
+            console.log(chalk.red('Invalid network. Use "sepolia" or "mainnet"'));
+            return;
+          }
+          updateConfig({ defaultNetwork: options.network as NetworkName });
+          console.log(chalk.green(`Default network set to ${options.network}`));
+        }
+
+        if (options.rpcMainnet) {
+          saveEnvVar('MAINNET_RPC_URL', options.rpcMainnet);
+          console.log(chalk.green('Mainnet RPC URL updated'));
+        }
+
+        if (options.rpcSepolia) {
+          saveEnvVar('SEPOLIA_RPC_URL', options.rpcSepolia);
+          console.log(chalk.green('Sepolia RPC URL updated'));
+        }
+
+        if (options.etherscanKey) {
+          saveEnvVar('ETHERSCAN_API_KEY', options.etherscanKey);
+          console.log(chalk.green('Etherscan API key saved'));
+        }
+
+        if (options.zamaKey) {
+          saveEnvVar('ZAMA_MAINNET_API_KEY', options.zamaKey);
+          console.log(chalk.green('Zama Mainnet API key saved'));
+        }
+      },
+    );
 
   return program;
 }

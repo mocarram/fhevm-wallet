@@ -3,9 +3,16 @@
   "version": "1.0.0",
   "description": "CLI wallet for managing encrypted ERC-7984 tokens using Zama's FHE technology",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
-    "fhevm-wallet": "./dist/index.js"
+    "fhevm-wallet": "./dist/index.js",
+    "fhew": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -18,7 +25,8 @@
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
     "format:check": "prettier --check src/",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
   },
   "dependencies": {
     "@zama-fhe/relayer-sdk": "0.4.0-4",
@@ -50,7 +58,20 @@
     "zama",
     "erc-7984",
     "confidential",
-    "cli"
+    "cli",
+    "fhevm",
+    "fhevm-wallet",
+    "homomorphic-encryption",
+    "privacy"
   ],
-  "license": "MIT"
+  "author": "Mocarram",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mocarram/fhevm-wallet.git"
+  },
+  "homepage": "https://github.com/mocarram/fhevm-wallet#readme",
+  "bugs": {
+    "url": "https://github.com/mocarram/fhevm-wallet/issues"
+  }
 }
