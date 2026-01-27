@@ -20,12 +20,16 @@ import {
 } from '../../core/token/TokenService.js';
 import { listTokens, TokenEntry } from '../../core/token/TokenRegistry.js';
 import { getDefaultNetwork } from '../../storage/ConfigStore.js';
-import { getProvider, clearProviderForNetwork } from '../../core/network/ProviderFactory.js';
+import {
+  getProvider,
+  clearProviderForNetwork,
+  clearProviderCache,
+} from '../../core/network/ProviderFactory.js';
 import { formatAddress, formatNetworkName, error, bold } from '../../utils/formatting.js';
 import { isValidNetwork, isValidAddress } from '../../utils/validation.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getNameByAddress } from '../../storage/AddressBook.js';
-import { saveEnvVar, loadEnv } from '../../storage/paths.js';
+import { saveEnvVar, getEnvVar, loadEnv } from '../../storage/paths.js';
 
 /**
  * Format date for display
@@ -196,6 +200,7 @@ async function handleSyncError(
       message: 'How would you like to proceed?',
       choices: [
         { name: 'Set Etherscan API key (recommended)', value: 'set_key' },
+        { name: 'Set custom RPC URL', value: 'set_rpc' },
         { name: 'Skip sync for now', value: 'skip' },
       ],
     },
@@ -220,6 +225,43 @@ async function handleSyncError(
     const retrySpinner = ora('Retrying sync with Etherscan...').start();
     try {
       const newTxCount = await syncTransactions(walletAddress, network, tokens, 'etherscan');
+      retrySpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+    } catch (retryErr) {
+      retrySpinner.fail('Sync failed');
+      console.log(error(retryErr instanceof Error ? retryErr.message : 'Unknown error'));
+    }
+  }
+  if (action === 'set_rpc') {
+    const envKey = network === 'mainnet' ? 'MAINNET_RPC_URL' : 'SEPOLIA_RPC_URL';
+    const currentCustom = getEnvVar(envKey);
+
+    const { url } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'url',
+        message: `Enter ${network} RPC URL:`,
+        default: currentCustom,
+        validate: (input: string) => {
+          if (!input.trim()) return 'URL cannot be empty';
+          try {
+            new URL(input.trim());
+            return true;
+          } catch {
+            return 'Please enter a valid URL';
+          }
+        },
+      },
+    ]);
+
+    saveEnvVar(envKey, url.trim());
+    loadEnv();
+    clearProviderCache();
+    console.log(chalk.green(`✓ ${network} RPC URL saved`));
+
+    // Retry with new RPC
+    const retrySpinner = ora('Retrying sync with new RPC...').start();
+    try {
+      const newTxCount = await syncTransactions(walletAddress, network, tokens, 'rpc');
       retrySpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
     } catch (retryErr) {
       retrySpinner.fail('Sync failed');
