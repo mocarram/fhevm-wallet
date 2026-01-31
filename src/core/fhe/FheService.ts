@@ -9,7 +9,12 @@ import {
   MainnetConfig,
   SepoliaConfig,
 } from '@zama-fhe/relayer-sdk/node';
-import { CHAIN_IDS, isSupportedChainId } from '../network/NetworkConfig.js';
+import {
+  CHAIN_IDS,
+  isSupportedChainId,
+  getNetworkConfig,
+  getNetworkNameFromChainId,
+} from '../network/NetworkConfig.js';
 
 // Cache instances per chain ID
 const fheInstanceCache = new Map<bigint, FhevmInstance>();
@@ -29,6 +34,9 @@ export async function getFheInstance(chainId: bigint): Promise<FhevmInstance> {
 
   let config: FhevmInstanceConfig;
 
+  const networkName = getNetworkNameFromChainId(chainId)!;
+  const { rpcUrl } = getNetworkConfig(networkName);
+
   if (chainId === CHAIN_IDS.MAINNET) {
     const apiKey = process.env.ZAMA_MAINNET_API_KEY;
     if (!apiKey) {
@@ -36,13 +44,17 @@ export async function getFheInstance(chainId: bigint): Promise<FhevmInstance> {
     }
     config = {
       ...MainnetConfig,
+      network: rpcUrl,
       auth: {
         __type: 'ApiKeyHeader',
         value: apiKey,
       },
     };
   } else {
-    config = SepoliaConfig;
+    config = {
+      ...SepoliaConfig,
+      network: rpcUrl,
+    };
   }
 
   const instance = await createInstance(config);
