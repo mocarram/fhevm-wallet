@@ -1,6 +1,6 @@
 {
   "name": "fhevm-wallet",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "CLI wallet for managing encrypted ERC-7984 tokens using Zama's FHE technology",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
