@@ -54,8 +54,8 @@ describe('WalletManager', () => {
     expect(fromMnemonic).not.toBe(fromPk);
   });
 
-  it('loadWallet rejects with wrong password', async () => {
+  it('loadWallet wraps wrong-password errors as "Invalid password"', async () => {
     await createWallet('main', PASSWORD);
-    await expect(loadWallet('main', 'wrong-password')).rejects.toThrow(/password/i);
+    await expect(loadWallet('main', 'wrong-password')).rejects.toThrow('Invalid password');
   });
 });
