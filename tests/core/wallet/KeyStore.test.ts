@@ -38,10 +38,8 @@ describe('KeyStore', () => {
     expect(a.address).toBe(b.address);
   });
 
-  it('decryptKeystore rejects on bad password', async () => {
+  it('decryptKeystore wraps wrong-password errors as "Invalid password"', async () => {
     const { keystore } = await createNewWallet(WEAK_PASSWORD);
-    // ethers v6.16 raises "incorrect password ..."; older releases raised "invalid password".
-    // KeyStore.ts:86 only rewrites the latter, so we just assert a password-related rejection.
-    await expect(decryptKeystore(keystore, 'wrong-password')).rejects.toThrow(/password/i);
+    await expect(decryptKeystore(keystore, 'wrong-password')).rejects.toThrow('Invalid password');
   });
 });

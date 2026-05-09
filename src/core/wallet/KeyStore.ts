@@ -83,7 +83,7 @@ export async function decryptKeystore(
   try {
     return await Wallet.fromEncryptedJson(keystore, password);
   } catch (error) {
-    if (error instanceof Error && error.message.includes('invalid password')) {
+    if (error instanceof Error && /(?:in)?correct password|invalid password/i.test(error.message)) {
       throw new Error('Invalid password');
     }
     throw error;
