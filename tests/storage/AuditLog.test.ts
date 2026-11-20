@@ -56,6 +56,12 @@ describe('AuditLog', () => {
     expect(line).not.toContain('SUPERSECRETAPIKEY123');
   });
 
+  it('strips C1 controls, line separators and bidi overrides from values', () => {
+    logEvent('TOKEN_ADDED', { symbol: 'U\u202eSD\u009bC\u2028x' });
+    const [line] = getAuditLog();
+    expect(line).not.toMatch(/[\u202e\u009b\u2028]/);
+  });
+
   it('cannot be tricked into writing an extra line', () => {
     logEvent('TOKEN_ADDED', { symbol: 'X\n[2026-01-01T00:00:00Z] WALLET_EXPORTED name=main' });
     expect(getAuditLog()).toHaveLength(1);

@@ -5,13 +5,11 @@
 import { existsSync, readFileSync } from 'fs';
 import { appendSecureFile } from './secureFs.js';
 import { redactSecrets } from '../utils/redact.js';
+import { stripUnsafeChars } from '../utils/text.js';
 import { join } from 'path';
 import { DATA_DIR, ensureDataDir } from './paths.js';
 
 const AUDIT_LOG_FILE = join(DATA_DIR, 'audit.log');
-
-// eslint-disable-next-line no-control-regex
-const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
 
 export type AuditEvent =
   | 'WALLET_CREATED'
@@ -31,9 +29,9 @@ export type AuditEvent =
 function formatDetails(details: Record<string, string>): string {
   // Values can come from user input, contracts or error text: never let a secret reach
   // the log, and drop line breaks and control characters so one value cannot forge an
-  // extra log line or hide text with terminal escapes.
+  // extra log line or hide text with terminal escapes or bidi tricks.
   return Object.entries(details)
-    .map(([key, value]) => `${key}=${redactSecrets(value).replace(CONTROL_CHARS, ' ')}`)
+    .map(([key, value]) => `${key}=${stripUnsafeChars(redactSecrets(value))}`)
     .join(' ');
 }
 

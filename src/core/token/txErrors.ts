@@ -9,6 +9,8 @@
 
 import type { Interface } from 'ethers';
 import { redactSecrets } from '../../utils/redact.js';
+import { TimeoutError } from '../../utils/timeout.js';
+import { stripUnsafeChars } from '../../utils/text.js';
 
 /** Stable codes so UI code and tests can branch on the kind of failure. */
 export type TxErrorCode =
@@ -25,6 +27,8 @@ export type TxErrorCode =
   | 'TX_REPLACED'
   | 'WRONG_CHAIN'
   | 'INSUFFICIENT_TOKEN_BALANCE'
+  | 'BALANCE_CHECK_FAILED'
+  | 'RELAYER_TIMEOUT'
   | 'UNKNOWN';
 
 /** A user-facing transaction error. `raw` is only shown when the user asks for details. */
@@ -154,12 +158,9 @@ function rawText(err: unknown): string {
  * revert reason could carry terminal escape sequences or misleading instructions.
  */
 export function sanitizeContractText(text: string, max = 120): string {
-  // Control characters (terminal escapes) plus bidi overrides and zero-width characters,
-  // which could visually reorder or hide parts of an address.
-  const clean = text
-    // eslint-disable-next-line no-control-regex
-    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, ' ')
-    .trim();
+  // Control characters (terminal escapes) plus bidi, line-separator and invisible
+  // characters, which could visually reorder or hide parts of an address.
+  const clean = stripUnsafeChars(text).trim();
   return clean.length > max ? clean.slice(0, max - 1) + '…' : clean;
 }
 
@@ -249,6 +250,18 @@ export function translateTxError(err: unknown, opts: TranslateOptions = {}): Wal
   const e = (err ?? {}) as EthersLikeError;
   const raw = rawText(err);
   const lower = raw.toLowerCase();
+
+  // withTimeout gave up on the relayer SDK (encryption or decryption). That is not an
+  // RPC problem, so don't send the user off to check their RPC settings.
+  if (err instanceof TimeoutError) {
+    return new WalletTxError(
+      'RELAYER_TIMEOUT',
+      'The Zama relayer did not answer in time.',
+      `${err.message}. Encryption and decryption go through Zama's relayer, which is slow or unreachable right now.`,
+      'Try again in a minute. If it keeps happening, check your connection.',
+      raw,
+    );
+  }
 
   // Not enough ETH to pay for gas. Nodes word this differently, so check text too.
   if (e.code === 'INSUFFICIENT_FUNDS' || lower.includes('insufficient funds')) {

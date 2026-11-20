@@ -103,10 +103,12 @@ describe('translateTxError', () => {
     expect(err.likelyCause).toMatch(/chain 1\b/);
   });
 
-  it('maps a relayer timeout to RPC_UNAVAILABLE', () => {
-    expect(translateTxError(new TimeoutError('Encrypting the amount', 1000)).code).toBe(
-      'RPC_UNAVAILABLE',
-    );
+  it('gives a relayer timeout its own wording, not "check your RPC"', () => {
+    const err = translateTxError(new TimeoutError('Encrypting the amount', 1000));
+    expect(err.code).toBe('RELAYER_TIMEOUT');
+    expect(err.message).toMatch(/Zama relayer/);
+    expect(err.likelyCause).toMatch(/Encrypting the amount/);
+    expect(err.hint).not.toMatch(/RPC/);
   });
 
   it('maps nonce problems to NONCE_CONFLICT', () => {

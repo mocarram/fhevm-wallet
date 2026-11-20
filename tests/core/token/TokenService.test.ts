@@ -301,6 +301,50 @@ describe('TokenService.confidentialTransfer', () => {
     expect(encryption.encryptAmount).not.toHaveBeenCalled();
   });
 
+  it('a failed pre-send decrypt is BALANCE_CHECK_FAILED, and nothing is encrypted', async () => {
+    const decryption = await import('../../../src/core/fhe/DecryptionService.js');
+    vi.mocked(decryption.decryptBalance).mockRejectedValueOnce(new Error('relayer said 502'));
+    const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const encryption = await import('../../../src/core/fhe/EncryptionService.js');
+    const err = await prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia').catch(
+      (e) => e,
+    );
+    expect(err).toMatchObject({ code: 'BALANCE_CHECK_FAILED' });
+    expect(err.likelyCause).toMatch(/Nothing was sent/);
+    expect(encryption.encryptAmount).not.toHaveBeenCalled();
+  });
+
+  it('a relayer timeout during the pre-send decrypt is also BALANCE_CHECK_FAILED', async () => {
+    const { TimeoutError } = await import('../../../src/utils/timeout.js');
+    const decryption = await import('../../../src/core/fhe/DecryptionService.js');
+    vi.mocked(decryption.decryptBalance).mockRejectedValueOnce(
+      new TimeoutError('Decrypting the balance', 120_000),
+    );
+    const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    await expect(
+      prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia'),
+    ).rejects.toMatchObject({ code: 'BALANCE_CHECK_FAILED' });
+  });
+
+  it('an unreachable RPC during the balance read keeps the RPC wording', async () => {
+    contractStubs.confidentialBalanceOf.mockRejectedValueOnce(
+      Object.assign(new Error('fetch failed'), { code: 'NETWORK_ERROR' }),
+    );
+    const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    await expect(
+      prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia'),
+    ).rejects.toMatchObject({ code: 'RPC_UNAVAILABLE' });
+  });
+
+  it('re-checks the balance at the block that mined the transfer', async () => {
+    broadcastWith(async () => ({ status: 1, blockNumber: 1234 }));
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
+    expect(contractStubs.confidentialBalanceOf).toHaveBeenLastCalledWith(USER, {
+      blockTag: 1234,
+    });
+  });
+
   it('sending the whole balance is allowed', async () => {
     const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
     const prepared = await prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 9_999n, 'sepolia');

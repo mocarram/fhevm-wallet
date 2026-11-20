@@ -92,6 +92,11 @@ export interface TransferResult {
 
 export interface GetBalanceOptions {
   forceRefresh?: boolean;
+  /**
+   * Read the encrypted handle at this block. After a send, pass the receipt's block so a
+   * node that lags behind cannot hand back the old handle (and the old balance).
+   */
+  blockTag?: number;
 }
 
 /**
@@ -269,11 +274,15 @@ export async function getEncryptedBalance(
   tokenAddress: string,
   userAddress: string,
   network: NetworkName,
+  blockTag?: number,
 ): Promise<bigint> {
   const contract = getTokenContract(tokenAddress, network);
   // The ABI returns bytes32 (a 0x-hex string). Convert once here so the rest of the
   // wallet (zero check, cache key, decryption) works with a single bigint representation.
-  const handle: string | bigint = await contract.confidentialBalanceOf(userAddress);
+  const handle: string | bigint =
+    blockTag === undefined
+      ? await contract.confidentialBalanceOf(userAddress)
+      : await contract.confidentialBalanceOf(userAddress, { blockTag });
   return BigInt(handle);
 }
 
@@ -287,10 +296,15 @@ export async function getDecryptedBalance(
   network: NetworkName,
   options: GetBalanceOptions = {},
 ): Promise<bigint> {
-  const { forceRefresh = false } = options;
+  const { forceRefresh = false, blockTag } = options;
 
   // Always fetch the encrypted handle first (cheap RPC call)
-  const encryptedHandle = await getEncryptedBalance(tokenAddress, wallet.address, network);
+  const encryptedHandle = await getEncryptedBalance(
+    tokenAddress,
+    wallet.address,
+    network,
+    blockTag,
+  );
 
   // If handle is zero, no balance
   if (encryptedHandle === 0n) {
@@ -381,7 +395,24 @@ export async function prepareConfidentialTransfer(
 
     // A transfer above the balance does not revert in ERC-7984: it silently moves 0.
     // Decrypt first (cached while the encrypted handle is unchanged) and stop early.
-    const tokenBalance = await getDecryptedBalance(tokenAddress, wallet, network);
+    let tokenBalance: bigint;
+    try {
+      tokenBalance = await getDecryptedBalance(tokenAddress, wallet, network);
+    } catch (err) {
+      // Keep the specific wording for a wrong-chain or unreachable RPC; anything else
+      // (the relayer failing or timing out, a refused decryption) gets one clear message.
+      const translated = translateTxError(err, { iface: ERC7984_INTERFACE });
+      if (translated.code === 'WRONG_CHAIN' || translated.code === 'RPC_UNAVAILABLE') {
+        throw translated;
+      }
+      throw new WalletTxError(
+        'BALANCE_CHECK_FAILED',
+        "Couldn't check your token balance before sending.",
+        'Decrypting the balance through the Zama relayer failed or timed out. Nothing was sent.',
+        'Try again in a minute.',
+        translated.raw,
+      );
+    }
     if (amount > tokenBalance) {
       throw new WalletTxError(
         'INSUFFICIENT_TOKEN_BALANCE',
@@ -452,7 +483,12 @@ export async function prepareConfidentialTransfer(
       // receipt alone does not prove the tokens moved. Re-decrypt to find out. This is
       // best-effort: the transfer is already final, so a failure here only means "unknown".
       const { balanceCheck, balanceAfter } = await checkBalanceAfter(
-        () => getDecryptedBalance(tokenAddress, wallet, network, { forceRefresh: true }),
+        () =>
+          getDecryptedBalance(tokenAddress, wallet, network, {
+            forceRefresh: true,
+            // At (or after) the block that mined the transfer, never an older one.
+            blockTag: result.receipt.blockNumber,
+          }),
         tokenBalance,
         amount,
       );
