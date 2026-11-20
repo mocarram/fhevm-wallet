@@ -4,8 +4,11 @@
  * ethers v6 reports most send failures as a generic CALL_EXCEPTION or a long
  * "missing revert data" string. That is what users saw when sends failed on
  * Sepolia. Here we map the common shapes to a short title, a likely cause and
- * what to try next, while keeping the raw text for "Show technical details".
+ * what to try next, while keeping the (redacted) raw text for technical details.
  */
+
+import type { Interface } from 'ethers';
+import { redactSecrets } from '../../utils/redact.js';
 
 /** Stable codes so UI code and tests can branch on the kind of failure. */
 export type TxErrorCode =
@@ -18,25 +21,39 @@ export type TxErrorCode =
   | 'NONCE_CONFLICT'
   | 'AMOUNT_OUT_OF_RANGE'
   | 'TX_REVERTED'
+  | 'SENT_UNCONFIRMED'
   | 'UNKNOWN';
 
-/** A user-facing transaction error. `raw` is never shown unless the user asks. */
+/** A user-facing transaction error. `raw` is only shown when the user asks for details. */
 export class WalletTxError extends Error {
   readonly code: TxErrorCode;
   /** One or two sentences on why this probably happened. */
   readonly likelyCause: string;
   /** What the user can do next. */
   readonly hint: string;
-  /** Original error text, for the "technical details" view and logs. */
+  /** Original error text with secrets masked, for the technical-details view. */
   readonly raw: string;
+  /**
+   * Set when a transaction was already broadcast. The UI must show it: the user needs it
+   * to check the explorer instead of resending (which could send the money twice).
+   */
+  readonly txHash?: string;
 
-  constructor(code: TxErrorCode, title: string, cause: string, hint: string, raw = '') {
+  constructor(
+    code: TxErrorCode,
+    title: string,
+    cause: string,
+    hint: string,
+    raw = '',
+    txHash?: string,
+  ) {
     super(title);
     this.name = 'WalletTxError';
     this.code = code;
     this.likelyCause = cause;
     this.hint = hint;
-    this.raw = raw;
+    this.raw = redactSecrets(raw);
+    this.txHash = txHash;
   }
 }
 
@@ -49,8 +66,7 @@ interface EthersLikeError {
   reason?: string | null;
   data?: string | null;
   revert?: { name?: string; args?: unknown[] } | null;
-  info?: { error?: { code?: number; message?: string } };
-  error?: { code?: number; message?: string };
+  receipt?: { hash?: string } | null;
 }
 
 /** Custom errors declared by OpenZeppelin's ERC7984, mapped to plain language. */
@@ -80,7 +96,7 @@ const CUSTOM_ERRORS: Record<
     code: 'UNAUTHORIZED',
     title: 'The encrypted amount was not accepted.',
     cause: 'The encrypted input was created for a different sender or contract.',
-    hint: 'Try the send again; the amount will be re-encrypted for this wallet.',
+    hint: 'Try again; the amount will be re-encrypted for this wallet.',
   },
   ERC7984ZeroBalance: {
     code: 'CONTRACT_REJECTED',
@@ -96,7 +112,18 @@ const CUSTOM_ERRORS: Record<
   },
 };
 
-/** Pull a readable raw string out of anything that was thrown. */
+/** Options for `translateTxError`. */
+export interface TranslateOptions {
+  /**
+   * Contract interface used to decode custom-error revert data. ethers only decodes
+   * custom errors in staticCall; estimateGas and wait() leave the raw selector in `data`.
+   */
+  iface?: Interface;
+  /** What was being attempted, for titles: "send" (default) or e.g. "operator change". */
+  action?: string;
+}
+
+/** Pull a readable raw string out of anything that was thrown (redacted in the constructor). */
 function rawText(err: unknown): string {
   if (err instanceof Error) return err.message;
   try {
@@ -107,12 +134,33 @@ function rawText(err: unknown): string {
 }
 
 /**
- * Convert any error thrown while preparing or sending a transfer into a WalletTxError.
+ * Make contract-supplied text safe to print: tokens are user-added and untrusted, so a
+ * revert reason could carry terminal escape sequences or misleading instructions.
+ */
+export function sanitizeContractText(text: string, max = 120): string {
+  // eslint-disable-next-line no-control-regex
+  const clean = text.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim();
+  return clean.length > max ? clean.slice(0, max - 1) + '…' : clean;
+}
+
+/** Try to decode a custom-error name from revert data with the given interface. */
+function decodeCustomError(data: string | null | undefined, iface?: Interface): string | null {
+  if (!iface || !data || data.length < 10) return null;
+  try {
+    return iface.parseError(data)?.name ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Convert any error thrown while preparing or sending a transaction into a WalletTxError.
  * Already-translated errors pass through unchanged.
  */
-export function translateTxError(err: unknown): WalletTxError {
+export function translateTxError(err: unknown, opts: TranslateOptions = {}): WalletTxError {
   if (err instanceof WalletTxError) return err;
 
+  const action = opts.action ?? 'send';
   const e = (err ?? {}) as EthersLikeError;
   const raw = rawText(err);
   const lower = raw.toLowerCase();
@@ -122,14 +170,27 @@ export function translateTxError(err: unknown): WalletTxError {
     return new WalletTxError(
       'INSUFFICIENT_GAS_FUNDS',
       'Not enough ETH to pay the network fee.',
-      'Every send needs a little ETH for gas, even though the token amount is encrypted.',
+      'Every transaction needs a little ETH for gas, even though token amounts are encrypted.',
       'Add ETH to this wallet (on Sepolia, use a faucet) and try again.',
       raw,
     );
   }
 
-  // A decoded custom error from the token contract.
-  const revertName = e.revert?.name;
+  // A mined transaction that reverted: ethers' wait() throws CALL_EXCEPTION with
+  // action "sendTransaction" and the receipt attached. Gas was spent; say so.
+  if (e.code === 'CALL_EXCEPTION' && e.action === 'sendTransaction' && e.receipt) {
+    return new WalletTxError(
+      'TX_REVERTED',
+      `The ${action} was mined but reverted on-chain.`,
+      'The contract rejected it after the simulation passed. The network fee was still paid.',
+      'Check the transaction on the block explorer before trying again.',
+      raw,
+      e.receipt.hash,
+    );
+  }
+
+  // A custom error from the token contract: decoded by ethers, or decoded here from data.
+  const revertName = e.revert?.name ?? decodeCustomError(e.data, opts.iface);
   if (revertName && CUSTOM_ERRORS[revertName]) {
     const m = CUSTOM_ERRORS[revertName];
     return new WalletTxError(m.code, m.title, m.cause, m.hint, raw);
@@ -148,7 +209,7 @@ export function translateTxError(err: unknown): WalletTxError {
       'RPC_UNAVAILABLE',
       'Could not reach the network.',
       'The RPC endpoint did not answer, or answered with an error.',
-      'Run "fhew doctor" to test your RPC, or set another endpoint in Settings.',
+      'Check your connection or RPC settings, then try again.',
       raw,
     );
   }
@@ -163,23 +224,26 @@ export function translateTxError(err: unknown): WalletTxError {
     );
   }
 
-  // Revert during gas estimation with no data: the function is missing on this
-  // contract (wrong address, wrong network, or not an ERC-7984 token).
   if (e.code === 'CALL_EXCEPTION') {
-    const noData = e.data === null || e.data === '0x' || lower.includes('missing revert data');
-    if (e.action === 'estimateGas' && noData) {
+    // No revert data at all during simulation usually means the function does not exist
+    // on this contract: wrong address, wrong network, or not an ERC-7984 token.
+    const missingData = e.data === null || e.data === undefined;
+    if (e.action === 'estimateGas' && missingData && lower.includes('missing revert data')) {
       return new WalletTxError(
         'NOT_ERC7984',
-        'The token contract rejected the transfer when it was simulated.',
-        'The contract has no working confidentialTransfer function, so it may not be an ERC-7984 token, or it is on a different network.',
-        'Run "fhew doctor" to check the token and your RPC, and check the address on a block explorer.',
+        `The token contract rejected the ${action} when it was simulated.`,
+        'The contract returned no reason. It may not be an ERC-7984 token, or it may be on a different network.',
+        'Check the token address and network on a block explorer.',
         raw,
       );
     }
+    const reason = e.reason ? sanitizeContractText(e.reason) : '';
     return new WalletTxError(
       'CONTRACT_REJECTED',
-      'The token contract rejected the transfer.',
-      e.reason ? `The contract said: ${e.reason}.` : 'The contract reverted without a reason.',
+      `The token contract rejected the ${action}.`,
+      reason
+        ? `The contract's own message (unverified): "${reason}".`
+        : 'The contract reverted without a reason.',
       'Check the token, recipient and amount, then try again.',
       raw,
     );
@@ -187,16 +251,45 @@ export function translateTxError(err: unknown): WalletTxError {
 
   return new WalletTxError(
     'UNKNOWN',
-    'The send failed.',
-    e.shortMessage ?? 'An unexpected error occurred.',
-    'Try again. If it keeps failing, run "fhew doctor".',
+    `The ${action} failed.`,
+    e.shortMessage ? sanitizeContractText(e.shortMessage, 200) : 'An unexpected error occurred.',
+    'Try again. If it keeps failing, check your RPC and network settings.',
     raw,
   );
 }
 
+/**
+ * Wrap an error that happened *after* a transaction was broadcast. The transaction may
+ * still confirm, so the user must not be told to "try again".
+ */
+export function sentButUnconfirmed(
+  err: unknown,
+  txHash: string,
+  explorerUrl: string,
+  opts: TranslateOptions = {},
+): WalletTxError {
+  const translated = translateTxError(err, opts);
+  if (translated.code === 'TX_REVERTED') return translated;
+  return new WalletTxError(
+    'SENT_UNCONFIRMED',
+    'The transaction was sent, but its confirmation could not be checked.',
+    'The connection dropped or timed out while waiting. The transaction may still confirm.',
+    `Do not send again yet. Check ${explorerUrl} first.`,
+    translated.raw,
+    txHash,
+  );
+}
+
 /** Format a WalletTxError as plain lines for non-interactive output. */
-export function formatTxError(err: WalletTxError, includeRaw = false): string {
+export function formatTxError(err: WalletTxError, includeRaw = wantsErrorDetails()): string {
   const lines = [err.message, '', `Likely cause: ${err.likelyCause}`, `What to try:  ${err.hint}`];
+  if (err.txHash) lines.push(`Transaction:  ${err.txHash}`);
   if (includeRaw && err.raw) lines.push('', `Technical details: ${err.raw}`);
+  else if (err.raw) lines.push('', 'Set FHEW_DEBUG=1 to see technical details.');
   return lines.join('\n');
+}
+
+/** Whether the user asked for technical details on errors (FHEW_DEBUG=1). */
+export function wantsErrorDetails(): boolean {
+  return process.env.FHEW_DEBUG === '1';
 }

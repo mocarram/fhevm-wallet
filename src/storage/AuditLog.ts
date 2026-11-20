@@ -13,6 +13,7 @@ export type AuditEvent =
   | 'WALLET_IMPORTED'
   | 'WALLET_EXPORTED'
   | 'WALLET_REMOVED'
+  | 'TRANSFER_SENT'
   | 'TRANSFER'
   | 'TOKEN_ADDED'
   | 'TOKEN_REMOVED'

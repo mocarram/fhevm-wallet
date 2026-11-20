@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ERC7984_INTERFACE } from '../../../src/core/token/TokenService.js';
 import {
   WalletTxError,
   formatTxError,
@@ -19,7 +20,7 @@ describe('translateTxError', () => {
       ),
     );
     expect(err.code).toBe('NOT_ERC7984');
-    expect(err.message).toMatch(/rejected the transfer when it was simulated/);
+    expect(err.message).toMatch(/rejected the send when it was simulated/);
     expect(err.raw).toMatch(/missing revert data/);
   });
 
@@ -37,6 +38,38 @@ describe('translateTxError', () => {
       ethersError({ code: 'CALL_EXCEPTION', revert: { name: 'ERC7984InvalidReceiver' } }),
     );
     expect(err.code).toBe('INVALID_RECEIVER');
+  });
+
+  it('decodes custom-error data that estimateGas leaves undecoded', () => {
+    // Real shape: ethers estimateGas sets data to the encoded error and revert to null.
+    const data = ERC7984_INTERFACE.encodeErrorResult('ERC7984ZeroBalance', [
+      '0x000000000000000000000000000000000000dEaD',
+    ]);
+    const shaped = ethersError({
+      code: 'CALL_EXCEPTION',
+      action: 'estimateGas',
+      data,
+      revert: null,
+    });
+    expect(translateTxError(shaped).code).toBe('CONTRACT_REJECTED'); // without the interface
+    const err = translateTxError(shaped, { iface: ERC7984_INTERFACE });
+    expect(err.message).toMatch(/no balance of that token/);
+  });
+
+  it('strips control characters from contract-supplied reasons', () => {
+    const err = translateTxError(
+      ethersError({ code: 'CALL_EXCEPTION', reason: 'paused\u001b[31m now' }),
+    );
+    expect(err.likelyCause).not.toMatch(/\u001b/);
+    expect(err.likelyCause).toMatch(/unverified/);
+  });
+
+  it('masks API keys from RPC URLs in raw details', () => {
+    const err = translateTxError(
+      new Error('request failed info={"requestUrl":"https://x.example/v3/abcdef0123456789abcdef"}'),
+    );
+    expect(err.raw).not.toMatch(/abcdef0123456789abcdef/);
+    expect(err.raw).toMatch(/\[redacted\]/);
   });
 
   it('maps network failures to RPC_UNAVAILABLE', () => {
@@ -64,7 +97,8 @@ describe('translateTxError', () => {
 describe('formatTxError', () => {
   it('hides raw details unless asked', () => {
     const err = new WalletTxError('UNKNOWN', 'Title', 'Cause', 'Hint', 'RAW');
-    expect(formatTxError(err)).not.toMatch(/RAW/);
+    expect(formatTxError(err, false)).not.toMatch(/RAW/);
+    expect(formatTxError(err, false)).toMatch(/FHEW_DEBUG=1/);
     expect(formatTxError(err, true)).toMatch(/Technical details: RAW/);
   });
 });
