@@ -5,14 +5,15 @@
 import { Command } from 'commander';
 import inquirer from 'inquirer';
 import ora from 'ora';
-import chalk from 'chalk';
 import { loadWallet, listWallets, hasWallet } from '../../core/wallet/index.js';
 import { listTokens, getToken, TokenEntry } from '../../core/token/TokenRegistry.js';
 import {
-  confidentialTransfer,
+  prepareConfidentialTransfer,
   getTxExplorerUrl,
   recordTransferTransaction,
 } from '../../core/token/TokenService.js';
+import { WalletTxError, formatTxError, translateTxError } from '../../core/token/txErrors.js';
+import { formatEther } from 'ethers';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { checkFheReadiness } from '../../core/fhe/FheService.js';
 import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.js';
@@ -278,17 +279,45 @@ export function registerTransferCommand(program: Command): void {
             return;
           }
 
-          // Parse amount
-          const amountBigInt = parseTokenAmount(amount!, token.decimals);
+          // Parse amount strictly: excess decimals are an error, not silently dropped.
+          let amountBigInt: bigint;
+          try {
+            amountBigInt = parseTokenAmount(amount!, token.decimals);
+          } catch (err) {
+            console.log(error(err instanceof Error ? err.message : 'Invalid amount'));
+            return;
+          }
+
+          // Encrypt and simulate before asking for confirmation, so a doomed send
+          // is caught before anything is signed.
+          const checkSpinner = ora('Encrypting amount and simulating the transfer...').start();
+          let prepared;
+          try {
+            prepared = await prepareConfidentialTransfer(
+              wallet,
+              token.address,
+              to!,
+              amountBigInt,
+              network,
+            );
+            checkSpinner.succeed('Simulation passed');
+          } catch (err) {
+            checkSpinner.fail('Send stopped. Nothing was signed or sent.');
+            console.log(error(formatTxError(translateTxError(err))));
+            return;
+          }
 
           // Confirm transaction
           console.log();
           console.log(bold('Transaction Summary'));
           console.log(`  From:    ${wallet.address}`);
           console.log(`  To:      ${to}`);
-          console.log(`  Amount:  ${amount} ${token.symbol}`);
+          console.log(`  Amount:  ${amount} ${token.symbol} (encrypted on-chain)`);
           console.log(`  Token:   ${token.name}`);
           console.log(`  Network: ${formatNetworkName(network)}`);
+          console.log(
+            `  Fee:     up to ${formatEther(prepared.feeWei)} ETH (you have ${formatEther(prepared.ethBalanceWei)} ETH)`,
+          );
           console.log();
 
           const { confirm } = await inquirer.prompt([
@@ -305,24 +334,13 @@ export function registerTransferCommand(program: Command): void {
             return;
           }
 
-          // Execute transfer
           console.log();
-          const encryptSpinner = ora('Encrypting amount...').start();
+          const sendSpinner = ora('Sending transaction and waiting for confirmation...').start();
 
           try {
-            encryptSpinner.text = 'Sending transaction...';
+            const result = await prepared.send();
+            sendSpinner.succeed('Transaction confirmed');
 
-            const result = await confidentialTransfer(
-              wallet,
-              token.address,
-              to!,
-              amountBigInt,
-              network,
-            );
-
-            encryptSpinner.succeed('Transaction sent');
-
-            // Record transaction in history
             recordTransferTransaction({
               tokenAddress: token.address,
               tokenSymbol: token.symbol,
@@ -338,16 +356,10 @@ export function registerTransferCommand(program: Command): void {
             console.log(success('Transfer successful!'));
             console.log(`  Transaction: ${result.txHash}`);
             console.log(`  Explorer:    ${getTxExplorerUrl(result.txHash, network)}`);
-            console.log();
-
-            if (result.receipt.status === 1) {
-              console.log(chalk.green('Transaction confirmed'));
-            } else {
-              console.log(chalk.red('Transaction may have failed'));
-            }
           } catch (err) {
-            encryptSpinner.fail('Transaction failed');
-            console.log(error(err instanceof Error ? err.message : 'Unknown error'));
+            sendSpinner.fail('Transaction failed');
+            const txErr = err instanceof WalletTxError ? err : translateTxError(err);
+            console.log(error(formatTxError(txErr)));
           }
         } catch (err) {
           console.log(error(err instanceof Error ? err.message : 'Failed to send transaction'));

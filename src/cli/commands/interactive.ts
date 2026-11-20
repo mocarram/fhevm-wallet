@@ -4,6 +4,8 @@
 
 import { Command } from 'commander';
 import inquirer from 'inquirer';
+import { formatEther } from 'ethers';
+import { formatTxError, translateTxError } from '../../core/token/txErrors.js';
 import chalk from 'chalk';
 import ora from 'ora';
 import Table from 'cli-table3';
@@ -26,7 +28,7 @@ import {
 } from '../../core/token/TokenRegistry.js';
 import {
   getDecryptedBalance,
-  confidentialTransfer,
+  prepareConfidentialTransfer,
   getTxExplorerUrl,
   recordTransferTransaction,
 } from '../../core/token/TokenService.js';
@@ -1442,8 +1444,26 @@ async function handleSend(): Promise<void> {
     return;
   }
 
-  // Parse amount
-  const amountBigInt = parseTokenAmount(amount, token.decimals);
+  // Parse amount strictly (excess decimals are rejected, never truncated)
+  let amountBigInt: bigint;
+  try {
+    amountBigInt = parseTokenAmount(amount, token.decimals);
+  } catch (err) {
+    console.log(error(err instanceof Error ? err.message : 'Invalid amount'));
+    return;
+  }
+
+  // Encrypt + simulate + gas check before the user confirms anything.
+  const checkSpinner = ora('Encrypting amount and simulating the transfer...').start();
+  let prepared;
+  try {
+    prepared = await prepareConfidentialTransfer(wallet, token.address, to, amountBigInt, network);
+    checkSpinner.succeed('Simulation passed');
+  } catch (err) {
+    checkSpinner.fail('Send stopped. Nothing was signed or sent.');
+    console.log(error(formatTxError(translateTxError(err))));
+    return;
+  }
 
   // Confirm transaction
   console.log();
@@ -1453,6 +1473,9 @@ async function handleSend(): Promise<void> {
   console.log(`  Amount:  ${amount} ${token.symbol}`);
   console.log(`  Token:   ${token.name}`);
   console.log(`  Network: ${formatNetworkName(network)}`);
+  console.log(
+    `  Fee:     up to ${formatEther(prepared.feeWei)} ETH (you have ${formatEther(prepared.ethBalanceWei)} ETH)`,
+  );
   console.log();
 
   const { confirm } = await inquirer.prompt([
@@ -1471,14 +1494,12 @@ async function handleSend(): Promise<void> {
 
   // Execute transfer
   console.log();
-  const encryptSpinner = ora('Encrypting amount...').start();
+  const encryptSpinner = ora('Sending transaction and waiting for confirmation...').start();
 
   try {
-    encryptSpinner.text = 'Sending transaction...';
+    const result = await prepared.send();
 
-    const result = await confidentialTransfer(wallet, token.address, to, amountBigInt, network);
-
-    encryptSpinner.succeed('Transaction sent');
+    encryptSpinner.succeed('Transaction confirmed');
 
     // Record transaction in history
     recordTransferTransaction({
@@ -1496,16 +1517,9 @@ async function handleSend(): Promise<void> {
     console.log(success('Transfer successful!'));
     console.log(`  Transaction: ${result.txHash}`);
     console.log(`  Explorer:    ${getTxExplorerUrl(result.txHash, network)}`);
-    console.log();
-
-    if (result.receipt.status === 1) {
-      console.log(chalk.green('Transaction confirmed'));
-    } else {
-      console.log(chalk.red('Transaction may have failed'));
-    }
   } catch (err) {
     encryptSpinner.fail('Transaction failed');
-    console.log(error(err instanceof Error ? err.message : 'Unknown error'));
+    console.log(error(formatTxError(translateTxError(err))));
   }
 }
 
