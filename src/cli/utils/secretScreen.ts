@@ -23,7 +23,16 @@ export interface SecretScreenIO {
    * still buffered from the previous prompt cannot wipe the secret before it is seen.
    */
   ignoreInputMs?: number;
+  /** Where termination signals arrive and how to exit; the real process by default. */
+  proc?: Pick<NodeJS.Process, 'once' | 'removeListener' | 'exit'>;
 }
+
+/** Signals that end the process while the secret is on screen. */
+const EXIT_SIGNALS: Record<'SIGINT' | 'SIGTERM' | 'SIGHUP', number> = {
+  SIGINT: 2,
+  SIGTERM: 15,
+  SIGHUP: 1,
+};
 
 /**
  * Display `lines` under `title`. On a TTY, resolves `true` once the user pressed a key
@@ -34,7 +43,7 @@ export async function showSecretScreen(
   lines: string[],
   io: SecretScreenIO = { input: process.stdin, output: process.stdout },
 ): Promise<boolean> {
-  const { input, output, ignoreInputMs = 300 } = io;
+  const { input, output, ignoreInputMs = 300, proc = process } = io;
   const body = ['', `  ${title}`, '', ...lines.map((l) => `    ${l}`), ''];
 
   if (!output.isTTY || !input.isTTY || !input.setRawMode) {
@@ -52,6 +61,24 @@ export async function showSecretScreen(
       '',
     ].join('\n'),
   );
+
+  // Restore the terminal exactly once, whichever way the screen ends.
+  let restored = false;
+  const restore = (): void => {
+    if (restored) return;
+    restored = true;
+    input.setRawMode!(false);
+    input.pause();
+    output.write(LEAVE_ALT);
+  };
+  // Killed while the secret is showing (kill, closed terminal, Ctrl+C when raw mode is
+  // not in effect): leave raw mode and the alternate screen before exiting, so the
+  // user's shell is usable and the secret is not left on screen.
+  const onSignal = (signal: NodeJS.Signals): void => {
+    restore();
+    proc.exit(128 + EXIT_SIGNALS[signal as keyof typeof EXIT_SIGNALS]);
+  };
+  for (const signal of Object.keys(EXIT_SIGNALS)) proc.once(signal, onSignal);
 
   input.setRawMode(true);
   input.resume();
@@ -71,10 +98,9 @@ export async function showSecretScreen(
   } finally {
     input.removeListener('data', onData);
     input.removeListener('end', onEnd);
+    for (const signal of Object.keys(EXIT_SIGNALS)) proc.removeListener(signal, onSignal);
     // Always restore the terminal, or the user is left in raw mode on the alternate screen.
-    input.setRawMode(false);
-    input.pause();
-    output.write(LEAVE_ALT);
+    restore();
   }
   return true;
 }

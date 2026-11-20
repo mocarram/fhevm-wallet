@@ -27,13 +27,26 @@ function ensureWalletsDir(): void {
  * Get path for a wallet keystore file
  */
 function getWalletPath(name: string): string {
+  assertSafeWalletName(name);
   return join(WALLETS_DIR, `${name}.json`);
+}
+
+/**
+ * Wallet names become file names. Refuse anything that could leave the wallets folder
+ * (`../tokens` would otherwise read tokens.json as a "keystore"). Kept looser than
+ * isValidWalletName so wallets saved by older versions still load.
+ */
+function assertSafeWalletName(name: string): void {
+  if (!name || name === '.' || name.includes('..') || /[/\\\0]/.test(name)) {
+    throw new Error(`"${name}" is not a valid wallet name`);
+  }
 }
 
 /**
  * Get path for wallet metadata file
  */
 function getMetadataPath(name: string): string {
+  assertSafeWalletName(name);
   return join(WALLETS_DIR, `${name}.meta.json`);
 }
 
@@ -42,7 +55,13 @@ function getMetadataPath(name: string): string {
  */
 export function walletExists(name: string): boolean {
   ensureWalletsDir();
-  return existsSync(getWalletPath(name));
+  let path: string;
+  try {
+    path = getWalletPath(name);
+  } catch {
+    return false; // an unsafe name never names an existing wallet
+  }
+  return existsSync(path);
 }
 
 /**

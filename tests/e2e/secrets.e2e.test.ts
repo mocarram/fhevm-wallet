@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
-import { mkdirSync, writeFileSync } from 'fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { runCliAsync, tempHome } from './helpers.js';
+import { CLI, runCliAsync, tempHome } from './helpers.js';
+import { spawnSync } from 'child_process';
 
 // A local "RPC provider" that always fails with HTTP 500. ethers puts the full request
 // URL (with the key in its path and query) into the error it throws.
@@ -73,6 +74,26 @@ describe('secrets never reach the terminal', () => {
         expect(out).not.toContain(ETHERSCAN);
         expect(out).not.toContain(ZAMA);
       }
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it('`--etherscan-key -` reads the key from stdin, so it is not in shell history', () => {
+    const t = tempHome();
+    try {
+      const KEYVAL = 'PIPEDKEY0123456789';
+      const res = spawnSync(process.execPath, [CLI, 'config', '--etherscan-key', '-'], {
+        env: { PATH: process.env.PATH ?? '', HOME: t.home, NO_COLOR: '1' },
+        input: `${KEYVAL}\n`,
+        encoding: 'utf-8',
+        timeout: 30_000,
+      });
+      expect(res.status).toBe(0);
+      expect(res.stdout + res.stderr).not.toContain(KEYVAL);
+      expect(readFileSync(join(t.home, '.fhevm-wallet', '.env'), 'utf-8')).toBe(
+        `ETHERSCAN_API_KEY=${KEYVAL}\n`,
+      );
     } finally {
       t.cleanup();
     }

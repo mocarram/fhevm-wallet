@@ -75,6 +75,19 @@ describe('WalletManager', () => {
     expect(() => exportKeystoreFile('ks', dest)).toThrow(/already exists/);
   });
 
+  it('refuses wallet names that point outside the wallets folder', async () => {
+    const { mkdirSync, writeFileSync } = await import('fs');
+    const { DATA_DIR } = await import('../../../src/storage/paths.js');
+    mkdirSync(join(DATA_DIR, 'wallets'), { recursive: true });
+    writeFileSync(join(DATA_DIR, 'tokens.json'), '{"tokens":[]}');
+    for (const bad of ['../tokens', '..', 'a/b', 'a\\b']) {
+      expect(() => exportKeystoreFile(bad, join(homedir(), `x-${Math.random()}.json`))).toThrow(
+        /not a valid wallet name/,
+      );
+      expect(hasWallet(bad)).toBe(false);
+    }
+  });
+
   it('refuses to export a wallet that does not exist', () => {
     expect(() => exportKeystoreFile('nope', join(homedir(), 'x.json'))).toThrow(/not found/);
   });

@@ -5,6 +5,7 @@
 import { resolve as resolvePath } from 'path';
 import { Wallet, HDNodeWallet } from 'ethers';
 import { writeNewPrivateFile } from '../../storage/secureFs.js';
+import { isValidWalletName } from '../../utils/validation.js';
 import {
   createNewWallet,
   importFromMnemonic,
@@ -161,6 +162,7 @@ export async function exportWalletPrivateKey(name: string, password: string): Pr
  * folder it lands in alone (that folder belongs to the user, not to the wallet).
  */
 export function exportKeystoreFile(name: string, destPath: string): string {
+  if (!isValidWalletName(name)) throw new Error(`"${name}" is not a valid wallet name`);
   const target = resolvePath(destPath);
   const keystore = loadWalletKeystore(name);
   try {

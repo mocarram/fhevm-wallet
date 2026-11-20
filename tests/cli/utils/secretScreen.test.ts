@@ -78,3 +78,51 @@ describe('showSecretScreen input guard', () => {
     expect(text().endsWith('\x1b[2J\x1b[?1049l')).toBe(true);
   });
 });
+
+describe('showSecretScreen and signals', () => {
+  it('restores the terminal before exiting on SIGTERM', async () => {
+    const { EventEmitter } = await import('events');
+    const input = new PassThrough() as PassThrough & {
+      isTTY?: boolean;
+      setRawMode?: (b: boolean) => void;
+    };
+    input.isTTY = true;
+    input.setRawMode = vi.fn();
+    const { out, text } = capture(true);
+    const fakeProc = Object.assign(new EventEmitter(), { exit: vi.fn() });
+    void showSecretScreen('Private key', ['0xSECRET'], {
+      input,
+      output: out,
+      ignoreInputMs: 0,
+      proc: fakeProc as never,
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    fakeProc.emit('SIGTERM', 'SIGTERM');
+    expect(input.setRawMode).toHaveBeenLastCalledWith(false);
+    expect(text().endsWith('\x1b[2J\x1b[?1049l')).toBe(true);
+    expect(fakeProc.exit).toHaveBeenCalledWith(143);
+    input.write('x'); // let the pending promise settle
+  });
+
+  it('removes its signal handlers once the screen is wiped', async () => {
+    const { EventEmitter } = await import('events');
+    const input = new PassThrough() as PassThrough & {
+      isTTY?: boolean;
+      setRawMode?: (b: boolean) => void;
+    };
+    input.isTTY = true;
+    input.setRawMode = vi.fn();
+    const { out } = capture(true);
+    const fakeProc = Object.assign(new EventEmitter(), { exit: vi.fn() });
+    const done = showSecretScreen('k', ['v'], {
+      input,
+      output: out,
+      ignoreInputMs: 0,
+      proc: fakeProc as never,
+    });
+    setTimeout(() => input.write('x'), 10);
+    await done;
+    expect(fakeProc.listenerCount('SIGTERM')).toBe(0);
+    expect(fakeProc.listenerCount('SIGINT')).toBe(0);
+  });
+});
