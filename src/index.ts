@@ -100,7 +100,7 @@ function flushOutput(): Promise<void> {
 
 const program = createProgram();
 
-// If no arguments provided, launch interactive mode
+// No arguments: launch the interactive terminal UI.
 if (process.argv.length <= 2) {
   runInteractiveMode().catch(failSafely);
 } else {
