@@ -60,14 +60,14 @@ docker-run: docker-build ## Run CLI in Docker (interactive mode)
 	docker run -it --rm \
 		--name $(CONTAINER_NAME) \
 		--env-file .env \
-		-v $(PWD)/data:/app/data \
+		-v $(PWD)/data:/data \
 		$(IMAGE_NAME):latest
 
 docker-shell: docker-build ## Open shell in Docker container
 	docker run -it --rm \
 		--name $(CONTAINER_NAME)-shell \
 		--env-file .env \
-		-v $(PWD)/data:/app/data \
+		-v $(PWD)/data:/data \
 		--entrypoint /bin/sh \
 		$(IMAGE_NAME):latest
 
@@ -75,21 +75,21 @@ docker-send: docker-build ## Send tokens via Docker (usage: make docker-send ARG
 	docker run -it --rm \
 		--name $(CONTAINER_NAME) \
 		--env-file .env \
-		-v $(PWD)/data:/app/data \
+		-v $(PWD)/data:/data \
 		$(IMAGE_NAME):latest send $(ARGS)
 
 docker-balance: docker-build ## Check balance via Docker
 	docker run -it --rm \
 		--name $(CONTAINER_NAME) \
 		--env-file .env \
-		-v $(PWD)/data:/app/data \
+		-v $(PWD)/data:/data \
 		$(IMAGE_NAME):latest balance
 
 docker-history: docker-build ## View history via Docker
 	docker run -it --rm \
 		--name $(CONTAINER_NAME) \
 		--env-file .env \
-		-v $(PWD)/data:/app/data \
+		-v $(PWD)/data:/data \
 		$(IMAGE_NAME):latest history
 
 docker-clean: ## Remove Docker image and containers

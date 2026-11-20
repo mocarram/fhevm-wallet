@@ -3,17 +3,13 @@ FROM node:24-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Install dependencies exactly from the lockfile
 COPY package*.json ./
-
-# Install dependencies
 RUN npm ci
 
-# Copy source code
+# Build TypeScript
 COPY tsconfig.json ./
 COPY src ./src
-
-# Build TypeScript
 RUN npm run build
 
 # Production stage
@@ -21,18 +17,20 @@ FROM node:24-alpine
 
 WORKDIR /app
 
-# Copy package files and install production dependencies only
+# Production dependencies only
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Copy built files from builder
 COPY --from=builder /app/dist ./dist
 
-# Create data directory for persistent storage
-RUN mkdir -p /app/data
+# Wallet data (encrypted keystores, settings) lives on a volume, owned by the
+# unprivileged "node" user that ships with the official image. FHEVM_WALLET_HOME
+# tells the app to use it instead of ~/.fhevm-wallet inside the container.
+ENV NODE_ENV=production \
+    FHEVM_WALLET_HOME=/data
+RUN mkdir -p /data && chown node:node /data && chmod 700 /data
+VOLUME ["/data"]
 
-# Set environment
-ENV NODE_ENV=production
+USER node
 
-# Entry point
 ENTRYPOINT ["node", "dist/index.js"]

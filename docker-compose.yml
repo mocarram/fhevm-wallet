@@ -7,11 +7,15 @@ services:
     container_name: fhevm-wallet
     stdin_open: true
     tty: true
+    # Optional overrides (RPC URLs, API keys). Settings saved from inside the wallet
+    # are stored in the data volume instead, with owner-only permissions.
     env_file:
-      - .env
+      - path: .env
+        required: false
     volumes:
-      # Persist wallet data and configuration
-      - ./data:/app/data
+      # Persist wallet data and configuration. The container runs as the "node"
+      # user (uid 1000); make sure ./data is writable by that uid on the host.
+      - ./data:/data
     networks:
       - fhe-network
 
