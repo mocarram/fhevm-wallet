@@ -14,7 +14,8 @@ services:
         required: false
     volumes:
       # Persist wallet data and configuration. The container runs as the "node"
-      # user (uid 1000); make sure ./data is writable by that uid on the host.
+      # user, uid 1000: ./data must exist and be owned by uid 1000 on the host
+      # (`make data-dir` creates it; if Docker creates it, it is owned by root).
       - ./data:/data
     networks:
       - fhe-network

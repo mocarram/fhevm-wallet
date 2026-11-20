@@ -1,4 +1,4 @@
-.PHONY: help build run shell clean lint format dev install docker-build docker-run docker-shell docker-clean
+.PHONY: help build run shell clean lint format dev install docker-build docker-run docker-shell docker-clean data-dir env
 
 # Default target
 .DEFAULT_GOAL := help
@@ -56,14 +56,14 @@ clean: ## Clean build artifacts
 docker-build: ## Build Docker image
 	docker build -t $(IMAGE_NAME):latest .
 
-docker-run: docker-build ## Run CLI in Docker (interactive mode)
+docker-run: docker-build data-dir ## Run CLI in Docker (interactive mode)
 	docker run -it --rm \
 		--name $(CONTAINER_NAME) \
 		--env-file .env \
 		-v $(PWD)/data:/data \
 		$(IMAGE_NAME):latest
 
-docker-shell: docker-build ## Open shell in Docker container
+docker-shell: docker-build data-dir ## Open shell in Docker container
 	docker run -it --rm \
 		--name $(CONTAINER_NAME)-shell \
 		--env-file .env \
@@ -71,21 +71,21 @@ docker-shell: docker-build ## Open shell in Docker container
 		--entrypoint /bin/sh \
 		$(IMAGE_NAME):latest
 
-docker-send: docker-build ## Send tokens via Docker (usage: make docker-send ARGS="0x... 100")
+docker-send: docker-build data-dir ## Send tokens via Docker (usage: make docker-send ARGS="0x... 100")
 	docker run -it --rm \
 		--name $(CONTAINER_NAME) \
 		--env-file .env \
 		-v $(PWD)/data:/data \
 		$(IMAGE_NAME):latest send $(ARGS)
 
-docker-balance: docker-build ## Check balance via Docker
+docker-balance: docker-build data-dir ## Check balance via Docker
 	docker run -it --rm \
 		--name $(CONTAINER_NAME) \
 		--env-file .env \
 		-v $(PWD)/data:/data \
 		$(IMAGE_NAME):latest balance
 
-docker-history: docker-build ## View history via Docker
+docker-history: docker-build data-dir ## View history via Docker
 	docker run -it --rm \
 		--name $(CONTAINER_NAME) \
 		--env-file .env \
@@ -98,7 +98,7 @@ docker-clean: ## Remove Docker image and containers
 
 ##@ Docker Compose
 
-up: ## Start with docker-compose (interactive)
+up: data-dir ## Start with docker-compose (interactive)
 	docker-compose run --rm fhevm-wallet
 
 down: ## Stop docker-compose services
@@ -112,9 +112,14 @@ compose-clean: ## Clean docker-compose resources
 
 ##@ Utilities
 
-env: ## Create .env from .env.example if not exists
+data-dir: ## Create ./data for the Docker volume, owned by you (not root)
+	@# If Docker creates the bind-mount source itself it belongs to root, and the
+	@# container's "node" user (uid 1000) cannot secure or write it.
+	@mkdir -p data && chmod 700 data
+
+env: ## Create .env from .env.example if not exists (readable by you only)
 	@if [ ! -f .env ]; then \
-		cp .env.example .env; \
+		(umask 077 && cp .env.example .env); \
 		echo "Created .env from .env.example - please edit with your values"; \
 	else \
 		echo ".env already exists"; \

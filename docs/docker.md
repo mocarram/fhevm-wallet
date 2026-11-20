@@ -5,7 +5,7 @@ Run fhEVM Wallet using Docker without installing Node.js locally.
 ## Quick Start
 
 ```bash
-# 1. Create environment file
+# 1. Create environment file (created readable by you only)
 make env
 # Edit .env with your RPC URLs and API keys
 
@@ -53,7 +53,9 @@ The container stores wallets, settings and history in `/data`, which is mounted 
 `./data` on the host (`FHEVM_WALLET_HOME=/data`). Keystores stay encrypted with your
 wallet password, and files are written with owner-only permissions.
 
-The container runs as the unprivileged `node` user (uid 1000). If `./data` was created by
+The container runs as the unprivileged `node` user (uid 1000). The `make docker-*` targets
+and `make up` create `./data` first (`make data-dir`), because a folder Docker creates for
+a bind mount belongs to root. If your host uid is not 1000, or `./data` was created by
 root, give it to that user once:
 
 ```bash
