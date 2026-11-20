@@ -3,6 +3,7 @@
  */
 
 import { Contract, Wallet, HDNodeWallet, TransactionReceipt, Signer } from 'ethers';
+import { translateTxError, WalletTxError } from './txErrors.js';
 import { getProvider, NetworkName, getNetworkConfig } from '../network/index.js';
 import { encryptAmount } from '../fhe/EncryptionService.js';
 import { decryptBalance } from '../fhe/DecryptionService.js';
@@ -11,18 +12,39 @@ import { logEvent } from '../../storage/AuditLog.js';
 import { recordLocalTransaction } from '../../storage/TransactionStore.js';
 import { getCachedBalance, setCachedBalance, invalidateBalance } from './BalanceCache.js';
 
-// ERC-7984 ABI (minimal interface)
-const ERC7984_ABI = [
+/**
+ * Minimal ERC-7984 ABI.
+ *
+ * Only standard functions are listed. Earlier versions called `$_transfer`, which exists
+ * only on OpenZeppelin's hardhat-exposed *mock* contracts; on a real token it reverts
+ * during gas estimation. The custom errors are included so ethers can decode reverts
+ * into names that `translateTxError` understands.
+ */
+export const ERC7984_ABI = [
   'function name() view returns (string)',
   'function symbol() view returns (string)',
   'function decimals() view returns (uint8)',
-  'function confidentialTotalSupply() view returns (uint256)',
-  'function confidentialBalanceOf(address account) view returns (uint256)',
-  'function $_transfer(address from, address to, bytes32 encryptedAmount, bytes inputProof) returns (uint256)',
-  'function $_mint(address to, bytes32 encryptedAmount, bytes inputProof) returns (uint256)',
-  'function $_burn(address from, bytes32 encryptedAmount, bytes inputProof) returns (uint256)',
-  'event Transfer(address indexed from, address indexed to)',
+  'function confidentialTotalSupply() view returns (bytes32)',
+  'function confidentialBalanceOf(address account) view returns (bytes32)',
+  'function confidentialTransfer(address to, bytes32 encryptedAmount, bytes inputProof) returns (bytes32)',
+  'function setOperator(address operator, uint48 until)',
+  'function isOperator(address holder, address spender) view returns (bool)',
+  'function supportsInterface(bytes4 interfaceId) view returns (bool)',
+  'event ConfidentialTransfer(address indexed from, address indexed to, bytes32 indexed amount)',
+  'event OperatorSet(address indexed holder, address indexed operator, uint48 until)',
+  'error ERC7984InvalidReceiver(address receiver)',
+  'error ERC7984InvalidSender(address sender)',
+  'error ERC7984UnauthorizedSpender(address holder, address spender)',
+  'error ERC7984UnauthorizedUseOfEncryptedAmount(bytes32 amount, address user)',
+  'error ERC7984ZeroBalance(address holder)',
+  'error ZamaProtocolUnsupported()',
 ];
+
+/** Largest value an euint64 can hold. Amounts are in the token's base units. */
+export const MAX_EUINT64 = 2n ** 64n - 1n;
+
+/** Extra gas on top of the estimate; FHE operations make estimates slightly unstable. */
+const GAS_BUFFER_PERCENT = 20n;
 
 export interface TokenInfo {
   address: string;
@@ -120,8 +142,117 @@ export async function getDecryptedBalance(
   return balance;
 }
 
+/** Result of a successful pre-flight check: everything needed to show a review and send. */
+export interface PreparedTransfer {
+  /** Gas limit including a safety buffer. */
+  gasLimit: bigint;
+  /** Estimated worst-case network fee in wei (gasLimit × maxFeePerGas). */
+  feeWei: bigint;
+  /** The sender's ETH balance in wei at preparation time. */
+  ethBalanceWei: bigint;
+  /** Broadcast the transfer and wait for one confirmation. */
+  send: () => Promise<TransferResult>;
+}
+
 /**
- * Transfer tokens confidentially
+ * Reject amounts an euint64 cannot hold. Done before encryption so the user gets a
+ * clear message instead of an SDK error.
+ */
+export function assertTransferAmount(amount: bigint): void {
+  if (amount <= 0n || amount > MAX_EUINT64) {
+    throw new WalletTxError(
+      'AMOUNT_OUT_OF_RANGE',
+      'That amount cannot be sent.',
+      "Confidential amounts are 64-bit numbers in the token's smallest unit, and must be above zero.",
+      'Enter a smaller amount.',
+    );
+  }
+}
+
+/**
+ * Encrypt the amount, simulate the transfer and check the wallet can pay for gas.
+ *
+ * Nothing is signed or broadcast here. Any failure is thrown as a `WalletTxError`
+ * with a plain-English explanation, so the UI can stop before asking to sign.
+ */
+export async function prepareConfidentialTransfer(
+  wallet: Wallet | HDNodeWallet,
+  tokenAddress: string,
+  toAddress: string,
+  amount: bigint,
+  network: NetworkName,
+): Promise<PreparedTransfer> {
+  assertTransferAmount(amount);
+  const chainId = network === 'mainnet' ? CHAIN_IDS.MAINNET : CHAIN_IDS.SEPOLIA;
+
+  try {
+    // The encrypted input is bound to (token, sender): the sender must be msg.sender.
+    const encrypted = await encryptAmount(chainId, tokenAddress, wallet.address, amount);
+
+    const provider = getProvider(network);
+    const connectedWallet = wallet.connect(provider);
+    const contract = getTokenContract(tokenAddress, network, connectedWallet);
+    const transfer = contract.getFunction('confidentialTransfer(address,bytes32,bytes)');
+    const args = [toAddress, encrypted.handleHex, encrypted.inputProofHex] as const;
+
+    // Simulate first. A revert here means the real send would fail too.
+    const estimate = await transfer.estimateGas(...args);
+    const gasLimit = (estimate * (100n + GAS_BUFFER_PERCENT)) / 100n;
+
+    const [feeData, ethBalanceWei] = await Promise.all([
+      provider.getFeeData(),
+      provider.getBalance(wallet.address),
+    ]);
+    const pricePerGas = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n;
+    const feeWei = gasLimit * pricePerGas;
+
+    if (ethBalanceWei < feeWei) {
+      throw new WalletTxError(
+        'INSUFFICIENT_GAS_FUNDS',
+        'Not enough ETH to pay the network fee.',
+        'Every send needs a little ETH for gas, even though the token amount is encrypted.',
+        'Add ETH to this wallet (on Sepolia, use a faucet) and try again.',
+      );
+    }
+
+    const send = async (): Promise<TransferResult> => {
+      try {
+        const tx = await transfer(...args, { gasLimit });
+        const receipt = await tx.wait();
+        if (!receipt || receipt.status !== 1) {
+          throw new WalletTxError(
+            'TX_REVERTED',
+            'The transfer was mined but reverted.',
+            'The contract rejected it on-chain after the simulation passed.',
+            'Check the transaction on the explorer, then try again.',
+            tx.hash,
+          );
+        }
+
+        // The encrypted handle changed; drop the cached plaintext balance.
+        invalidateBalance(wallet.address, tokenAddress, network);
+        logEvent('TRANSFER', {
+          token: tokenAddress,
+          to: toAddress,
+          amount: amount.toString(),
+          txHash: tx.hash,
+          network,
+        });
+        return { txHash: tx.hash, receipt };
+      } catch (err) {
+        throw translateTxError(err);
+      }
+    };
+
+    return { gasLimit, feeWei, ethBalanceWei, send };
+  } catch (err) {
+    throw translateTxError(err);
+  }
+}
+
+/**
+ * Transfer tokens confidentially: prepare (simulate + gas check), then send.
+ * Kept for callers that do not need to show a review step in between.
  */
 export async function confidentialTransfer(
   wallet: Wallet | HDNodeWallet,
@@ -130,41 +261,14 @@ export async function confidentialTransfer(
   amount: bigint,
   network: NetworkName,
 ): Promise<TransferResult> {
-  const chainId = network === 'mainnet' ? CHAIN_IDS.MAINNET : CHAIN_IDS.SEPOLIA;
-
-  // Encrypt the amount
-  const encrypted = await encryptAmount(chainId, tokenAddress, wallet.address, amount);
-
-  // Get contract with signer
-  const provider = getProvider(network);
-  const connectedWallet = wallet.connect(provider);
-  const contract = getTokenContract(tokenAddress, network, connectedWallet);
-
-  // Execute transfer (ERC-7984 uses $_transfer with from address)
-  const tx = await contract.$_transfer(
-    wallet.address,
+  const prepared = await prepareConfidentialTransfer(
+    wallet,
+    tokenAddress,
     toAddress,
-    encrypted.handleHex,
-    encrypted.inputProofHex,
-  );
-
-  const receipt = await tx.wait();
-
-  // Invalidate sender's cached balance after successful transfer
-  invalidateBalance(wallet.address, tokenAddress, network);
-
-  logEvent('TRANSFER', {
-    token: tokenAddress,
-    to: toAddress,
-    amount: amount.toString(),
-    txHash: tx.hash,
+    amount,
     network,
-  });
-
-  return {
-    txHash: tx.hash,
-    receipt,
-  };
+  );
+  return prepared.send();
 }
 
 /**
@@ -523,34 +627,46 @@ export async function getWalletTransactionsViaRPC(
 }
 
 /**
- * Approve tokens confidentially
+ * Allow `operator` to move this wallet's tokens until `untilUnixSeconds`.
+ * ERC-7984 has no `approve`; operators replace allowances. Pass 0 to revoke.
  */
-export async function confidentialApprove(
+export async function setOperator(
   wallet: Wallet | HDNodeWallet,
   tokenAddress: string,
-  spenderAddress: string,
-  amount: bigint,
+  operator: string,
+  untilUnixSeconds: number,
   network: NetworkName,
 ): Promise<TransferResult> {
-  const chainId = network === 'mainnet' ? CHAIN_IDS.MAINNET : CHAIN_IDS.SEPOLIA;
+  // uint48 holds timestamps far beyond any realistic expiry; reject nonsense early.
+  if (!Number.isInteger(untilUnixSeconds) || untilUnixSeconds < 0 || untilUnixSeconds >= 2 ** 48) {
+    throw new Error('Operator expiry must be a unix timestamp in seconds');
+  }
+  try {
+    const provider = getProvider(network);
+    const contract = getTokenContract(tokenAddress, network, wallet.connect(provider));
+    const tx = await contract.setOperator(operator, untilUnixSeconds);
+    const receipt = await tx.wait();
+    logEvent('OPERATOR_SET', {
+      token: tokenAddress,
+      operator,
+      until: String(untilUnixSeconds),
+      network,
+    });
+    return { txHash: tx.hash, receipt };
+  } catch (err) {
+    throw translateTxError(err);
+  }
+}
 
-  // Encrypt the amount
-  const encrypted = await encryptAmount(chainId, tokenAddress, wallet.address, amount);
-
-  // Get contract with signer
-  const provider = getProvider(network);
-  const connectedWallet = wallet.connect(provider);
-  const contract = getTokenContract(tokenAddress, network, connectedWallet);
-
-  // Execute approval
-  const tx = await contract.approve(spenderAddress, encrypted.handleHex, encrypted.inputProofHex);
-
-  const receipt = await tx.wait();
-
-  return {
-    txHash: tx.hash,
-    receipt,
-  };
+/** Whether `spender` may currently move `holder`'s tokens. */
+export async function isOperator(
+  tokenAddress: string,
+  holder: string,
+  spender: string,
+  network: NetworkName,
+): Promise<boolean> {
+  const contract = getTokenContract(tokenAddress, network);
+  return Boolean(await contract.isOperator(holder, spender));
 }
 
 /**

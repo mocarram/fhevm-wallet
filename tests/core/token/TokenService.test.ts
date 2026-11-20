@@ -10,7 +10,12 @@ const contractStubs = {
   symbol: vi.fn(),
   decimals: vi.fn(),
   confidentialBalanceOf: vi.fn(),
-  $_transfer: vi.fn(),
+  // confidentialTransfer is reached through getFunction(signature) so ethers picks the
+  // (address,bytes32,bytes) overload; the stub doubles as the callable and holds estimateGas.
+  confidentialTransfer: Object.assign(vi.fn(), { estimateGas: vi.fn() }),
+  getFunction: vi.fn(),
+  setOperator: vi.fn(),
+  isOperator: vi.fn(),
 };
 
 vi.mock('ethers', async () => {
@@ -20,12 +25,18 @@ vi.mock('ethers', async () => {
     symbol = contractStubs.symbol;
     decimals = contractStubs.decimals;
     confidentialBalanceOf = contractStubs.confidentialBalanceOf;
-    $_transfer = contractStubs.$_transfer;
+    getFunction = contractStubs.getFunction;
+    setOperator = contractStubs.setOperator;
+    isOperator = contractStubs.isOperator;
   }
   return { ...actual, Contract: MockContract };
 });
 
-const fakeProvider = { destroy: vi.fn() };
+const fakeProvider = {
+  destroy: vi.fn(),
+  getFeeData: vi.fn(),
+  getBalance: vi.fn(),
+};
 vi.mock('../../../src/core/network/ProviderFactory.js', () => ({
   getProvider: vi.fn(() => fakeProvider),
   clearProviderCache: vi.fn(),
@@ -49,6 +60,11 @@ vi.mock('../../../src/core/fhe/DecryptionService.js', () => ({
 beforeEach(() => {
   wipeTestDataDir();
   Object.values(contractStubs).forEach((fn) => fn.mockReset());
+  contractStubs.confidentialTransfer.estimateGas.mockReset();
+  contractStubs.getFunction.mockImplementation(() => contractStubs.confidentialTransfer);
+  fakeProvider.getFeeData.mockResolvedValue({ maxFeePerGas: 10n, gasPrice: null });
+  fakeProvider.getBalance.mockResolvedValue(10n ** 18n);
+  contractStubs.confidentialTransfer.estimateGas.mockResolvedValue(100_000n);
   contractStubs.name.mockResolvedValue('Confidential Token');
   contractStubs.symbol.mockResolvedValue('cTKN');
   contractStubs.decimals.mockResolvedValue(6n);
@@ -121,9 +137,11 @@ describe('TokenService.getDecryptedBalance', () => {
 });
 
 describe('TokenService.confidentialTransfer', () => {
-  it('encrypts, calls $_transfer, awaits receipt, and returns hash', async () => {
-    const receipt = { blockNumber: 100 };
-    contractStubs.$_transfer.mockResolvedValue({
+  const wallet = { address: USER, connect: () => wallet } as never;
+
+  it('simulates then sends confidentialTransfer(to, handle, proof) with a gas buffer', async () => {
+    const receipt = { blockNumber: 100, status: 1 };
+    contractStubs.confidentialTransfer.mockResolvedValue({
       hash: '0xtxhash',
       wait: vi.fn().mockResolvedValue(receipt),
     });
@@ -131,13 +149,110 @@ describe('TokenService.confidentialTransfer', () => {
     const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
     const encryption = await import('../../../src/core/fhe/EncryptionService.js');
 
-    const wallet = { address: USER, connect: () => wallet } as never;
     const result = await confidentialTransfer(wallet, TOKEN, RECIPIENT, 5n, 'sepolia');
 
     expect(result.txHash).toBe('0xtxhash');
     expect(result.receipt).toBe(receipt);
+    expect(contractStubs.getFunction).toHaveBeenCalledWith(
+      'confidentialTransfer(address,bytes32,bytes)',
+    );
     expect(encryption.encryptAmount).toHaveBeenCalledWith(11155111n, TOKEN, USER, 5n);
-    expect(contractStubs.$_transfer).toHaveBeenCalledWith(USER, RECIPIENT, '0xhandle', '0xproof');
+    expect(contractStubs.confidentialTransfer.estimateGas).toHaveBeenCalledWith(
+      RECIPIENT,
+      '0xhandle',
+      '0xproof',
+    );
+    // 100k estimate + 20% buffer
+    expect(contractStubs.confidentialTransfer).toHaveBeenCalledWith(
+      RECIPIENT,
+      '0xhandle',
+      '0xproof',
+      { gasLimit: 120_000n },
+    );
+  });
+
+  it('reports the fee and ETH balance before anything is signed', async () => {
+    const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const prepared = await prepareConfidentialTransfer(wallet, TOKEN, RECIPIENT, 5n, 'sepolia');
+    expect(prepared.gasLimit).toBe(120_000n);
+    expect(prepared.feeWei).toBe(1_200_000n);
+    expect(prepared.ethBalanceWei).toBe(10n ** 18n);
+    expect(contractStubs.confidentialTransfer).not.toHaveBeenCalled();
+  });
+
+  it('stops with INSUFFICIENT_GAS_FUNDS when ETH cannot cover the fee', async () => {
+    fakeProvider.getBalance.mockResolvedValue(1n);
+    const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    await expect(
+      prepareConfidentialTransfer(wallet, TOKEN, RECIPIENT, 5n, 'sepolia'),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_GAS_FUNDS' });
+    expect(contractStubs.confidentialTransfer).not.toHaveBeenCalled();
+  });
+
+  it('translates a revert with no data during simulation into NOT_ERC7984', async () => {
+    contractStubs.confidentialTransfer.estimateGas.mockRejectedValue(
+      Object.assign(new Error('missing revert data (action="estimateGas", data=null)'), {
+        code: 'CALL_EXCEPTION',
+        action: 'estimateGas',
+        data: null,
+      }),
+    );
+    const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    await expect(
+      prepareConfidentialTransfer(wallet, TOKEN, RECIPIENT, 5n, 'sepolia'),
+    ).rejects.toMatchObject({ code: 'NOT_ERC7984' });
+  });
+
+  it('rejects zero and amounts above the euint64 range before encrypting', async () => {
+    const { prepareConfidentialTransfer, MAX_EUINT64 } =
+      await import('../../../src/core/token/TokenService.js');
+    const encryption = await import('../../../src/core/fhe/EncryptionService.js');
+    for (const bad of [0n, MAX_EUINT64 + 1n]) {
+      await expect(
+        prepareConfidentialTransfer(wallet, TOKEN, RECIPIENT, bad, 'sepolia'),
+      ).rejects.toMatchObject({ code: 'AMOUNT_OUT_OF_RANGE' });
+    }
+    expect(encryption.encryptAmount).not.toHaveBeenCalled();
+  });
+
+  it('throws TX_REVERTED when the mined receipt has status 0', async () => {
+    contractStubs.confidentialTransfer.mockResolvedValue({
+      hash: '0xbad',
+      wait: vi.fn().mockResolvedValue({ status: 0 }),
+    });
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    await expect(
+      confidentialTransfer(wallet, TOKEN, RECIPIENT, 5n, 'sepolia'),
+    ).rejects.toMatchObject({ code: 'TX_REVERTED' });
+  });
+});
+
+describe('TokenService operators', () => {
+  const wallet = { address: USER, connect: () => wallet } as never;
+
+  it('setOperator passes operator and expiry and waits for the receipt', async () => {
+    contractStubs.setOperator.mockResolvedValue({
+      hash: '0xop',
+      wait: vi.fn().mockResolvedValue({ status: 1 }),
+    });
+    const { setOperator } = await import('../../../src/core/token/TokenService.js');
+    const res = await setOperator(wallet, TOKEN, RECIPIENT, 1_900_000_000, 'sepolia');
+    expect(res.txHash).toBe('0xop');
+    expect(contractStubs.setOperator).toHaveBeenCalledWith(RECIPIENT, 1_900_000_000);
+  });
+
+  it('setOperator rejects expiries outside uint48', async () => {
+    const { setOperator } = await import('../../../src/core/token/TokenService.js');
+    await expect(setOperator(wallet, TOKEN, RECIPIENT, -1, 'sepolia')).rejects.toThrow(/expiry/);
+    await expect(setOperator(wallet, TOKEN, RECIPIENT, 2 ** 48, 'sepolia')).rejects.toThrow(
+      /expiry/,
+    );
+  });
+
+  it('isOperator returns a boolean', async () => {
+    contractStubs.isOperator.mockResolvedValue(true);
+    const { isOperator } = await import('../../../src/core/token/TokenService.js');
+    expect(await isOperator(TOKEN, USER, RECIPIENT, 'sepolia')).toBe(true);
   });
 });
 

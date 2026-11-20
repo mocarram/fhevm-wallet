@@ -15,7 +15,8 @@ export type AuditEvent =
   | 'WALLET_REMOVED'
   | 'TRANSFER'
   | 'TOKEN_ADDED'
-  | 'TOKEN_REMOVED';
+  | 'TOKEN_REMOVED'
+  | 'OPERATOR_SET';
 
 /**
  * Format details as key=value pairs
