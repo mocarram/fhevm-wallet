@@ -138,8 +138,12 @@ function rawText(err: unknown): string {
  * revert reason could carry terminal escape sequences or misleading instructions.
  */
 export function sanitizeContractText(text: string, max = 120): string {
-  // eslint-disable-next-line no-control-regex
-  const clean = text.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').trim();
+  // Control characters (terminal escapes) plus bidi overrides and zero-width characters,
+  // which could visually reorder or hide parts of an address.
+  const clean = text
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, ' ')
+    .trim();
   return clean.length > max ? clean.slice(0, max - 1) + '…' : clean;
 }
 
@@ -269,7 +273,22 @@ export function sentButUnconfirmed(
   opts: TranslateOptions = {},
 ): WalletTxError {
   const translated = translateTxError(err, opts);
-  if (translated.code === 'TX_REVERTED') return translated;
+  if (translated.code === 'TX_REVERTED') {
+    // Mined and reverted: point straight at the explorer entry.
+    return new WalletTxError(
+      'TX_REVERTED',
+      translated.message,
+      translated.likelyCause,
+      `Check ${explorerUrl} before trying again.`,
+      translated.raw,
+      txHash,
+    );
+  }
+  // The node refused the transaction outright, so it was definitely not sent and a
+  // retry (after fixing the cause) is safe.
+  if (translated.code === 'INSUFFICIENT_GAS_FUNDS' || translated.code === 'NONCE_CONFLICT') {
+    return translated;
+  }
   return new WalletTxError(
     'SENT_UNCONFIRMED',
     'The transaction was sent, but its confirmation could not be checked.',

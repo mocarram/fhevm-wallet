@@ -27,3 +27,23 @@ describe('redactSecrets', () => {
     expect(redactSecrets(`txHash=0x${hex}`)).toBe(`txHash=0x${hex}`);
   });
 });
+
+describe('redactSecrets: provider formats', () => {
+  afterEach(() => {
+    delete process.env.SEPOLIA_RPC_URL;
+  });
+
+  it('masks the configured RPC URL wholesale (Ankr/QuickNode path tokens)', () => {
+    process.env.SEPOLIA_RPC_URL = 'https://rpc.ankr.com/eth_sepolia/' + 'f'.repeat(64);
+    expect(redactSecrets(`failed ${process.env.SEPOLIA_RPC_URL}`)).toBe('failed [redacted]');
+  });
+
+  it('masks dkey/auth query params, Bearer tokens and JSON apiKey fields', () => {
+    expect(redactSecrets('https://x.drpc.org/?dkey=abc123')).toContain('dkey=[redacted]');
+    expect(redactSecrets('https://x/?auth=tok')).toContain('auth=[redacted]');
+    expect(redactSecrets('Authorization: Bearer abcdefgh12345')).toBe(
+      'Authorization: Bearer [redacted]',
+    );
+    expect(redactSecrets('{"apiKey":"zzz"}')).toBe('{"apiKey":"[redacted]"}');
+  });
+});

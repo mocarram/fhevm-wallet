@@ -8,7 +8,14 @@
  */
 
 /** Settings whose values are secrets wherever they appear. */
-const SECRET_ENV_VARS = ['ZAMA_MAINNET_API_KEY', 'ETHERSCAN_API_KEY'];
+const SECRET_ENV_VARS = [
+  'ZAMA_MAINNET_API_KEY',
+  'ETHERSCAN_API_KEY',
+  // Custom RPC URLs often embed a provider key in a form the patterns below can't know
+  // (Ankr, QuickNode path tokens). Mask the whole configured URL wherever it appears.
+  'MAINNET_RPC_URL',
+  'SEPOLIA_RPC_URL',
+];
 
 const REDACTED = '[redacted]';
 
@@ -31,12 +38,16 @@ export function redactSecrets(text: string): string {
 
   // 2. Secret-looking query parameters: ?apikey=…, &token=…
   out = out.replace(
-    /([?&](?:api[_-]?key|key|token|access[_-]?token|secret)=)[^&\s"'<>]+/gi,
+    /([?&](?:api[_-]?key|d?key|token|access[_-]?token|secret|auth)=)[^&\s"'<>]+/gi,
     `$1${REDACTED}`,
   );
 
   // 3. Provider keys in the path: https://…/v2/<key>, https://…/v3/<key>
   out = out.replace(/(\/v[23]\/)[A-Za-z0-9_-]{16,}/g, `$1${REDACTED}`);
+
+  // 3b. Bearer tokens and JSON "apiKey": "…" fields.
+  out = out.replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}/g, `$1${REDACTED}`);
+  out = out.replace(/("api[_-]?key"\s*:\s*")[^"]+"/gi, `$1${REDACTED}"`);
 
   // 4. user:password@ in URLs.
   out = out.replace(/(https?:\/\/)[^/\s:@]+:[^/\s@]+@/gi, `$1${REDACTED}@`);

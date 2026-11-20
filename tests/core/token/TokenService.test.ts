@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Interface, ZeroHash, zeroPadValue } from 'ethers';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Interface, Transaction, Wallet, ZeroHash, zeroPadValue } from 'ethers';
 import { wipeTestDataDir } from '../../helpers/dataDir.js';
 
 const TOKEN = '0xde709f2102306220921060314715629080e2fb77';
@@ -13,7 +13,10 @@ const contractStubs = {
   confidentialBalanceOf: vi.fn(),
   // confidentialTransfer is reached through getFunction(signature) so ethers picks the
   // (address,bytes32,bytes) overload; the stub doubles as the callable and holds estimateGas.
-  confidentialTransfer: Object.assign(vi.fn(), { estimateGas: vi.fn() }),
+  confidentialTransfer: Object.assign(vi.fn(), {
+    estimateGas: vi.fn(),
+    populateTransaction: vi.fn(),
+  }),
   getFunction: vi.fn(),
   setOperator: Object.assign(vi.fn(), { estimateGas: vi.fn() }),
   isOperator: vi.fn(),
@@ -35,6 +38,7 @@ vi.mock('ethers', async () => {
 
 const fakeProvider = {
   destroy: vi.fn(),
+  broadcastTransaction: vi.fn(),
   getFeeData: vi.fn(),
   getBalance: vi.fn(),
 };
@@ -62,6 +66,8 @@ beforeEach(() => {
   wipeTestDataDir();
   Object.values(contractStubs).forEach((fn) => fn.mockReset());
   contractStubs.confidentialTransfer.estimateGas.mockReset();
+  contractStubs.confidentialTransfer.populateTransaction.mockReset();
+  fakeProvider.broadcastTransaction.mockReset();
   contractStubs.setOperator.estimateGas.mockReset();
   contractStubs.setOperator.estimateGas.mockResolvedValue(50_000n);
   contractStubs.getFunction.mockImplementation(() => contractStubs.confidentialTransfer);
@@ -170,21 +176,57 @@ describe('TokenService balance handles from the real ABI', () => {
 });
 
 describe('TokenService.confidentialTransfer', () => {
-  const wallet = { address: USER, connect: () => wallet } as never;
-
-  it('simulates then sends confidentialTransfer(to, handle, proof) with a gas buffer', async () => {
-    const receipt = { blockNumber: 100, status: 1 };
-    contractStubs.confidentialTransfer.mockResolvedValue({
-      hash: '0xtxhash',
-      wait: vi.fn().mockResolvedValue(receipt),
+  // A real signed transaction, so Transaction.from(signed).hash works exactly as in production.
+  let SIGNED = '';
+  let SIGNED_HASH = '';
+  beforeAll(async () => {
+    SIGNED = await new Wallet(
+      '0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318',
+    ).signTransaction({
+      to: TOKEN,
+      data: '0x',
+      gasLimit: 120_000n,
+      chainId: 11155111n,
+      nonce: 0,
+      maxFeePerGas: 10n,
+      maxPriorityFeePerGas: 1n,
+      type: 2,
     });
+    SIGNED_HASH = Transaction.from(SIGNED).hash!;
+  });
 
+  const wallet = {
+    address: USER,
+    connect: () => wallet,
+    populateTransaction: vi.fn(async (tx: unknown) => tx),
+    signTransaction: vi.fn(async () => SIGNED),
+  };
+  const w = wallet as never;
+
+  /** Make the broadcast resolve to a tx whose wait() behaves as given. */
+  const broadcastWith = (wait: () => Promise<unknown>) =>
+    fakeProvider.broadcastTransaction.mockResolvedValue({ hash: SIGNED_HASH, wait });
+
+  beforeEach(() => {
+    contractStubs.confidentialTransfer.populateTransaction.mockResolvedValue({
+      to: TOKEN,
+      data: '0x',
+    });
+    wallet.populateTransaction.mockClear();
+    wallet.signTransaction.mockClear();
+    // Non-zero handle; the mocked decryptBalance returns 9_999 base units.
+    contractStubs.confidentialBalanceOf.mockResolvedValue(42n);
+  });
+
+  it('simulates, signs locally with a gas buffer, then broadcasts', async () => {
+    const receipt = { blockNumber: 100, status: 1 };
+    broadcastWith(async () => receipt);
     const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
     const encryption = await import('../../../src/core/fhe/EncryptionService.js');
 
-    const result = await confidentialTransfer(wallet, TOKEN, RECIPIENT, 5n, 'sepolia');
+    const result = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
 
-    expect(result.txHash).toBe('0xtxhash');
+    expect(result.txHash).toBe(SIGNED_HASH);
     expect(result.receipt).toBe(receipt);
     expect(contractStubs.getFunction).toHaveBeenCalledWith(
       'confidentialTransfer(address,bytes32,bytes)',
@@ -195,31 +237,33 @@ describe('TokenService.confidentialTransfer', () => {
       '0xhandle',
       '0xproof',
     );
-    // 100k estimate + 20% buffer
-    expect(contractStubs.confidentialTransfer).toHaveBeenCalledWith(
+    // 100k estimate + 20% buffer, on the standard function
+    expect(contractStubs.confidentialTransfer.populateTransaction).toHaveBeenCalledWith(
       RECIPIENT,
       '0xhandle',
       '0xproof',
       { gasLimit: 120_000n },
     );
+    expect(fakeProvider.broadcastTransaction).toHaveBeenCalledWith(SIGNED);
   });
 
   it('reports the fee and ETH balance before anything is signed', async () => {
     const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
-    const prepared = await prepareConfidentialTransfer(wallet, TOKEN, RECIPIENT, 5n, 'sepolia');
+    const prepared = await prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
     expect(prepared.gasLimit).toBe(120_000n);
     expect(prepared.feeWei).toBe(1_200_000n);
     expect(prepared.ethBalanceWei).toBe(10n ** 18n);
-    expect(contractStubs.confidentialTransfer).not.toHaveBeenCalled();
+    expect(wallet.signTransaction).not.toHaveBeenCalled();
+    expect(fakeProvider.broadcastTransaction).not.toHaveBeenCalled();
   });
 
   it('stops with INSUFFICIENT_GAS_FUNDS when ETH cannot cover the fee', async () => {
     fakeProvider.getBalance.mockResolvedValue(1n);
     const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
     await expect(
-      prepareConfidentialTransfer(wallet, TOKEN, RECIPIENT, 5n, 'sepolia'),
+      prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia'),
     ).rejects.toMatchObject({ code: 'INSUFFICIENT_GAS_FUNDS' });
-    expect(contractStubs.confidentialTransfer).not.toHaveBeenCalled();
+    expect(wallet.signTransaction).not.toHaveBeenCalled();
   });
 
   it('translates a revert with no data during simulation into NOT_ERC7984', async () => {
@@ -232,7 +276,7 @@ describe('TokenService.confidentialTransfer', () => {
     );
     const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
     await expect(
-      prepareConfidentialTransfer(wallet, TOKEN, RECIPIENT, 5n, 'sepolia'),
+      prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia'),
     ).rejects.toMatchObject({ code: 'NOT_ERC7984' });
   });
 
@@ -242,48 +286,85 @@ describe('TokenService.confidentialTransfer', () => {
     const encryption = await import('../../../src/core/fhe/EncryptionService.js');
     for (const bad of [0n, MAX_EUINT64 + 1n]) {
       await expect(
-        prepareConfidentialTransfer(wallet, TOKEN, RECIPIENT, bad, 'sepolia'),
+        prepareConfidentialTransfer(w, TOKEN, RECIPIENT, bad, 'sepolia'),
       ).rejects.toMatchObject({ code: 'AMOUNT_OUT_OF_RANGE' });
     }
     expect(encryption.encryptAmount).not.toHaveBeenCalled();
   });
 
-  it('maps a reverted receipt from wait() to TX_REVERTED with the hash', async () => {
+  it('a signing failure is safe to retry (nothing was sent)', async () => {
+    wallet.signTransaction.mockRejectedValueOnce(new Error('nonce lookup failed'));
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const err = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia').catch((e) => e);
+    expect(err.txHash).toBeUndefined();
+    expect(fakeProvider.broadcastTransaction).not.toHaveBeenCalled();
+  });
+
+  it('maps a reverted receipt from wait() to TX_REVERTED with the hash and link', async () => {
     // ethers v6 wait() throws this shape for a status-0 receipt.
-    contractStubs.confidentialTransfer.mockResolvedValue({
-      hash: '0xbad',
-      wait: vi.fn().mockRejectedValue(
-        Object.assign(new Error('transaction execution reverted'), {
-          code: 'CALL_EXCEPTION',
-          action: 'sendTransaction',
-          data: null,
-          receipt: { hash: '0xbad', status: 0 },
-        }),
-      ),
+    broadcastWith(async () => {
+      throw Object.assign(new Error('transaction execution reverted'), {
+        code: 'CALL_EXCEPTION',
+        action: 'sendTransaction',
+        data: null,
+        receipt: { hash: SIGNED_HASH, status: 0 },
+      });
     });
     const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
-    await expect(
-      confidentialTransfer(wallet, TOKEN, RECIPIENT, 5n, 'sepolia'),
-    ).rejects.toMatchObject({ code: 'TX_REVERTED', txHash: '0xbad' });
+    const err = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia').catch((e) => e);
+    expect(err).toMatchObject({ code: 'TX_REVERTED', txHash: SIGNED_HASH });
+    expect(err.hint).toContain(`/tx/${SIGNED_HASH}`);
   });
 
   it('never says "try again" when waiting fails after broadcast', async () => {
-    contractStubs.confidentialTransfer.mockResolvedValue({
-      hash: '0xsent',
-      wait: vi.fn().mockRejectedValue(Object.assign(new Error('timeout'), { code: 'TIMEOUT' })),
+    broadcastWith(async () => {
+      throw Object.assign(new Error('timeout'), { code: 'TIMEOUT' });
     });
     const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
-    const err = await confidentialTransfer(wallet, TOKEN, RECIPIENT, 5n, 'sepolia').catch((e) => e);
-    expect(err).toMatchObject({ code: 'SENT_UNCONFIRMED', txHash: '0xsent' });
+    const err = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia').catch((e) => e);
+    expect(err).toMatchObject({ code: 'SENT_UNCONFIRMED', txHash: SIGNED_HASH });
     expect(err.hint).toMatch(/Do not send again/);
-    expect(err.hint).toMatch(/sepolia\.etherscan\.io\/tx\/0xsent/);
+    expect(err.hint).toContain(`sepolia.etherscan.io/tx/${SIGNED_HASH}`);
+  });
+
+  it('treats a timed-out broadcast as possibly sent, with the hash', async () => {
+    fakeProvider.broadcastTransaction.mockRejectedValue(
+      Object.assign(new Error('request timeout'), { code: 'TIMEOUT' }),
+    );
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    await expect(confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia')).rejects.toMatchObject({
+      code: 'SENT_UNCONFIRMED',
+      txHash: SIGNED_HASH,
+    });
+  });
+
+  it('a broadcast the node refuses outright is reported as not sent', async () => {
+    fakeProvider.broadcastTransaction.mockRejectedValue(
+      Object.assign(new Error('insufficient funds for gas'), { code: 'INSUFFICIENT_FUNDS' }),
+    );
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    await expect(confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia')).rejects.toMatchObject({
+      code: 'INSUFFICIENT_GAS_FUNDS',
+    });
+  });
+
+  it('a local bookkeeping failure after confirmation does not turn into an error', async () => {
+    broadcastWith(async () => ({ status: 1, blockNumber: 7 }));
+    const audit = await import('../../../src/storage/AuditLog.js');
+    const spy = vi.spyOn(audit, 'logEvent').mockImplementation(() => {
+      throw new Error('EISDIR: illegal operation on a directory');
+    });
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const res = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
+    expect(res.txHash).toBe(SIGNED_HASH);
+    expect(spy).toHaveBeenCalled();
   });
 
   it('refuses to guess a zero fee when the RPC returns no gas price', async () => {
     fakeProvider.getFeeData.mockResolvedValue({ maxFeePerGas: null, gasPrice: null });
     const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
     await expect(
-      prepareConfidentialTransfer(wallet, TOKEN, RECIPIENT, 5n, 'sepolia'),
+      prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia'),
     ).rejects.toMatchObject({ code: 'RPC_UNAVAILABLE' });
   });
 });

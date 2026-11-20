@@ -102,3 +102,11 @@ describe('formatTxError', () => {
     expect(formatTxError(err, true)).toMatch(/Technical details: RAW/);
   });
 });
+
+describe('sanitizeContractText', () => {
+  it('removes bidi overrides and zero-width characters', async () => {
+    const { sanitizeContractText } = await import('../../../src/core/token/txErrors.js');
+    const out = sanitizeContractText('send to 0xabc‮dcba​ now');
+    expect(out).not.toMatch(/[‮​]/);
+  });
+});

@@ -2,7 +2,15 @@
  * ERC-7984 token interactions
  */
 
-import { Contract, Interface, Wallet, HDNodeWallet, TransactionReceipt, Signer } from 'ethers';
+import {
+  Contract,
+  Interface,
+  Wallet,
+  HDNodeWallet,
+  Transaction,
+  TransactionReceipt,
+  Signer,
+} from 'ethers';
 import { sentButUnconfirmed, translateTxError, WalletTxError } from './txErrors.js';
 import { getProvider, NetworkName, getNetworkConfig } from '../network/index.js';
 import { encryptAmount } from '../fhe/EncryptionService.js';
@@ -63,6 +71,19 @@ export interface TransferResult {
 
 export interface GetBalanceOptions {
   forceRefresh?: boolean;
+}
+
+/**
+ * Run local bookkeeping (audit log, cache) after a transaction is already on-chain.
+ * A full disk or broken permissions must not turn a confirmed transfer into an error
+ * that tempts the user to send again.
+ */
+function bestEffort(fn: () => void): void {
+  try {
+    fn();
+  } catch {
+    // Intentionally ignored: the on-chain result is what matters to the user.
+  }
 }
 
 /**
@@ -209,7 +230,7 @@ export async function prepareConfidentialTransfer(
       provider.getBalance(wallet.address),
     ]);
     const pricePerGas = feeData.maxFeePerGas ?? feeData.gasPrice;
-    if (!pricePerGas) {
+    if (pricePerGas == null) {
       // Without a price we can't check affordability or show a fee; don't guess "0".
       throw new WalletTxError(
         'RPC_UNAVAILABLE',
@@ -230,45 +251,45 @@ export async function prepareConfidentialTransfer(
     }
 
     const send = async (): Promise<TransferResult> => {
-      // Phase 1: sign and broadcast. Failures here mean nothing was sent.
-      let tx;
+      // Step 1: build and sign locally. Nothing has left this machine yet, so a failure
+      // here is safe to retry.
+      let signed: string;
       try {
-        tx = await transfer(...args, { gasLimit });
+        const unsigned = await transfer.populateTransaction(...args, { gasLimit });
+        const request = await connectedWallet.populateTransaction(unsigned);
+        signed = await connectedWallet.signTransaction(request);
       } catch (err) {
         throw translateTxError(err, { iface: ERC7984_INTERFACE });
       }
 
-      // From here on the transaction exists on the network. Record it immediately so the
-      // hash is never lost, even if waiting for the receipt fails.
-      logEvent('TRANSFER_SENT', { token: tokenAddress, to: toAddress, txHash: tx.hash, network });
+      // The hash is known before broadcasting. From here on, *every* failure must carry it
+      // and must not say "try again": a broadcast that timed out may still be in the
+      // mempool, and resending would pay twice.
+      const txHash = Transaction.from(signed).hash!;
+      const explorerUrl = getTxExplorerUrl(txHash, network);
+      bestEffort(() =>
+        logEvent('TRANSFER_SENT', { token: tokenAddress, to: toAddress, txHash, network }),
+      );
 
-      // Phase 2: wait for one confirmation. A failure here must NOT read as "try again":
-      // the transfer may still confirm, and resending could pay twice.
       let receipt: TransactionReceipt | null;
       try {
+        const tx = await provider.broadcastTransaction(signed);
         // ethers v6 wait() throws CALL_EXCEPTION (action "sendTransaction") on a status-0
         // receipt; sentButUnconfirmed keeps that as TX_REVERTED.
         receipt = await tx.wait();
+        if (!receipt) throw new Error('No receipt returned'); // only with confirmations=0
       } catch (err) {
-        throw sentButUnconfirmed(err, tx.hash, getTxExplorerUrl(tx.hash, network), {
-          iface: ERC7984_INTERFACE,
-        });
-      }
-      if (!receipt) {
-        // Only possible with confirmations=0, which we never request.
-        throw sentButUnconfirmed(
-          new Error('No receipt returned'),
-          tx.hash,
-          getTxExplorerUrl(tx.hash, network),
-        );
+        throw sentButUnconfirmed(err, txHash, explorerUrl, { iface: ERC7984_INTERFACE });
       }
 
-      // The encrypted handle changed; drop the cached plaintext balance.
-      invalidateBalance(wallet.address, tokenAddress, network);
-      // The amount is deliberately not logged: the audit log should not undo the
-      // confidentiality the token provides.
-      logEvent('TRANSFER', { token: tokenAddress, to: toAddress, txHash: tx.hash, network });
-      return { txHash: tx.hash, receipt };
+      // Confirmed. Local bookkeeping must never turn a successful transfer into an error.
+      // The encrypted handle changed, so drop the cached plaintext balance; the amount is
+      // deliberately not logged so the audit log doesn't undo the token's confidentiality.
+      bestEffort(() => invalidateBalance(wallet.address, tokenAddress, network));
+      bestEffort(() =>
+        logEvent('TRANSFER', { token: tokenAddress, to: toAddress, txHash, network }),
+      );
+      return { txHash, receipt };
     };
 
     return { gasLimit, feeWei, ethBalanceWei, send };
@@ -674,14 +695,24 @@ export async function setOperator(
     // Simulate first so a revert is reported before anything is signed.
     await contract.setOperator.estimateGas(operator, untilUnixSeconds);
     const tx = await contract.setOperator(operator, untilUnixSeconds);
-    const receipt = await tx.wait();
-    logEvent('OPERATOR_SET', {
-      token: tokenAddress,
-      operator,
-      until: String(untilUnixSeconds),
-      network,
-    });
-    return { txHash: tx.hash, receipt };
+    let receipt: TransactionReceipt | null;
+    try {
+      receipt = await tx.wait();
+    } catch (err) {
+      throw sentButUnconfirmed(err, tx.hash, getTxExplorerUrl(tx.hash, network), {
+        iface: ERC7984_INTERFACE,
+        action: 'operator change',
+      });
+    }
+    bestEffort(() =>
+      logEvent('OPERATOR_SET', {
+        token: tokenAddress,
+        operator,
+        until: String(untilUnixSeconds),
+        network,
+      }),
+    );
+    return { txHash: tx.hash, receipt: receipt! };
   } catch (err) {
     throw translateTxError(err, { iface: ERC7984_INTERFACE, action: 'operator change' });
   }
