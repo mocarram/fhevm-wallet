@@ -4,6 +4,7 @@
 
 import chalk from 'chalk';
 import { maskUrlsInText, redactSecrets } from './redact.js';
+import { stripUnsafeChars } from './text.js';
 
 /**
  * Format network name for display (adds beta tag for mainnet)
@@ -144,5 +145,5 @@ export function shortErrorMessage(err: unknown): string {
   // First line only, with secrets and URL paths masked: ethers messages can include the
   // RPC request URL, which often embeds an API key.
   const firstLine = message.split('\n')[0];
-  return maskUrlsInText(redactSecrets(firstLine));
+  return stripUnsafeChars(maskUrlsInText(redactSecrets(firstLine))).slice(0, 200);
 }

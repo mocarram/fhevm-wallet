@@ -83,4 +83,10 @@ describe('shortErrorMessage', () => {
   it('returns first line for plain errors', () => {
     expect(shortErrorMessage(new Error('first line\nsecond line'))).toBe('first line');
   });
+
+  it('strips terminal escapes and masks URLs (regression)', () => {
+    const out = shortErrorMessage(new Error('bad \u001b[2J https://rpc.example/v2/KEY123456789 x'));
+    expect(out).not.toContain('\u001b');
+    expect(out).not.toContain('KEY123456789');
+  });
 });
