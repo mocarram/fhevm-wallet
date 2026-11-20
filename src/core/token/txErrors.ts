@@ -24,6 +24,7 @@ export type TxErrorCode =
   | 'SENT_UNCONFIRMED'
   | 'TX_REPLACED'
   | 'WRONG_CHAIN'
+  | 'INSUFFICIENT_TOKEN_BALANCE'
   | 'UNKNOWN';
 
 /** A user-facing transaction error. `raw` is only shown when the user asks for details. */

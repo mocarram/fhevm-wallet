@@ -274,6 +274,54 @@ describe('TokenService.confidentialTransfer', () => {
     expect(encryption.encryptAmount).not.toHaveBeenCalled();
   });
 
+  it('stops before encrypting when the amount exceeds the decrypted balance', async () => {
+    const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const encryption = await import('../../../src/core/fhe/EncryptionService.js');
+    await expect(
+      prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 10_000n, 'sepolia'),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_TOKEN_BALANCE' });
+    expect(encryption.encryptAmount).not.toHaveBeenCalled();
+  });
+
+  it('sending the whole balance is allowed', async () => {
+    const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const prepared = await prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 9_999n, 'sepolia');
+    expect(prepared.tokenBalance).toBe(9_999n);
+  });
+
+  it('reports "moved" when the re-decrypted balance dropped by the amount', async () => {
+    broadcastWith(async () => ({ status: 1, blockNumber: 1 }));
+    const decryption = await import('../../../src/core/fhe/DecryptionService.js');
+    vi.mocked(decryption.decryptBalance)
+      .mockResolvedValueOnce(9_999n)
+      .mockResolvedValueOnce(9_994n);
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const res = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
+    expect(res.balanceCheck).toBe('moved');
+    expect(res.balanceAfter).toBe(9_994n);
+  });
+
+  it('reports "unchanged" when the transfer silently moved 0', async () => {
+    broadcastWith(async () => ({ status: 1, blockNumber: 1 }));
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const res = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
+    expect(res.balanceCheck).toBe('unchanged');
+    expect(res.balanceAfter).toBe(9_999n);
+  });
+
+  it('a failed re-decrypt after confirmation is "unknown", not an error', async () => {
+    broadcastWith(async () => ({ status: 1, blockNumber: 1 }));
+    const decryption = await import('../../../src/core/fhe/DecryptionService.js');
+    vi.mocked(decryption.decryptBalance)
+      .mockResolvedValueOnce(9_999n)
+      .mockRejectedValueOnce(new Error('relayer busy'));
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const res = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
+    expect(res.txHash).toBe(SIGNED_HASH);
+    expect(res.balanceCheck).toBe('unknown');
+    expect(res.balanceAfter).toBeUndefined();
+  });
+
   it('reports the fee and ETH balance before anything is signed', async () => {
     const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
     const prepared = await prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
@@ -410,7 +458,9 @@ describe('TokenService.confidentialTransfer', () => {
     const spy = vi.spyOn(audit, 'logEvent');
     const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
     const res = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
-    expect(res).toEqual({ txHash: SIGNED_HASH, receipt });
+    expect(res).toMatchObject({ txHash: SIGNED_HASH, receipt });
+    // The balance re-check still runs on this path (mock balance unchanged).
+    expect(res.balanceCheck).toBe('unchanged');
     expect(spy.mock.calls.map((c) => c[0])).toEqual([
       'TRANSFER_SIGNED',
       'TRANSFER_BROADCAST',
@@ -573,5 +623,15 @@ describe('TokenService.getTxExplorerUrl', () => {
     const { getTxExplorerUrl } = await import('../../../src/core/token/TokenService.js');
     expect(getTxExplorerUrl('0xabc', 'sepolia')).toBe('https://sepolia.etherscan.io/tx/0xabc');
     expect(getTxExplorerUrl('0xabc', 'mainnet')).toBe('https://etherscan.io/tx/0xabc');
+  });
+});
+
+describe('TokenService.checkBalanceAfter', () => {
+  it('reports "changed" when something else moved the balance too', async () => {
+    const { checkBalanceAfter } = await import('../../../src/core/token/TokenService.js');
+    expect(await checkBalanceAfter(async () => 120n, 100n, 5n)).toEqual({
+      balanceCheck: 'changed',
+      balanceAfter: 120n,
+    });
   });
 });

@@ -5,6 +5,7 @@
 import { Command } from 'commander';
 import inquirer from 'inquirer';
 import { formatEther } from 'ethers';
+import { describeBalanceCheck } from '../utils/transferReport.js';
 import { formatTxError, translateTxError } from '../../core/token/txErrors.js';
 import chalk from 'chalk';
 import ora from 'ora';
@@ -1542,6 +1543,9 @@ async function handleSend(): Promise<void> {
   console.log(success('Transfer confirmed on-chain.'));
   console.log(`  Transaction: ${result.txHash}`);
   console.log(`  Explorer:    ${getTxExplorerUrl(result.txHash, network)}`);
+  for (const line of describeBalanceCheck(result, token.symbol, token.decimals)) {
+    console.log(line);
+  }
 }
 
 async function handleHistory(): Promise<void> {

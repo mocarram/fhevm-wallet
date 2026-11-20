@@ -75,6 +75,18 @@ export interface TokenInfo {
 export interface TransferResult {
   txHash: string;
   receipt: TransactionReceipt;
+  /**
+   * For token transfers: whether the re-decrypted balance dropped by exactly the amount.
+   * ERC-7984 moves 0 instead of reverting when the balance is short, so a mined receipt
+   * alone does not prove the tokens moved.
+   * - moved: balance went down by the amount
+   * - unchanged: balance is the same (the transfer moved 0)
+   * - changed: balance changed by a different amount (other activity at the same time)
+   * - unknown: the balance could not be decrypted after sending
+   */
+  balanceCheck?: 'moved' | 'unchanged' | 'changed' | 'unknown';
+  /** Decrypted balance after the transfer, when known. */
+  balanceAfter?: bigint;
 }
 
 export interface GetBalanceOptions {
@@ -184,6 +196,34 @@ async function signAndBroadcast(opts: SignAndBroadcastOptions): Promise<Transfer
   return { txHash, receipt };
 }
 
+/** Outcome of re-decrypting the sender's balance after a confirmed transfer. */
+export interface BalanceAfterCheck {
+  balanceCheck: NonNullable<TransferResult['balanceCheck']>;
+  balanceAfter?: bigint;
+}
+
+/**
+ * Compare the balance after a confirmed transfer with the balance before it.
+ * Never throws: the transfer is already final, so a decryption failure (relayer busy,
+ * network blip) only means the outcome is "unknown", not that the send failed.
+ */
+export async function checkBalanceAfter(
+  readBalance: () => Promise<bigint>,
+  balanceBefore: bigint,
+  amount: bigint,
+): Promise<BalanceAfterCheck> {
+  let balanceAfter: bigint;
+  try {
+    balanceAfter = await readBalance();
+  } catch {
+    return { balanceCheck: 'unknown' };
+  }
+  if (balanceAfter === balanceBefore - amount) return { balanceCheck: 'moved', balanceAfter };
+  if (balanceAfter === balanceBefore) return { balanceCheck: 'unchanged', balanceAfter };
+  // Something else touched the balance at the same time (an incoming transfer, say).
+  return { balanceCheck: 'changed', balanceAfter };
+}
+
 /**
  * Get token contract instance
  */
@@ -260,8 +300,11 @@ export async function getDecryptedBalance(
   // Handle changed or no cache - decrypt the balance (expensive)
   const balance = await decryptBalance(encryptedHandle, tokenAddress, wallet, network);
 
-  // Cache with the current handle
-  setCachedBalance(wallet.address, tokenAddress, network, encryptedHandle, balance);
+  // Cache with the current handle. The cache is an optimisation: a disk error must not
+  // hide a balance that was decrypted fine.
+  bestEffort(() =>
+    setCachedBalance(wallet.address, tokenAddress, network, encryptedHandle, balance),
+  );
 
   return balance;
 }
@@ -274,6 +317,8 @@ export interface PreparedTransfer {
   feeWei: bigint;
   /** The sender's ETH balance in wei at preparation time. */
   ethBalanceWei: bigint;
+  /** The sender's decrypted token balance (base units) at preparation time. */
+  tokenBalance: bigint;
   /** Broadcast the transfer and wait for one confirmation. */
   send: () => Promise<TransferResult>;
 }
@@ -322,6 +367,18 @@ export async function prepareConfidentialTransfer(
         'Your RPC endpoint is on the wrong network.',
         `It serves chain ${rpcChainId}, but ${network} is chain ${chainId}.`,
         'Fix the RPC URL in Settings, or reset it to the default.',
+      );
+    }
+
+    // A transfer above the balance does not revert in ERC-7984: it silently moves 0.
+    // Decrypt first (cached while the encrypted handle is unchanged) and stop early.
+    const tokenBalance = await getDecryptedBalance(tokenAddress, wallet, network);
+    if (amount > tokenBalance) {
+      throw new WalletTxError(
+        'INSUFFICIENT_TOKEN_BALANCE',
+        'That is more than this wallet holds.',
+        'ERC-7984 would send 0 instead of failing, so the wallet stops the send here.',
+        'Enter a smaller amount, or check you picked the right wallet and token.',
       );
     }
 
@@ -381,10 +438,19 @@ export async function prepareConfidentialTransfer(
       // deliberately not logged so the audit log doesn't undo the token's confidentiality.
       bestEffort(() => invalidateBalance(wallet.address, tokenAddress, network));
       bestEffort(() => logEvent('TRANSFER', { ...audit, txHash: result.txHash }));
-      return result;
+
+      // ERC-7984 moves 0 instead of reverting when the balance is short, so a confirmed
+      // receipt alone does not prove the tokens moved. Re-decrypt to find out. This is
+      // best-effort: the transfer is already final, so a failure here only means "unknown".
+      const { balanceCheck, balanceAfter } = await checkBalanceAfter(
+        () => getDecryptedBalance(tokenAddress, wallet, network, { forceRefresh: true }),
+        tokenBalance,
+        amount,
+      );
+      return { ...result, balanceCheck, balanceAfter };
     };
 
-    return { gasLimit, feeWei, ethBalanceWei, send };
+    return { gasLimit, feeWei, ethBalanceWei, tokenBalance, send };
   } catch (err) {
     throw translateTxError(err, { iface: ERC7984_INTERFACE });
   }

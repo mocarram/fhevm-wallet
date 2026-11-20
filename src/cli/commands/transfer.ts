@@ -14,6 +14,7 @@ import {
 } from '../../core/token/TokenService.js';
 import { formatTxError, translateTxError } from '../../core/token/txErrors.js';
 import { formatEther } from 'ethers';
+import { describeBalanceCheck } from '../utils/transferReport.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { checkFheReadiness } from '../../core/fhe/FheService.js';
 import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.js';
@@ -375,6 +376,9 @@ export function registerTransferCommand(program: Command): void {
           console.log(success('Transfer confirmed on-chain.'));
           console.log(`  Transaction: ${result.txHash}`);
           console.log(`  Explorer:    ${getTxExplorerUrl(result.txHash, network)}`);
+          for (const line of describeBalanceCheck(result, token.symbol, token.decimals)) {
+            console.log(line);
+          }
         } catch (err) {
           console.log(error(err instanceof Error ? err.message : 'Failed to send transaction'));
         }
