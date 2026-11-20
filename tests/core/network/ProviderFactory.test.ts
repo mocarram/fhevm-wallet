@@ -1,12 +1,14 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
-import { Network } from 'ethers';
+import { BrowserProvider, Network } from 'ethers';
 import {
   clearProviderCache,
   clearProviderForNetwork,
   FailoverJsonRpcProvider,
   getProvider,
+  toEip1193,
+  toEip1193Error,
   WrongChainError,
 } from '../../../src/core/network/ProviderFactory.js';
 
@@ -72,8 +74,17 @@ describe('FailoverJsonRpcProvider', () => {
   /** Start a server that answers like a node on `chainIdHex`, or fails with HTTP `status`. */
   async function startNode(
     name: string,
-    opts: { chainIdHex?: string; status?: number; failExcept?: string[] },
+    opts: {
+      chainIdHex?: string;
+      status?: number;
+      failExcept?: string[];
+      /** Fail this many requests with 503 before answering normally. */
+      failFirst?: number;
+      /** JSON-RPC error replies by method (a revert, say). */
+      rpcErrors?: Record<string, { code: number; message: string; data?: string }>;
+    },
   ) {
+    let failuresLeft = opts.failFirst ?? 0;
     calls[name] = [];
     const server = createServer((req, res) => {
       let body = '';
@@ -82,16 +93,20 @@ describe('FailoverJsonRpcProvider', () => {
         const msgs = [JSON.parse(body)].flat() as { id: number; method: string }[];
         calls[name].push(...msgs.map((m) => m.method));
         const failing = opts.failExcept && msgs.some((m) => !opts.failExcept!.includes(m.method));
-        if (opts.status || failing) {
+        if (opts.status || failing || failuresLeft > 0) {
+          failuresLeft--;
           res.statusCode = opts.status ?? 503;
           res.end('down');
           return;
         }
-        const reply = (m: { id: number; method: string }) => ({
-          jsonrpc: '2.0',
-          id: m.id,
-          result: m.method === 'eth_chainId' ? (opts.chainIdHex ?? '0xaa36a7') : '0x10',
-        });
+        const reply = (m: { id: number; method: string }) =>
+          opts.rpcErrors?.[m.method]
+            ? { jsonrpc: '2.0', id: m.id, error: opts.rpcErrors[m.method] }
+            : {
+                jsonrpc: '2.0',
+                id: m.id,
+                result: m.method === 'eth_chainId' ? (opts.chainIdHex ?? '0xaa36a7') : '0x10',
+              };
         res.setHeader('content-type', 'application/json');
         res.end(JSON.stringify(msgs.length === 1 ? reply(msgs[0]) : msgs.map(reply)));
       });
@@ -142,6 +157,73 @@ describe('FailoverJsonRpcProvider', () => {
     expect(await provider.getBlockNumber()).toBe(16);
     expect(calls.other).toContain('eth_blockNumber');
     provider.destroy();
+  });
+
+  it('does not remember a transport error during the chain check', async () => {
+    const url = await startNode('blip', { failFirst: 1 });
+    const provider = new FailoverJsonRpcProvider([url], sepolia, 2_000);
+    // provider.send, not getBlockNumber: ethers briefly caches getBlockNumber results.
+    await expect(provider.send('eth_blockNumber', [])).rejects.toThrow();
+    expect(await provider.send('eth_blockNumber', [])).toBe('0x10');
+    provider.destroy();
+  });
+
+  it('skips an endpoint on the wrong chain and verifies the next one', async () => {
+    const wrong = await startNode('wrongFirst', { chainIdHex: '0x1' });
+    const good = await startNode('goodSecond', {});
+    const provider = new FailoverJsonRpcProvider([wrong, good], sepolia, 2_000);
+    expect(await provider.getBlockNumber()).toBe(16);
+    expect(provider.currentUrl).toBe(good);
+    expect(calls.goodSecond).toContain('eth_chainId'); // the new URL was checked too
+    expect(calls.wrongFirst).not.toContain('eth_blockNumber');
+    provider.destroy();
+  });
+
+  it('re-checks the chain after switching to another URL', async () => {
+    const flakyGood = await startNode('flakyGood', { failExcept: ['eth_chainId'] });
+    const wrongBackup = await startNode('wrongBackup', { chainIdHex: '0x1' });
+    const provider = new FailoverJsonRpcProvider([flakyGood, wrongBackup], sepolia, 2_000);
+    // The first URL passes the check, then fails; the backup must be checked, not trusted.
+    await expect(provider.getBlockNumber()).rejects.toBeDefined();
+    expect(calls.wrongBackup).toContain('eth_chainId');
+    expect(calls.wrongBackup).not.toContain('eth_blockNumber');
+    provider.destroy();
+  });
+
+  describe('EIP-1193 wrapper for the relayer SDK', () => {
+    it('answers eth_chainId locally and keeps revert data decodable', async () => {
+      const revertData = '0x08c379a0' + '00'.repeat(32); // Error(string) selector + junk
+      const url = await startNode('sdk', {
+        rpcErrors: { eth_call: { code: 3, message: 'execution reverted', data: revertData } },
+      });
+      const target = new FailoverJsonRpcProvider([url], sepolia, 2_000);
+      const eip1193 = toEip1193(() => target);
+      expect(await eip1193.request({ method: 'eth_chainId' })).toBe('0xaa36a7');
+
+      const browser = new BrowserProvider(eip1193);
+      expect((await browser.getNetwork()).chainId).toBe(11155111n);
+      const err = await browser
+        .call({ to: '0x000000000000000000000000000000000000dEaD', data: '0x' })
+        .catch((e: unknown) => e as { code?: string; data?: string });
+      expect(err.code).toBe('CALL_EXCEPTION');
+      expect(err.data).toBe(revertData);
+      // Network detection was answered locally: the server only saw the eth_call
+      // (plus the provider's own one-time chain check).
+      expect(calls.sdk.filter((m) => m === 'eth_chainId')).toHaveLength(1);
+      browser.destroy();
+      target.destroy();
+    });
+
+    it('rethrows transport failures with a numeric code and no URL', async () => {
+      const KEY = 'WRAPPERSECRETKEY12345';
+      const err = toEip1193Error(
+        Object.assign(new Error(`server response 500 (info={ "requestUrl": "http://h/${KEY}" })`), {
+          code: 'SERVER_ERROR',
+        }),
+      );
+      expect(typeof err.code).toBe('number');
+      expect(err.message).not.toContain(KEY);
+    });
   });
 
   it('getRpcUrls lists fallbacks only when no custom URL is set', async () => {

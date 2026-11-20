@@ -11,6 +11,7 @@ import {
   type Eip1193Provider,
 } from 'ethers';
 import { getNetworkConfig, getRpcUrls, NetworkName } from './NetworkConfig.js';
+import { maskUrlsInText, redactSecrets } from '../../utils/redact.js';
 
 /** Per-request timeout for JSON-RPC calls. ethers' default is 5 minutes, which freezes the UI. */
 export const RPC_TIMEOUT_MS = 20_000;
@@ -43,21 +44,26 @@ export class WrongChainError extends Error {
 }
 
 /**
- * A JSON-RPC provider that tries the next URL when one does not answer, and checks the
- * chain ID once before its first real request.
+ * A JSON-RPC provider that tries the next URL when one does not answer, and checks each
+ * URL's chain ID before its first real request.
  *
- * Fail-over only covers transport failures (timeout, connection refused, HTTP 5xx/429):
- * a JSON-RPC error reply (a revert, say) is a real answer and comes back unchanged.
- * `eth_sendRawTransaction` is never retried on another node: if the first attempt timed
- * out the transaction may already be in a mempool, and the caller reports it as
- * "sent, not confirmed" with its hash instead.
+ * Fail-over only covers transport failures (timeout, connection refused, HTTP 5xx/429)
+ * and endpoints on the wrong chain: a JSON-RPC error reply (a revert, say) is a real
+ * answer and comes back unchanged. `eth_sendRawTransaction` is never retried on another
+ * node: if the first attempt timed out the transaction may already be in a mempool, and
+ * the caller reports it as "sent, not confirmed" with its hash instead.
+ *
+ * The chain check is per URL. A verified URL is not asked again. A URL that answered with
+ * the wrong chain is skipped from then on (the next fallback gets its turn). A transport
+ * error during the check is not remembered, so a blip does not disable an endpoint.
  */
 export class FailoverJsonRpcProvider extends JsonRpcProvider {
   readonly urls: readonly string[];
   readonly #timeoutMs: number;
   readonly #expectedChainId: bigint;
   #index = 0;
-  #chainCheck: Promise<void> | null = null;
+  readonly #verified = new Set<number>();
+  readonly #wrongChain = new Map<number, WrongChainError>();
 
   constructor(urls: string[], network: Network, timeoutMs = RPC_TIMEOUT_MS) {
     if (urls.length === 0) throw new Error('At least one RPC URL is required');
@@ -72,48 +78,52 @@ export class FailoverJsonRpcProvider extends JsonRpcProvider {
     return this.urls[this.#index];
   }
 
+  /** The chain this provider is for. */
+  get expectedChainId(): bigint {
+    return this.#expectedChainId;
+  }
+
   override _getConnection(): FetchRequest {
     return rpcRequest(this.currentUrl, this.#timeoutMs);
   }
 
   override async _send(payload: JsonRpcPayload | JsonRpcPayload[]): Promise<JsonRpcResult[]> {
-    // Verify the chain on first use in every process, so a wrong URL in .env (edited by
-    // hand, or set before this check existed) is caught before any balance or send.
-    this.#chainCheck ??= this.#checkChain().catch((err: unknown) => {
-      // A network blip should not stick; a wrong chain should (until the URL changes).
-      if (!(err instanceof WrongChainError)) this.#chainCheck = null;
-      throw err;
-    });
-    await this.#chainCheck;
-    return this.#sendWithFailover(payload);
-  }
-
-  async #checkChain(): Promise<void> {
-    const [reply] = await this.#sendWithFailover({
-      id: 0,
-      jsonrpc: '2.0',
-      method: 'eth_chainId',
-      params: [],
-    });
-    if (!reply || !('result' in reply))
-      throw new Error('The RPC endpoint did not report its chain ID');
-    const served = BigInt(reply.result as string);
-    if (served !== this.#expectedChainId) throw new WrongChainError(served, this.#expectedChainId);
-  }
-
-  async #sendWithFailover(payload: JsonRpcPayload | JsonRpcPayload[]): Promise<JsonRpcResult[]> {
     const methods = (Array.isArray(payload) ? payload : [payload]).map((p) => p.method);
     const canFailOver = this.urls.length > 1 && !methods.includes('eth_sendRawTransaction');
     let lastError: unknown;
     for (let attempt = 0; attempt < (canFailOver ? this.urls.length : 1); attempt++) {
+      const index = this.#index;
       try {
+        // Verify the chain on first use of every URL (in every process), so a wrong URL
+        // in .env is caught before any balance read or send.
+        await this.#ensureChain(index);
         return await super._send(payload);
       } catch (err) {
         lastError = err;
-        if (canFailOver) this.#index = (this.#index + 1) % this.urls.length;
+        // Move on only if nobody else moved the index meanwhile (parallel requests).
+        if (canFailOver && this.#index === index) {
+          this.#index = (index + 1) % this.urls.length;
+        }
       }
     }
     throw lastError;
+  }
+
+  async #ensureChain(index: number): Promise<void> {
+    if (this.#verified.has(index)) return;
+    const known = this.#wrongChain.get(index);
+    if (known) throw known;
+    const [reply] = await super._send({ id: 0, jsonrpc: '2.0', method: 'eth_chainId', params: [] });
+    if (!reply || !('result' in reply)) {
+      throw new Error('The RPC endpoint did not report its chain ID');
+    }
+    const served = BigInt(reply.result as string);
+    if (served !== this.#expectedChainId) {
+      const wrong = new WrongChainError(served, this.#expectedChainId);
+      this.#wrongChain.set(index, wrong);
+      throw wrong;
+    }
+    this.#verified.add(index);
   }
 }
 
@@ -143,16 +153,72 @@ export function getProvider(network: NetworkName): FailoverJsonRpcProvider {
   return provider;
 }
 
+/** JSON-RPC "internal error", for failures that carry no JSON-RPC code of their own. */
+const RPC_INTERNAL_ERROR = -32603;
+
+/**
+ * Wrap a provider as an EIP-1193 object.
+ *
+ * - `eth_chainId` is answered locally with the configured chain: the wrapped provider has
+ *   already verified it, and answering locally stops a consumer's own network detection
+ *   (ethers' BrowserProvider asks on start-up) from costing a round trip or, with a dead
+ *   RPC, retrying and logging "failed to detect network" forever.
+ * - Errors are rethrown EIP-1193-shaped (`{ code: number, message, data }`), keeping the
+ *   JSON-RPC `data` so the consumer can still decode reverts. The message is redacted:
+ *   ethers' text includes the request URL.
+ */
+export function toEip1193(getTarget: () => FailoverJsonRpcProvider): Eip1193Provider {
+  return {
+    request: async ({ method, params }) => {
+      const target = getTarget();
+      if (method === 'eth_chainId') return '0x' + target.expectedChainId.toString(16);
+      try {
+        return await target.send(method, (params as unknown[] | Record<string, unknown>) ?? []);
+      } catch (err) {
+        throw toEip1193Error(err);
+      }
+    },
+  };
+}
+
+/** Error shape an EIP-1193 consumer expects. */
+export interface Eip1193Error extends Error {
+  code: number;
+  data?: unknown;
+}
+
+/** Convert an ethers error into an EIP-1193 error, keeping the JSON-RPC code and data. */
+export function toEip1193Error(err: unknown): Eip1193Error {
+  const e = (err ?? {}) as {
+    code?: unknown;
+    data?: unknown;
+    shortMessage?: unknown;
+    message?: unknown;
+    error?: { code?: unknown; message?: unknown; data?: unknown };
+    info?: { error?: { code?: unknown; message?: unknown; data?: unknown } };
+  };
+  // ethers keeps the node's JSON-RPC error under `error` or `info.error`.
+  const rpc = e.error ?? e.info?.error;
+  const code = typeof rpc?.code === 'number' ? rpc.code : RPC_INTERNAL_ERROR;
+  const message =
+    (typeof rpc?.message === 'string' && rpc.message) ||
+    (typeof e.shortMessage === 'string' && e.shortMessage) ||
+    (typeof e.message === 'string' && e.message.split('\n')[0]) ||
+    'RPC request failed';
+  const out = new Error(maskUrlsInText(redactSecrets(message))) as Eip1193Error;
+  out.code = code;
+  const data = rpc?.data ?? e.data;
+  if (data !== undefined && data !== null) out.data = data;
+  return out;
+}
+
 /**
  * An EIP-1193 view of our provider for the relayer SDK, so its RPC reads get the same
  * timeouts, fallback endpoints and chain check as everything else. Looks the provider up
  * on every request so a changed RPC setting takes effect immediately.
  */
 export function getEip1193Provider(network: NetworkName): Eip1193Provider {
-  return {
-    request: ({ method, params }) =>
-      getProvider(network).send(method, (params as unknown[] | Record<string, unknown>) ?? []),
-  };
+  return toEip1193(() => getProvider(network));
 }
 
 /**
