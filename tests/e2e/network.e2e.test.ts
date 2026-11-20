@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, Server, Socket } from 'net';
 import { AddressInfo } from 'net';
+import { mkdirSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import { runCliAsync, tempHome } from './helpers.js';
 
 // An "RPC" that accepts the TCP connection and then never says anything. Before the fix
@@ -55,6 +57,43 @@ describe('commands exit promptly when the RPC never answers', () => {
       t.cleanup();
     }
   });
+  it('`fhew history` with a stalled RPC and no terminal reports, shows saved data and exits 1', async () => {
+    const t = tempHome();
+    try {
+      const dataDir = join(t.home, '.fhevm-wallet');
+      mkdirSync(dataDir, { recursive: true });
+      writeFileSync(
+        join(dataDir, 'tokens.json'),
+        JSON.stringify({
+          tokens: [
+            {
+              address: TOKEN,
+              name: 'Test',
+              symbol: 'TST',
+              decimals: 6,
+              network: 'sepolia',
+              addedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+        }),
+      );
+      const res = await runCliAsync(
+        ['history', '-a', '0x000000000000000000000000000000000000dEaD', '-n', 'sepolia'],
+        t.home,
+        { SEPOLIA_RPC_URL: `${stallUrl}/v2/STALLKEY0123456789` },
+        40_000,
+      );
+      expect(res.ms).toBeLessThan(35_000);
+      expect(res.code).toBe(1);
+      const out = res.stdout + res.stderr;
+      expect(out).toMatch(/Could not reach the network/);
+      expect(out).toMatch(/Showing transactions saved earlier/);
+      expect(out).not.toMatch(/no interactive terminal/); // no prompt was attempted
+      expect(out).not.toContain('STALLKEY0123456789');
+    } finally {
+      t.cleanup();
+    }
+  });
 });
 
 describe('failing commands set a non-zero exit code', () => {
@@ -63,11 +102,29 @@ describe('failing commands set a non-zero exit code', () => {
     [['token', 'remove', TOKEN, '-n', 'sepolia']],
     [['wallet', 'export', 'nope']],
     [['config', '--network', 'moon']],
+    [['history', '-a', '0x000000000000000000000000000000000000dEaD', '-n', 'sepolia']], // no tokens
   ])('%j', async (args) => {
     const t = tempHome();
     try {
       const res = await runCliAsync(args, t.home, {}, 30_000);
       expect(res.code).toBe(1);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it('an RPC URL with a space is "not a valid URL", not "did not answer"', async () => {
+    const t = tempHome();
+    try {
+      const res = await runCliAsync(
+        ['config', '--rpc-sepolia', 'https://rpc.example/has space'],
+        t.home,
+        {},
+        30_000,
+      );
+      expect(res.code).toBe(1);
+      expect(res.stdout).toMatch(/not a valid URL/);
+      expect(res.stdout).not.toMatch(/did not answer/);
     } finally {
       t.cleanup();
     }

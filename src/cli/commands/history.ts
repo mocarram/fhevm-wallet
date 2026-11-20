@@ -30,6 +30,8 @@ import { isValidNetwork, isValidAddress } from '../../utils/validation.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getNameByAddress } from '../../storage/AddressBook.js';
 import { saveEnvVar, getEnvVar, loadEnv } from '../../storage/paths.js';
+import { setCustomRpc, validateRpcUrl } from '../../core/network/rpcSettings.js';
+import { maskUrl } from '../../utils/redact.js';
 import { describeError } from '../utils/userError.js';
 
 /**
@@ -168,14 +170,15 @@ async function syncTransactions(
 }
 
 /**
- * Handle sync errors gracefully and offer recovery options
+ * Handle sync errors gracefully and offer recovery options.
+ * Returns true only if a retry synced; the CLI command exits 1 otherwise.
  */
 async function handleSyncError(
   err: unknown,
   walletAddress: string,
   network: NetworkName,
   tokens: TokenEntry[],
-): Promise<void> {
+): Promise<boolean> {
   // Clear the broken provider from cache to stop retry loop
   clearProviderForNetwork(network);
 
@@ -194,6 +197,14 @@ async function handleSyncError(
     console.log(chalk.yellow('\nRPC provider limits the block range for queries.'));
   } else {
     console.log(chalk.yellow(`\nSync error: ${message}`));
+  }
+
+  // Without a terminal there is nobody to ask: say what to do, show what is saved, exit 1.
+  if (!process.stdin.isTTY) {
+    console.log(
+      'Showing transactions saved earlier. Set an Etherscan API key or another RPC URL with `fhevm-wallet config`, then try again.',
+    );
+    return false;
   }
 
   const { action } = await inquirer.prompt([
@@ -229,9 +240,11 @@ async function handleSyncError(
     try {
       const newTxCount = await syncTransactions(walletAddress, network, tokens, 'etherscan');
       retrySpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+      return true;
     } catch (retryErr) {
       retrySpinner.fail('Sync failed');
       console.log(error(describeError(retryErr, 'Unknown error')));
+      return false;
     }
   }
   if (action === 'set_rpc') {
@@ -242,22 +255,21 @@ async function handleSyncError(
       {
         type: 'input',
         name: 'url',
-        message: `Enter ${network} RPC URL:`,
-        default: currentCustom,
-        validate: (input: string) => {
-          if (!input.trim()) return 'URL cannot be empty';
-          try {
-            new URL(input.trim());
-            return true;
-          } catch {
-            return 'Please enter a valid URL';
-          }
-        },
+        // No prefilled default: it would print the saved URL (and its API key) on screen.
+        message: currentCustom
+          ? `Enter ${network} RPC URL (current: ${maskUrl(currentCustom)}):`
+          : `Enter ${network} RPC URL:`,
+        validate: (input: string) => validateRpcUrl(input) ?? true,
       },
     ]);
 
-    saveEnvVar(envKey, url.trim());
-    loadEnv();
+    // Same path as `fhew config --rpc-*`: probe the chain before saving.
+    try {
+      await setCustomRpc(network, url);
+    } catch (err) {
+      console.log(error(describeError(err, 'Could not set RPC URL')));
+      return false;
+    }
     clearProviderCache();
     console.log(chalk.green(`✓ ${network} RPC URL saved`));
 
@@ -266,12 +278,15 @@ async function handleSyncError(
     try {
       const newTxCount = await syncTransactions(walletAddress, network, tokens, 'rpc');
       retrySpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+      return true;
     } catch (retryErr) {
       retrySpinner.fail('Sync failed');
       console.log(error(describeError(retryErr, 'Unknown error')));
+      return false;
     }
   }
   // 'skip' action: do nothing, proceed to show cached transactions
+  return false;
 }
 
 /**
@@ -341,6 +356,7 @@ export function registerHistoryCommand(program: Command): void {
         const tokens = listTokens(network);
 
         if (tokens.length === 0) {
+          process.exitCode = 1;
           console.log(
             error(
               `No tokens tracked on ${network}. Add one with: fhevm-wallet token add <address>`,
@@ -368,7 +384,9 @@ export function registerHistoryCommand(program: Command): void {
             syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
           } catch (err) {
             syncSpinner.fail('RPC sync failed');
-            await handleSyncError(err, walletAddress, network, tokens);
+            if (!(await handleSyncError(err, walletAddress, network, tokens))) {
+              process.exitCode = 1; // the history below is only what was saved earlier
+            }
           }
         }
 
