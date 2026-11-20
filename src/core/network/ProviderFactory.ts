@@ -12,6 +12,7 @@ import {
 } from 'ethers';
 import { getNetworkConfig, getRpcUrls, NetworkName } from './NetworkConfig.js';
 import { maskUrlsInText, redactSecrets } from '../../utils/redact.js';
+import { abortableGetUrl } from './abortableGetUrl.js';
 
 /** Per-request timeout for JSON-RPC calls. ethers' default is 5 minutes, which freezes the UI. */
 export const RPC_TIMEOUT_MS = 20_000;
@@ -23,6 +24,8 @@ export const RPC_PROBE_TIMEOUT_MS = 8_000;
 function rpcRequest(url: string, timeoutMs = RPC_TIMEOUT_MS): FetchRequest {
   const req = new FetchRequest(url);
   req.timeout = timeoutMs;
+  // ethers' own Node transport leaves the socket open after a timeout (see the module).
+  req.getUrlFunc = abortableGetUrl;
   return req;
 }
 

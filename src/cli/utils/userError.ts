@@ -33,6 +33,8 @@ export function safeText(text: string, max = 300): string {
  * translated; anything else is reduced to its first line with secrets and URLs masked.
  */
 export function describeError(err: unknown, fallback = 'Something went wrong.'): string {
+  const prompt = describePromptError(err);
+  if (prompt) return prompt;
   if (err instanceof WalletTxError) return safeText(`${err.message} ${err.hint}`, 400);
   const e = err as { code?: unknown; shortMessage?: unknown; message?: unknown } | null;
   if (e && typeof e.code === 'string' && TRANSLATED_CODES.has(e.code)) {
@@ -46,4 +48,26 @@ export function describeError(err: unknown, fallback = 'Something went wrong.'):
     (typeof err === 'string' ? err : '');
   const clean = text ? safeText(text) : '';
   return clean || fallback;
+}
+
+/** What a prompt library throws when stdin is closed, not a TTY, or Ctrl+C was pressed. */
+export const NO_TERMINAL_MESSAGE =
+  'This command needs to ask you something, but there is no interactive terminal. Run it in a terminal, or pass the values as options.';
+
+/**
+ * Recognise prompt failures (inquirer today, the Phase 3 TUI later) so they read as a
+ * sentence instead of "readline was closed" or an ERR_USE_AFTER_CLOSE stack.
+ */
+export function describePromptError(err: unknown): string | null {
+  const e = (err ?? {}) as { name?: unknown; code?: unknown; message?: unknown };
+  if (e.name === 'ExitPromptError') return 'Cancelled.';
+  const message = typeof e.message === 'string' ? e.message : '';
+  if (
+    e.code === 'ERR_USE_AFTER_CLOSE' ||
+    e.name === 'AbortPromptError' ||
+    /readline was closed/i.test(message)
+  ) {
+    return NO_TERMINAL_MESSAGE;
+  }
+  return null;
 }

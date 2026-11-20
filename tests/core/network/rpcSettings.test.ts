@@ -36,6 +36,7 @@ describe('validateRpcUrl', () => {
     expect(validateRpcUrl('http://localhost:8545')).toBeNull();
     expect(validateRpcUrl('http://rpc.example')).toMatch(/https/);
     expect(validateRpcUrl('not a url')).toMatch(/valid URL/);
+    expect(validateRpcUrl('https://rpc.example/v3/ab cd')).toMatch(/not a valid URL.*space/);
   });
 });
 

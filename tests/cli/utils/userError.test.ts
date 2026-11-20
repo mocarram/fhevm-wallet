@@ -67,6 +67,15 @@ describe('describeError', () => {
     expect(describeError(new Error('Invalid password'))).toBe('Invalid password');
   });
 
+  it('turns prompt failures without a terminal into one sentence', () => {
+    const closed = Object.assign(new Error('readline was closed'), { code: 'ERR_USE_AFTER_CLOSE' });
+    expect(describeError(closed)).toMatch(/no interactive terminal/);
+    expect(describeError(new Error('readline was closed'))).toMatch(/no interactive terminal/);
+    expect(describeError(Object.assign(new Error('x'), { name: 'ExitPromptError' }))).toBe(
+      'Cancelled.',
+    );
+  });
+
   it('strips control characters and keeps one line', () => {
     expect(safeText('line one\u001b[2J\nline two')).toBe('line one [2J');
   });

@@ -16,6 +16,7 @@ import { isValidNetwork } from '../utils/validation.js';
 import { NetworkName, DEFAULT_RPC_URLS } from '../core/network/NetworkConfig.js';
 import { saveEnvVar, getEnvVar } from '../storage/paths.js';
 import { setCustomRpc } from '../core/network/rpcSettings.js';
+import { clearProviderCache } from '../core/network/ProviderFactory.js';
 import { describeError } from './utils/userError.js';
 import { maskUrl } from '../utils/redact.js';
 
@@ -49,6 +50,11 @@ export function createProgram(): Command {
         // Temporarily set network for this command
         process.env.OVERRIDE_NETWORK = options.network;
       }
+    })
+    // Destroy cached providers once a command is done, so nothing (a pending poll, a
+    // keep-alive socket) holds the process open after its output is printed.
+    .hook('postAction', () => {
+      clearProviderCache();
     });
 
   // Register all commands
@@ -117,6 +123,7 @@ export function createProgram(): Command {
         if (options.network) {
           if (!isValidNetwork(options.network)) {
             console.log(chalk.red('Invalid network. Use "sepolia" or "mainnet"'));
+            process.exitCode = 1;
             return;
           }
           updateConfig({ defaultNetwork: options.network as NetworkName });

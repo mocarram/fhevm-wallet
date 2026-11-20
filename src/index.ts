@@ -43,12 +43,14 @@ try {
 
 import { createProgram, runInteractiveMode } from './cli/index.js';
 import { describeError } from './cli/utils/userError.js';
+import { clearProviderCache } from './core/network/ProviderFactory.js';
 
 // Last line of defence: an error no command caught must not print its raw message or
 // stack, which for ethers errors includes the RPC URL and its API key.
 const failSafely = (err: unknown): void => {
   process.stderr.write(`Error: ${describeError(err)}\n`);
   process.exitCode = 1;
+  clearProviderCache(); // nothing may keep a failed command alive
 };
 process.on('unhandledRejection', failSafely);
 process.on('uncaughtException', (err) => {

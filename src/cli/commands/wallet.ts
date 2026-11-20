@@ -85,6 +85,7 @@ export function registerWalletCommands(program: Command): void {
         ]);
 
         if (password !== confirmPassword) {
+          process.exitCode = 1;
           console.log(error('Passwords do not match'));
           return;
         }
@@ -116,6 +117,7 @@ export function registerWalletCommands(program: Command): void {
           console.log(success(`Set "${name}" as default wallet`));
         }
       } catch (err) {
+        process.exitCode = 1;
         console.log(error(describeError(err, 'Failed to create wallet')));
       }
     });
@@ -200,6 +202,7 @@ export function registerWalletCommands(program: Command): void {
             ]);
 
             if (password !== confirmPassword) {
+              process.exitCode = 1;
               console.log(error('Passwords do not match'));
               return;
             }
@@ -235,6 +238,7 @@ export function registerWalletCommands(program: Command): void {
             ]);
 
             if (password !== confirmPassword) {
+              process.exitCode = 1;
               console.log(error('Passwords do not match'));
               return;
             }
@@ -258,6 +262,7 @@ export function registerWalletCommands(program: Command): void {
             console.log(success(`Set "${name}" as default wallet`));
           }
         } catch (err) {
+          process.exitCode = 1;
           console.log(error(describeError(err, 'Failed to import wallet')));
         }
       },
@@ -305,6 +310,7 @@ export function registerWalletCommands(program: Command): void {
     .option('-f, --force', 'Skip confirmation')
     .action(async (name: string, options: { force?: boolean }) => {
       if (!hasWallet(name)) {
+        process.exitCode = 1;
         console.log(error(`Wallet "${name}" not found`));
         return;
       }
@@ -336,6 +342,7 @@ export function registerWalletCommands(program: Command): void {
           setDefaultWallet('');
         }
       } else {
+        process.exitCode = 1;
         console.log(error(`Failed to remove wallet "${name}"`));
       }
     });
@@ -347,6 +354,7 @@ export function registerWalletCommands(program: Command): void {
     .argument('<name>', 'Wallet name')
     .action((name: string) => {
       if (!hasWallet(name)) {
+        process.exitCode = 1;
         console.log(error(`Wallet "${name}" not found`));
         return;
       }
@@ -371,6 +379,7 @@ export function registerWalletCommands(program: Command): void {
           const path = exportKeystoreFile(name, options.keystore);
           console.log(success(`Encrypted keystore saved to ${path} (owner-only access)`));
         } catch (err) {
+          process.exitCode = 1;
           console.log(error(describeError(err, 'Export failed')));
           process.exitCode = 1;
         }
@@ -378,6 +387,7 @@ export function registerWalletCommands(program: Command): void {
       }
 
       if (!hasWallet(name)) {
+        process.exitCode = 1;
         console.log(error(`Wallet "${name}" not found`));
         return;
       }
@@ -420,6 +430,7 @@ export function registerWalletCommands(program: Command): void {
         if (wiped) console.log(success('Private key screen wiped.'));
       } catch (err) {
         spinner.fail('Failed to decrypt wallet');
+        process.exitCode = 1;
         console.log(error(describeError(err, 'Invalid password')));
       }
     });

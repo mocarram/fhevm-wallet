@@ -1,24 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { spawn } from 'child_process';
 import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
 import { mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { CLI, tempHome } from './helpers.js';
-
-/** Run the CLI without blocking the event loop, so the local RPC server can answer. */
-function runCliAsync(args: string[], home: string, env: Record<string, string>) {
-  return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve) => {
-    const child = spawn(process.execPath, [CLI, ...args], {
-      env: { PATH: process.env.PATH ?? '', HOME: home, NO_COLOR: '1', ...env },
-    });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (c) => (stdout += c));
-    child.stderr.on('data', (c) => (stderr += c));
-    child.on('close', (code) => resolve({ code, stdout, stderr }));
-  });
-}
+import { runCliAsync, tempHome } from './helpers.js';
 
 // A local "RPC provider" that always fails with HTTP 500. ethers puts the full request
 // URL (with the key in its path and query) into the error it throws.

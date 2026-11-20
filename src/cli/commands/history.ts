@@ -317,6 +317,7 @@ export function registerHistoryCommand(program: Command): void {
         let network: NetworkName = getDefaultNetwork();
         if (options.network) {
           if (!isValidNetwork(options.network)) {
+            process.exitCode = 1;
             console.log(error('Invalid network. Use "sepolia" or "mainnet"'));
             return;
           }
@@ -325,11 +326,13 @@ export function registerHistoryCommand(program: Command): void {
 
         // Require wallet address for CLI
         if (!options.address) {
+          process.exitCode = 1;
           console.log(error('Please specify a wallet address with --address'));
           return;
         }
 
         if (!isValidAddress(options.address)) {
+          process.exitCode = 1;
           console.log(error('Invalid wallet address'));
           return;
         }
@@ -384,6 +387,7 @@ export function registerHistoryCommand(program: Command): void {
 
         displayTransactionTable(transactions, walletAddress);
       } catch (err) {
+        process.exitCode = 1;
         console.log(error(describeError(err, 'Failed to load history')));
       }
     });

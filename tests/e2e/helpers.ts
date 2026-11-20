@@ -1,7 +1,7 @@
 /**
  * Helpers for running the built CLI in an isolated home directory.
  */
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
@@ -22,4 +22,34 @@ export function runCli(args: string[], home: string, env: Record<string, string>
     timeout: 30000,
   });
   return { code: res.status, stdout: res.stdout, stderr: res.stderr };
+}
+
+/**
+ * Run the CLI without blocking the event loop (so a local test server can answer) and
+ * report how long it took. Kills it after `killAfterMs` so a hang fails the test.
+ */
+export function runCliAsync(
+  args: string[],
+  home: string,
+  env: Record<string, string> = {},
+  killAfterMs = 60_000,
+) {
+  return new Promise<{ code: number | null; stdout: string; stderr: string; ms: number }>(
+    (resolve) => {
+      const started = Date.now();
+      const child = spawn(process.execPath, [CLI, ...args], {
+        env: { PATH: process.env.PATH ?? '', HOME: home, NO_COLOR: '1', ...env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (c) => (stdout += c));
+      child.stderr.on('data', (c) => (stderr += c));
+      const killer = setTimeout(() => child.kill('SIGKILL'), killAfterMs);
+      child.on('close', (code) => {
+        clearTimeout(killer);
+        resolve({ code, stdout, stderr, ms: Date.now() - started });
+      });
+    },
+  );
 }

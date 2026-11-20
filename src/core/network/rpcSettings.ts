@@ -18,6 +18,9 @@ export const RPC_ENV_KEYS: Record<NetworkName, string> = {
  * node; an API key sent over plain HTTP to a remote host could be read in transit.
  */
 export function validateRpcUrl(input: string): string | null {
+  // URL() would quietly percent-encode a space in the path; a URL with whitespace in it
+  // is a typo, so say so instead of reporting that the endpoint "did not answer".
+  if (/\s/.test(input.trim())) return 'That is not a valid URL: it contains a space.';
   let url: URL;
   try {
     url = new URL(input.trim());

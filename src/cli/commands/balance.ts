@@ -41,6 +41,7 @@ export function registerBalanceCommand(program: Command): void {
           let network: NetworkName = getDefaultNetwork();
           if (options.network) {
             if (!isValidNetwork(options.network)) {
+              process.exitCode = 1;
               console.log(error('Invalid network. Use "sepolia" or "mainnet"'));
               return;
             }
@@ -50,6 +51,7 @@ export function registerBalanceCommand(program: Command): void {
           // Check if FHE operations are ready for this network
           const fheError = checkFheReadiness(network);
           if (fheError) {
+            process.exitCode = 1;
             console.log(error(fheError));
             return;
           }
@@ -60,6 +62,7 @@ export function registerBalanceCommand(program: Command): void {
           if (!walletName) {
             const wallets = listWallets();
             if (wallets.length === 0) {
+              process.exitCode = 1;
               console.log(error('No wallets found. Create one with: fhevm-wallet wallet create'));
               return;
             }
@@ -81,6 +84,7 @@ export function registerBalanceCommand(program: Command): void {
           const selectedWallet = walletName!;
 
           if (!hasWallet(selectedWallet)) {
+            process.exitCode = 1;
             console.log(error(`Wallet "${selectedWallet}" not found`));
             return;
           }
@@ -103,6 +107,7 @@ export function registerBalanceCommand(program: Command): void {
             loadSpinner.succeed('Wallet loaded');
           } catch (err) {
             loadSpinner.fail('Failed to decrypt wallet');
+            process.exitCode = 1;
             console.log(error(describeError(err, 'Invalid password')));
             return;
           }
@@ -111,6 +116,7 @@ export function registerBalanceCommand(program: Command): void {
           let tokens: TokenEntry[];
           if (options.token) {
             if (!isValidAddress(options.token)) {
+              process.exitCode = 1;
               console.log(error('Invalid token address'));
               return;
             }
@@ -219,6 +225,7 @@ export function registerBalanceCommand(program: Command): void {
             }
           }
         } catch (err) {
+          process.exitCode = 1;
           console.log(error(shortErrorMessage(err)));
         }
       },

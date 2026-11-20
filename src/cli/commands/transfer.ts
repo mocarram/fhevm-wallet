@@ -57,6 +57,7 @@ export function registerTransferCommand(program: Command): void {
           let network: NetworkName = getDefaultNetwork();
           if (options?.network) {
             if (!isValidNetwork(options.network)) {
+              process.exitCode = 1;
               console.log(error('Invalid network. Use "sepolia" or "mainnet"'));
               return;
             }
@@ -66,6 +67,7 @@ export function registerTransferCommand(program: Command): void {
           // Check if FHE operations are ready for this network
           const fheError = checkFheReadiness(network);
           if (fheError) {
+            process.exitCode = 1;
             console.log(error(fheError));
             return;
           }
@@ -85,6 +87,7 @@ export function registerTransferCommand(program: Command): void {
           let token: TokenEntry | null = null;
           if (options?.token) {
             if (!isValidAddress(options.token)) {
+              process.exitCode = 1;
               console.log(error('Invalid token address'));
               return;
             }
@@ -124,6 +127,7 @@ export function registerTransferCommand(program: Command): void {
           if (options?.contact) {
             const contact = getAddressByName(options.contact);
             if (!contact) {
+              process.exitCode = 1;
               console.log(error(`Contact "${options.contact}" not found`));
               return;
             }
@@ -195,6 +199,7 @@ export function registerTransferCommand(program: Command): void {
           }
 
           if (!isValidAddress(to!)) {
+            process.exitCode = 1;
             console.log(error('Invalid recipient address'));
             return;
           }
@@ -219,6 +224,7 @@ export function registerTransferCommand(program: Command): void {
           }
 
           if (!isValidAmount(amount!)) {
+            process.exitCode = 1;
             console.log(error('Invalid amount'));
             return;
           }
@@ -229,6 +235,7 @@ export function registerTransferCommand(program: Command): void {
           if (!walletName) {
             const wallets = listWallets();
             if (wallets.length === 0) {
+              process.exitCode = 1;
               console.log(error('No wallets found. Create one with: fhevm-wallet wallet create'));
               return;
             }
@@ -256,6 +263,7 @@ export function registerTransferCommand(program: Command): void {
           const selectedWallet = walletName!;
 
           if (!hasWallet(selectedWallet)) {
+            process.exitCode = 1;
             console.log(error(`Wallet "${selectedWallet}" not found`));
             return;
           }
@@ -278,6 +286,7 @@ export function registerTransferCommand(program: Command): void {
             loadSpinner.succeed('Wallet loaded');
           } catch (err) {
             loadSpinner.fail('Failed to decrypt wallet');
+            process.exitCode = 1;
             console.log(error(describeError(err, 'Invalid password')));
             return;
           }
@@ -287,6 +296,7 @@ export function registerTransferCommand(program: Command): void {
           try {
             amountBigInt = parseTokenAmount(amount!, token.decimals);
           } catch (err) {
+            process.exitCode = 1;
             console.log(error(describeError(err, 'Invalid amount')));
             return;
           }
@@ -306,6 +316,7 @@ export function registerTransferCommand(program: Command): void {
             checkSpinner.succeed('Simulation passed');
           } catch (err) {
             checkSpinner.fail('Send stopped. Nothing was signed or sent.');
+            process.exitCode = 1;
             console.log(error(formatTxError(translateTxError(err))));
             return;
           }
@@ -353,6 +364,7 @@ export function registerTransferCommand(program: Command): void {
               sendSpinner.fail(
                 txErr.code === 'TX_REVERTED' ? 'Transaction reverted' : 'Transaction failed',
               );
+            process.exitCode = 1;
             console.log(error(formatTxError(txErr)));
             return;
           }
@@ -381,6 +393,7 @@ export function registerTransferCommand(program: Command): void {
             console.log(line);
           }
         } catch (err) {
+          process.exitCode = 1;
           console.log(error(describeError(err, 'Failed to send transaction')));
         }
       },

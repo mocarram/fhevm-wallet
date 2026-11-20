@@ -28,6 +28,7 @@ export function registerTokenCommands(program: Command): void {
         let network: NetworkName = getDefaultNetwork();
         if (options?.network) {
           if (!isValidNetwork(options.network)) {
+            process.exitCode = 1;
             console.log(error('Invalid network. Use "sepolia" or "mainnet"'));
             return;
           }
@@ -48,6 +49,7 @@ export function registerTokenCommands(program: Command): void {
         }
 
         if (!isValidAddress(address!)) {
+          process.exitCode = 1;
           console.log(error('Invalid Ethereum address'));
           return;
         }
@@ -65,6 +67,7 @@ export function registerTokenCommands(program: Command): void {
         console.log(`  Address:  ${entry.address}`);
         console.log(`  Network:  ${entry.network}`);
       } catch (err) {
+        process.exitCode = 1;
         console.log(error(describeError(err, 'Failed to add token')));
       }
     });
@@ -80,6 +83,7 @@ export function registerTokenCommands(program: Command): void {
       let network: NetworkName | undefined;
       if (options?.network) {
         if (!isValidNetwork(options.network)) {
+          process.exitCode = 1;
           console.log(error('Invalid network. Use "sepolia" or "mainnet"'));
           return;
         }
@@ -124,6 +128,7 @@ export function registerTokenCommands(program: Command): void {
       let network: NetworkName = getDefaultNetwork();
       if (options?.network) {
         if (!isValidNetwork(options.network)) {
+          process.exitCode = 1;
           console.log(error('Invalid network. Use "sepolia" or "mainnet"'));
           return;
         }
@@ -131,6 +136,7 @@ export function registerTokenCommands(program: Command): void {
       }
 
       if (!isValidAddress(address)) {
+        process.exitCode = 1;
         console.log(error('Invalid Ethereum address'));
         return;
       }
@@ -156,6 +162,7 @@ export function registerTokenCommands(program: Command): void {
       if (removed) {
         console.log(success('Token removed'));
       } else {
+        process.exitCode = 1;
         console.log(error('Token not found'));
       }
     });
