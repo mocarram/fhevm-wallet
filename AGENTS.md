@@ -142,6 +142,11 @@ Every unit of work goes through this loop until it comes out clean:
   (`CONFIRMATION_TIMEOUT_MS`) and also ends in `SENT_UNCONFIRMED`.
 - Never write plaintext token amounts to the audit log.
 - Set `FHEW_DEBUG=1` to print redacted technical details under error messages.
+- A `.env` in the current directory is only trusted for `CWD_ENV_ALLOWED_KEYS`
+  (`src/storage/paths.ts`: RPC URLs and API keys). Never add behaviour switches such as
+  `FHEW_DEBUG`, `FHEW_BACKEND` or `FHEVM_WALLET_HOME` to that list.
+- Print caught errors only through `describeError` (`src/cli/utils/userError.ts`) and
+  RPC URLs only through `maskUrl`: raw ethers messages include the request URL and key.
 - No emoji in menus (they break column alignment in many terminals).
 
 ## Where the plan lives

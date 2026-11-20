@@ -5,7 +5,7 @@
 import { existsSync, readFileSync, statSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
-import { config as dotenvConfig } from 'dotenv';
+import { config as dotenvConfig, parse as dotenvParse } from 'dotenv';
 import {
   ensureSecureDir,
   isSharedLocation,
@@ -83,18 +83,55 @@ export function secureExistingData(): DataDirSecurity {
 }
 
 /**
- * Load environment variables from .env files.
- * Priority: ~/.fhevm-wallet/.env overrides ./.env in the current directory.
- * `quiet: true` stops dotenv 17+ printing a promotional line to stdout, which would
- * corrupt machine-readable output.
+ * The only settings a `.env` in the *current directory* may provide: the ones the
+ * development guide documents. A folder you merely `cd` into (a cloned repository, say)
+ * must not be able to switch on debug output, swap the backend for a mock (FHEW_BACKEND,
+ * Phase 3), move the data dir or set Node options. Anything else in ./.env is ignored.
+ * Values already in the environment always win.
  */
-export function loadEnv(): void {
-  dotenvConfig({ quiet: true });
+export const CWD_ENV_ALLOWED_KEYS = [
+  'SEPOLIA_RPC_URL',
+  'MAINNET_RPC_URL',
+  'ETHERSCAN_API_KEY',
+  'ZAMA_MAINNET_API_KEY',
+] as const;
+
+/** What `loadEnv` took from ./.env, so startup can say so (RPC URLs change behaviour). */
+export interface LoadEnvResult {
+  fromCwd: string[];
+  ignoredFromCwd: string[];
+}
+
+/**
+ * Load settings from the data dir's private `.env` (any key: it is the user's own
+ * owner-only file, and it overrides everything) and the allow-listed keys from a `.env`
+ * in the current directory (never overriding the environment).
+ */
+export function loadEnv(cwdEnvPath = resolve('.env')): LoadEnvResult {
+  const result: LoadEnvResult = { fromCwd: [], ignoredFromCwd: [] };
+  if (existsSync(cwdEnvPath) && resolve(cwdEnvPath) !== ENV_FILE_PATH) {
+    let parsed: Record<string, string> = {};
+    try {
+      parsed = dotenvParse(readFileSync(cwdEnvPath));
+    } catch {
+      /* unreadable ./.env: ignore it, like a missing one */
+    }
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!(CWD_ENV_ALLOWED_KEYS as readonly string[]).includes(key)) {
+        result.ignoredFromCwd.push(key);
+      } else if (process.env[key] === undefined && value !== '') {
+        process.env[key] = value;
+        result.fromCwd.push(key);
+      }
+    }
+  }
 
   ensureDataDir();
   if (existsSync(ENV_FILE_PATH)) {
+    // quiet: dotenv 17+ otherwise prints a promotional line to stdout.
     dotenvConfig({ path: ENV_FILE_PATH, override: true, quiet: true });
   }
+  return result;
 }
 
 /** Variable names we accept: upper-case, digits and underscores. */

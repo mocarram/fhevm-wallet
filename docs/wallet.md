@@ -90,9 +90,7 @@ Configuration is stored in `~/.fhevm-wallet/config.json`:
 | `defaultNetwork` | Network to use when not specified | `sepolia` |
 | `defaultWallet`  | Wallet to use when not specified  | none      |
 
-You can also set these via environment variables in `.env`:
-- `DEFAULT_NETWORK`
-- `DEFAULT_WALLET`
+Change them with `fhew config --network <name>` and `fhew wallet set-default <name>`.
 
 ## How Balances Work
 

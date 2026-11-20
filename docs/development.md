@@ -27,13 +27,18 @@ make env
 
 ## Environment Variables
 
-| Variable            | Description                              | Required |
-| ------------------- | ---------------------------------------- | -------- |
-| `SEPOLIA_RPC_URL`   | Sepolia testnet RPC endpoint             | No       |
-| `MAINNET_RPC_URL`   | Ethereum mainnet RPC endpoint            | No       |
-| `ETHERSCAN_API_KEY` | Etherscan API key (for tx history sync)  | No       |
-| `DEFAULT_NETWORK`   | Default network (`sepolia` or `mainnet`) | No       |
-| `DEFAULT_WALLET`    | Default wallet name                      | No       |
+| Variable               | Description                                 | Required        |
+| ---------------------- | ------------------------------------------- | --------------- |
+| `SEPOLIA_RPC_URL`      | Sepolia testnet RPC endpoint                | No              |
+| `MAINNET_RPC_URL`      | Ethereum mainnet RPC endpoint               | No              |
+| `ETHERSCAN_API_KEY`    | Etherscan API key (for tx history sync)     | No              |
+| `ZAMA_MAINNET_API_KEY` | Zama relayer API key (mainnet FHE only)     | For mainnet     |
+
+Only these four keys are read from a `.env` in the current directory, and they never
+override variables already set in your shell. Anything else in that file (for example
+`FHEW_DEBUG`) is ignored with a notice on stderr, so a folder you `cd` into cannot change
+how the wallet behaves. Settings saved with `fhew config` go to the private
+`~/.fhevm-wallet/.env` instead, which takes precedence.
 
 Example `.env`:
 
@@ -41,8 +46,6 @@ Example `.env`:
 SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/YOUR_INFURA_KEY
 MAINNET_RPC_URL=https://mainnet.infura.io/v3/YOUR_INFURA_KEY
 ETHERSCAN_API_KEY=YOUR_ETHERSCAN_KEY
-DEFAULT_NETWORK=sepolia
-DEFAULT_WALLET=my-wallet
 ```
 
 ## Running

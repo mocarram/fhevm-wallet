@@ -8,10 +8,19 @@
 
 import { DATA_DIR, loadEnv, secureExistingData } from './storage/paths.js';
 
-// Load environment variables (the data dir's .env, plus allowed keys from ./.env).
+// Load settings: the data dir's private .env, plus allow-listed keys from ./.env.
 // Failing here (data dir not writable) gets one clear sentence, not a stack trace.
 try {
-  loadEnv();
+  const env = loadEnv();
+  // A ./.env can point the wallet at another RPC: say where settings came from.
+  if (env.fromCwd.length > 0) {
+    process.stderr.write(`Using ${env.fromCwd.join(', ')} from ./.env in this folder.\n`);
+  }
+  if (env.ignoredFromCwd.length > 0) {
+    process.stderr.write(
+      `Ignored ${env.ignoredFromCwd.join(', ')} in ./.env: only RPC URLs and API keys are read from there.\n`,
+    );
+  }
 
   // Older versions wrote wallet data with default (often world-readable) permissions.
   // Fix them on every start; mention it on stderr so stdout stays scriptable.
