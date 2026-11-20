@@ -9,7 +9,8 @@ import {
   writeFileSync,
 } from 'fs';
 import { join } from 'path';
-import { runCli, tempHome } from './helpers.js';
+import { spawnSync } from 'child_process';
+import { CLI, runCli, tempHome } from './helpers.js';
 
 let cleanup: () => void = () => {};
 afterEach(() => cleanup());
@@ -81,6 +82,36 @@ describe.skipIf(process.platform === 'win32')('wallet data storage', () => {
       expect(res.stderr).not.toMatch(/at .*\.js:\d+/); // no stack trace
     },
   );
+
+  it('a data folder it may not create gets one sentence and exit 1, no stack', () => {
+    const t = tempHome();
+    cleanup = t.cleanup;
+    const locked = join(t.home, 'locked');
+    mkdirSync(locked, { mode: 0o500 });
+    chmodSync(locked, 0o500);
+    // root ignores permission bits, so as root run the CLI as "nobody" in a folder only
+    // root may enter.
+    const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+    if (asRoot) {
+      chmodSync(t.home, 0o755);
+      chmodSync(locked, 0o700);
+    }
+    const res = spawnSync(process.execPath, [CLI, '--version'], {
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: t.home,
+        NO_COLOR: '1',
+        FHEVM_WALLET_HOME: join(locked, 'data'),
+      },
+      encoding: 'utf-8',
+      timeout: 30_000,
+      ...(asRoot ? { uid: 65534, gid: 65534 } : {}),
+    });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toMatch(/^Cannot use the wallet data folder .*: permission denied\./);
+    expect(res.stderr.trim().split('\n')).toHaveLength(1);
+    expect(res.stderr).not.toMatch(/\n\s+at /);
+  });
 
   it('refuses a key that would inject another setting', () => {
     const t = tempHome();
