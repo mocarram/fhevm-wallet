@@ -7,7 +7,7 @@ import { writeSecureFile } from '../../storage/secureFs.js';
 import { join } from 'path';
 import { z } from 'zod';
 import { NetworkName } from '../network/NetworkConfig.js';
-import { getTokenInfo } from './TokenService.js';
+import { getTokenInfo, type TokenInfo } from './TokenService.js';
 import { sanitizeTokenName, sanitizeTokenSymbol } from './tokenText.js';
 import { logEvent } from '../../storage/AuditLog.js';
 import { DATA_DIR, ensureDataDir } from '../../storage/paths.js';
@@ -64,27 +64,37 @@ function saveRegistry(registry: TokenRegistry): void {
 }
 
 /**
- * Add a token to the registry
+ * Add a token to the registry, fetching its name, symbol and decimals from the chain.
  */
 export async function addToken(tokenAddress: string, network: NetworkName): Promise<TokenEntry> {
-  const registry = loadRegistry();
-
-  // Check if already exists
-  const existing = registry.tokens.find(
-    (t) => t.address.toLowerCase() === tokenAddress.toLowerCase() && t.network === network,
-  );
-
-  if (existing) {
+  if (isTokenRegistered(tokenAddress, network)) {
     throw new Error(`Token ${tokenAddress} already exists on ${network}`);
   }
-
-  // Fetch token info from chain
   const info = await getTokenInfo(tokenAddress, network);
+  return addTokenWithInfo(info, network);
+}
+
+/**
+ * Add a token whose details are already known (fetched through a `Backend`, which may be
+ * the offline mock). Name and symbol are sanitised again here: they come from a contract.
+ */
+export function addTokenWithInfo(info: TokenInfo, network: NetworkName): TokenEntry {
+  if (!Number.isInteger(info.decimals) || info.decimals < 0 || info.decimals > 255) {
+    throw new Error('The token reported an invalid number of decimals.');
+  }
+  const registry = loadRegistry();
+
+  const existing = registry.tokens.find(
+    (t) => t.address.toLowerCase() === info.address.toLowerCase() && t.network === network,
+  );
+  if (existing) {
+    throw new Error(`Token ${info.address} already exists on ${network}`);
+  }
 
   const entry: TokenEntry = {
-    address: tokenAddress,
-    name: info.name,
-    symbol: info.symbol,
+    address: info.address,
+    name: sanitizeTokenName(info.name),
+    symbol: sanitizeTokenSymbol(info.symbol),
     decimals: info.decimals,
     network,
     addedAt: new Date().toISOString(),
@@ -93,7 +103,7 @@ export async function addToken(tokenAddress: string, network: NetworkName): Prom
   registry.tokens.push(entry);
   saveRegistry(registry);
 
-  logEvent('TOKEN_ADDED', { address: tokenAddress, symbol: info.symbol, network });
+  logEvent('TOKEN_ADDED', { address: entry.address, symbol: entry.symbol, network });
 
   return entry;
 }

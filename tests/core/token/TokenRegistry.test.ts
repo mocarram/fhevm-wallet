@@ -31,6 +31,19 @@ describe('TokenRegistry', () => {
     await expect(addToken(TOKEN, 'sepolia')).rejects.toThrow(/already exists/);
   });
 
+  it('addTokenWithInfo sanitises contract text and checks decimals', async () => {
+    const { addTokenWithInfo } = await import('../../../src/core/token/TokenRegistry.js');
+    const entry = addTokenWithInfo(
+      { address: TOKEN, name: 'Evil\u001b[2JName', symbol: 'cUS\u200bDC', decimals: 6 },
+      'sepolia',
+    );
+    expect(entry.name).not.toMatch(/\u001b/);
+    expect(entry.symbol).not.toMatch(/\u200b/);
+    expect(() =>
+      addTokenWithInfo({ address: OTHER, name: 'x', symbol: 'x', decimals: 300 }, 'sepolia'),
+    ).toThrow(/decimals/);
+  });
+
   it('listTokens filters by network', async () => {
     const { addToken, listTokens } = await import('../../../src/core/token/TokenRegistry.js');
 

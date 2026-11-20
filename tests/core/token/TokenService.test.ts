@@ -283,6 +283,21 @@ describe('TokenService.confidentialTransfer', () => {
     expect(fakeProvider.broadcastTransaction).toHaveBeenCalledWith(SIGNED);
   });
 
+  it('reports signed and broadcast through the send hooks, with the hash', async () => {
+    broadcastWith(async () => ({ blockNumber: 1, status: 1 }));
+    const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const prepared = await prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
+    const seen: string[] = [];
+    await prepared.send({
+      onSigned: (h) => seen.push(`signed:${h}`),
+      onBroadcast: (h) => {
+        seen.push(`broadcast:${h}`);
+        throw new Error('a broken UI callback must not fail the send');
+      },
+    });
+    expect(seen).toEqual([`signed:${SIGNED_HASH}`, `broadcast:${SIGNED_HASH}`]);
+  });
+
   it('refuses when the RPC serves a different chain', async () => {
     fakeProvider.send.mockResolvedValue('0x1'); // mainnet id while sending on sepolia
     const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');

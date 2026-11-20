@@ -7,24 +7,11 @@ import ora from 'ora';
 import Table from 'cli-table3';
 import chalk from 'chalk';
 import { prompts, SECRET_MASK } from '../utils/prompts.js';
-import {
-  listTransactions,
-  getLastSyncedBlock,
-  updateSyncState,
-  upsertTransactions,
-  Transaction,
-} from '../../storage/TransactionStore.js';
-import {
-  getWalletTransactions,
-  getWalletTransactionsViaRPC,
-} from '../../core/token/TokenService.js';
+import { listTransactions, Transaction } from '../../storage/TransactionStore.js';
 import { listTokens, TokenEntry } from '../../core/token/TokenRegistry.js';
+import { syncTransactions } from '../../core/token/historySync.js';
 import { getDefaultNetwork } from '../../storage/ConfigStore.js';
-import {
-  getProvider,
-  clearProviderForNetwork,
-  clearProviderCache,
-} from '../../core/network/ProviderFactory.js';
+import { clearProviderForNetwork, clearProviderCache } from '../../core/network/ProviderFactory.js';
 import { formatAddress, formatNetworkName, error, bold } from '../../utils/formatting.js';
 import { isValidNetwork, isValidAddress } from '../../utils/validation.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
@@ -107,67 +94,6 @@ function formatAmount(tx: Transaction, walletAddress: string): string {
   const prefix = isSend ? '-' : '+';
   const color = isSend ? chalk.red : chalk.green;
   return color(`${prefix}${tx.amount}`);
-}
-
-type SyncMethod = 'etherscan' | 'rpc';
-
-/**
- * Sync transactions from blockchain via Etherscan API
- */
-async function syncTransactions(
-  walletAddress: string,
-  network: NetworkName,
-  tokens: TokenEntry[],
-  method: SyncMethod = 'etherscan',
-): Promise<number> {
-  const lastBlock = getLastSyncedBlock(walletAddress, network);
-  const provider = getProvider(network);
-  const currentBlock = await provider.getBlockNumber();
-
-  // Get token addresses and create a lookup map
-  const tokenAddresses = tokens.map((t) => t.address);
-  const tokenMap = new Map(tokens.map((t) => [t.address.toLowerCase(), { symbol: t.symbol }]));
-
-  // Fetch transactions using the specified method
-  const walletTxs =
-    method === 'etherscan'
-      ? await getWalletTransactions(
-          walletAddress,
-          tokenAddresses,
-          tokenMap,
-          network,
-          lastBlock > 0 ? lastBlock + 1 : 0,
-        )
-      : await getWalletTransactionsViaRPC(
-          walletAddress,
-          tokenAddresses,
-          tokenMap,
-          network,
-          lastBlock > 0 ? lastBlock + 1 : 0,
-        );
-
-  // Convert to our transaction format
-  const transactions: Transaction[] = walletTxs.map((tx) => ({
-    txHash: tx.txHash,
-    type: tx.type,
-    tokenAddress: tx.tokenAddress,
-    tokenSymbol: tx.tokenSymbol,
-    from: tx.from,
-    to: tx.to,
-    amount: tx.amount, // ETH transfers have amount, token transfers are null
-    network,
-    blockNumber: tx.blockNumber,
-    timestamp: new Date(tx.timestamp * 1000).toISOString(),
-  }));
-
-  if (transactions.length > 0) {
-    upsertTransactions(transactions);
-  }
-
-  // Update sync state
-  updateSyncState(walletAddress, network, currentBlock);
-
-  return transactions.length;
 }
 
 /**

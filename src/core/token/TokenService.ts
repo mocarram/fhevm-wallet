@@ -397,6 +397,14 @@ export async function getDecryptedBalance(
   return balance;
 }
 
+/** Optional progress callbacks for `PreparedTransfer.send`. Errors thrown in them are ignored. */
+export interface SendHooks {
+  /** The transaction is signed locally; nothing has left the machine yet. */
+  onSigned?: (txHash: string) => void;
+  /** The node accepted the transaction; it is now waiting to be mined. */
+  onBroadcast?: (txHash: string) => void;
+}
+
 /** Result of a successful pre-flight check: everything needed to show a review and send. */
 export interface PreparedTransfer {
   /** Gas limit including a safety buffer. */
@@ -407,8 +415,11 @@ export interface PreparedTransfer {
   ethBalanceWei: bigint;
   /** The sender's decrypted token balance (base units) at preparation time. */
   tokenBalance: bigint;
-  /** Broadcast the transfer and wait for one confirmation. */
-  send: () => Promise<TransferResult>;
+  /**
+   * Broadcast the transfer and wait for one confirmation. `hooks.onBroadcast` fires as
+   * soon as the node accepted it, so a UI can show "pending" with the hash while waiting.
+   */
+  send: (hooks?: SendHooks) => Promise<TransferResult>;
 }
 
 /**
@@ -524,7 +535,7 @@ export async function prepareConfidentialTransfer(
       );
     }
 
-    const send = async (): Promise<TransferResult> => {
+    const send = async (hooks: SendHooks = {}): Promise<TransferResult> => {
       const audit = { token: tokenAddress, to: toAddress, network };
       const result = await signAndBroadcast({
         signer: connectedWallet,
@@ -534,8 +545,14 @@ export async function prepareConfidentialTransfer(
         action: 'send',
         // Signed is not sent: TRANSFER_SIGNED without TRANSFER_BROADCAST means the
         // broadcast failed or its answer was lost.
-        onSigned: (txHash) => logEvent('TRANSFER_SIGNED', { ...audit, txHash }),
-        onBroadcast: (txHash) => logEvent('TRANSFER_BROADCAST', { ...audit, txHash }),
+        onSigned: (txHash) => {
+          bestEffort(() => logEvent('TRANSFER_SIGNED', { ...audit, txHash }));
+          if (hooks.onSigned) bestEffort(() => hooks.onSigned!(txHash));
+        },
+        onBroadcast: (txHash) => {
+          bestEffort(() => logEvent('TRANSFER_BROADCAST', { ...audit, txHash }));
+          if (hooks.onBroadcast) bestEffort(() => hooks.onBroadcast!(txHash));
+        },
       });
 
       // Confirmed. Local bookkeeping must never turn a successful transfer into an error.

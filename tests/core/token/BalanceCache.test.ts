@@ -3,6 +3,7 @@ import {
   clearBalanceCache,
   getCachedBalance,
   invalidateBalance,
+  peekCachedBalance,
   setCachedBalance,
 } from '../../../src/core/token/BalanceCache.js';
 import { wipeTestDataDir } from '../../helpers/dataDir.js';
@@ -49,5 +50,14 @@ describe('BalanceCache', () => {
     expect(getCachedBalance(WALLET.toUpperCase(), TOKEN.toUpperCase(), 'sepolia', 100n)).toBe(
       5_000n,
     );
+  });
+
+  it('peek returns the last value and when it was decrypted, without a handle', () => {
+    expect(peekCachedBalance(WALLET, TOKEN, 'sepolia')).toBeNull();
+    const before = Date.now();
+    setCachedBalance(WALLET, TOKEN, 'sepolia', 100n, 5_000n);
+    const peeked = peekCachedBalance(WALLET, TOKEN, 'sepolia');
+    expect(peeked?.value).toBe(5_000n);
+    expect(peeked?.updatedAt!.getTime()).toBeGreaterThanOrEqual(before - 1000);
   });
 });
