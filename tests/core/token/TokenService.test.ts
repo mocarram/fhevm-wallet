@@ -18,7 +18,8 @@ const contractStubs = {
     populateTransaction: vi.fn(),
   }),
   getFunction: vi.fn(),
-  setOperator: Object.assign(vi.fn(), { estimateGas: vi.fn() }),
+  // Reached through getFunction('setOperator(address,uint48)'), like confidentialTransfer.
+  setOperator: Object.assign(vi.fn(), { estimateGas: vi.fn(), populateTransaction: vi.fn() }),
   isOperator: vi.fn(),
 };
 
@@ -30,7 +31,6 @@ vi.mock('ethers', async () => {
     decimals = contractStubs.decimals;
     confidentialBalanceOf = contractStubs.confidentialBalanceOf;
     getFunction = contractStubs.getFunction;
-    setOperator = contractStubs.setOperator;
     isOperator = contractStubs.isOperator;
   }
   return { ...actual, Contract: MockContract };
@@ -39,6 +39,7 @@ vi.mock('ethers', async () => {
 const fakeProvider = {
   destroy: vi.fn(),
   broadcastTransaction: vi.fn(),
+  getTransactionReceipt: vi.fn(),
   getFeeData: vi.fn(),
   getBalance: vi.fn(),
 };
@@ -68,9 +69,15 @@ beforeEach(() => {
   contractStubs.confidentialTransfer.estimateGas.mockReset();
   contractStubs.confidentialTransfer.populateTransaction.mockReset();
   fakeProvider.broadcastTransaction.mockReset();
+  fakeProvider.getTransactionReceipt.mockReset();
+  fakeProvider.getTransactionReceipt.mockResolvedValue(null);
   contractStubs.setOperator.estimateGas.mockReset();
+  contractStubs.setOperator.populateTransaction.mockReset();
   contractStubs.setOperator.estimateGas.mockResolvedValue(50_000n);
-  contractStubs.getFunction.mockImplementation(() => contractStubs.confidentialTransfer);
+  contractStubs.setOperator.populateTransaction.mockResolvedValue({ to: TOKEN, data: '0x' });
+  contractStubs.getFunction.mockImplementation((sig: string) =>
+    sig.startsWith('setOperator') ? contractStubs.setOperator : contractStubs.confidentialTransfer,
+  );
   fakeProvider.getFeeData.mockResolvedValue({ maxFeePerGas: 10n, gasPrice: null });
   fakeProvider.getBalance.mockResolvedValue(10n ** 18n);
   contractStubs.confidentialTransfer.estimateGas.mockResolvedValue(100_000n);
@@ -175,37 +182,44 @@ describe('TokenService balance handles from the real ABI', () => {
   });
 });
 
-describe('TokenService.confidentialTransfer', () => {
-  // A real signed transaction, so Transaction.from(signed).hash works exactly as in production.
-  let SIGNED = '';
-  let SIGNED_HASH = '';
-  beforeAll(async () => {
-    SIGNED = await new Wallet(
-      '0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318',
-    ).signTransaction({
-      to: TOKEN,
-      data: '0x',
-      gasLimit: 120_000n,
-      chainId: 11155111n,
-      nonce: 0,
-      maxFeePerGas: 10n,
-      maxPriorityFeePerGas: 1n,
-      type: 2,
-    });
-    SIGNED_HASH = Transaction.from(SIGNED).hash!;
+// A real signed transaction, so Transaction.from(signed).hash works exactly as in production.
+let SIGNED = '';
+let SIGNED_HASH = '';
+beforeAll(async () => {
+  SIGNED = await new Wallet(
+    '0x4c0883a69102937d6231471b5dbb6204fe5129617082792ae468d01a3f362318',
+  ).signTransaction({
+    to: TOKEN,
+    data: '0x',
+    gasLimit: 120_000n,
+    chainId: 11155111n,
+    nonce: 0,
+    maxFeePerGas: 10n,
+    maxPriorityFeePerGas: 1n,
+    type: 2,
   });
+  SIGNED_HASH = Transaction.from(SIGNED).hash!;
+});
 
-  const wallet = {
-    address: USER,
-    connect: () => wallet,
-    populateTransaction: vi.fn(async (tx: unknown) => tx),
-    signTransaction: vi.fn(async () => SIGNED),
-  };
+/** A wallet that signs locally to the fixture above. */
+const signingWallet = {
+  address: USER,
+  connect: () => signingWallet,
+  populateTransaction: vi.fn(async (tx: unknown) => tx),
+  signTransaction: vi.fn(async () => SIGNED),
+};
+
+/** Make the broadcast resolve to a tx whose wait() behaves as given. */
+const broadcastWith = (wait: () => Promise<unknown>) =>
+  fakeProvider.broadcastTransaction.mockResolvedValue({ hash: SIGNED_HASH, wait });
+
+/** An ethers-shaped error. */
+const ethersError = (code: string, message: string, fields: Record<string, unknown> = {}) =>
+  Object.assign(new Error(message), { code, ...fields });
+
+describe('TokenService.confidentialTransfer', () => {
+  const wallet = signingWallet;
   const w = wallet as never;
-
-  /** Make the broadcast resolve to a tx whose wait() behaves as given. */
-  const broadcastWith = (wait: () => Promise<unknown>) =>
-    fakeProvider.broadcastTransaction.mockResolvedValue({ hash: SIGNED_HASH, wait });
 
   beforeEach(() => {
     contractStubs.confidentialTransfer.populateTransaction.mockResolvedValue({
@@ -360,6 +374,101 @@ describe('TokenService.confidentialTransfer', () => {
     expect(spy).toHaveBeenCalled();
   });
 
+  it('"nonce too low" after broadcast is possibly sent, never "try again"', async () => {
+    // A gateway can retry the broadcast on a second backend after the first one already
+    // accepted it; the second answers "nonce too low" because of our own transaction.
+    fakeProvider.broadcastTransaction.mockRejectedValue(
+      ethersError('NONCE_EXPIRED', 'nonce has already been used'),
+    );
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const err = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia').catch((e) => e);
+    expect(err).toMatchObject({ code: 'SENT_UNCONFIRMED', txHash: SIGNED_HASH });
+    expect(err.hint).toMatch(/Do not send again/);
+    expect(fakeProvider.getTransactionReceipt).toHaveBeenCalledWith(SIGNED_HASH);
+  });
+
+  it('"nonce too low" with a successful receipt for our hash is a confirmed transfer', async () => {
+    const receipt = { status: 1, blockNumber: 9, hash: SIGNED_HASH };
+    fakeProvider.broadcastTransaction.mockRejectedValue(
+      ethersError('NONCE_EXPIRED', 'nonce too low'),
+    );
+    fakeProvider.getTransactionReceipt.mockResolvedValue(receipt);
+    const audit = await import('../../../src/storage/AuditLog.js');
+    const spy = vi.spyOn(audit, 'logEvent');
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const res = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
+    expect(res).toEqual({ txHash: SIGNED_HASH, receipt });
+    expect(spy.mock.calls.map((c) => c[0])).toEqual([
+      'TRANSFER_SIGNED',
+      'TRANSFER_BROADCAST',
+      'TRANSFER',
+    ]);
+  });
+
+  it('"nonce too low" with a reverted receipt for our hash is TX_REVERTED', async () => {
+    fakeProvider.broadcastTransaction.mockRejectedValue(
+      ethersError('NONCE_EXPIRED', 'nonce too low'),
+    );
+    fakeProvider.getTransactionReceipt.mockResolvedValue({ status: 0, hash: SIGNED_HASH });
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const err = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia').catch((e) => e);
+    expect(err).toMatchObject({ code: 'TX_REVERTED', txHash: SIGNED_HASH });
+  });
+
+  it('"nonce too low" stays SENT_UNCONFIRMED when the receipt lookup fails', async () => {
+    fakeProvider.broadcastTransaction.mockRejectedValue(
+      ethersError('NONCE_EXPIRED', 'nonce too low'),
+    );
+    fakeProvider.getTransactionReceipt.mockRejectedValue(ethersError('TIMEOUT', 'timeout'));
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    await expect(confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia')).rejects.toMatchObject({
+      code: 'SENT_UNCONFIRMED',
+      txHash: SIGNED_HASH,
+    });
+  });
+
+  it('"replacement underpriced" on broadcast is reported as not sent', async () => {
+    fakeProvider.broadcastTransaction.mockRejectedValue(
+      ethersError('REPLACEMENT_UNDERPRICED', 'replacement fee too low'),
+    );
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const err = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia').catch((e) => e);
+    expect(err.code).toBe('NONCE_CONFLICT');
+    expect(err.txHash).toBeUndefined();
+  });
+
+  it('maps TRANSACTION_REPLACED from wait() to TX_REPLACED with both hashes', async () => {
+    const replacement = '0x' + 'ab'.repeat(32);
+    broadcastWith(async () => {
+      throw ethersError('TRANSACTION_REPLACED', 'transaction was replaced', {
+        reason: 'cancelled',
+        cancelled: true,
+        hash: SIGNED_HASH,
+        replacement: { hash: replacement },
+        receipt: { hash: replacement, status: 1 },
+      });
+    });
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const err = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia').catch((e) => e);
+    expect(err).toMatchObject({
+      code: 'TX_REPLACED',
+      txHash: SIGNED_HASH,
+      replacementHash: replacement,
+    });
+    expect(err.hint).toContain(`sepolia.etherscan.io/tx/${replacement}`);
+  });
+
+  it('logs TRANSFER_SIGNED but not TRANSFER_BROADCAST when the broadcast fails', async () => {
+    fakeProvider.broadcastTransaction.mockRejectedValue(ethersError('TIMEOUT', 'timeout'));
+    const audit = await import('../../../src/storage/AuditLog.js');
+    const spy = vi.spyOn(audit, 'logEvent');
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia').catch(() => undefined);
+    expect(spy.mock.calls.map((c) => c[0])).toEqual(['TRANSFER_SIGNED']);
+    // Never the amount: the audit log must not undo the token's confidentiality.
+    expect(Object.keys(spy.mock.calls[0][1]).sort()).toEqual(['network', 'to', 'token', 'txHash']);
+  });
+
   it('refuses to guess a zero fee when the RPC returns no gas price', async () => {
     fakeProvider.getFeeData.mockResolvedValue({ maxFeePerGas: null, gasPrice: null });
     const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
@@ -370,17 +479,65 @@ describe('TokenService.confidentialTransfer', () => {
 });
 
 describe('TokenService operators', () => {
-  const wallet = { address: USER, connect: () => wallet } as never;
+  const wallet = signingWallet as never;
 
-  it('setOperator passes operator and expiry and waits for the receipt', async () => {
-    contractStubs.setOperator.mockResolvedValue({
-      hash: '0xop',
-      wait: vi.fn().mockResolvedValue({ status: 1 }),
-    });
+  beforeEach(() => {
+    signingWallet.populateTransaction.mockClear();
+    signingWallet.signTransaction.mockClear();
+  });
+
+  it('setOperator simulates, signs locally with a gas buffer, broadcasts and waits', async () => {
+    const receipt = { status: 1 };
+    broadcastWith(async () => receipt);
     const { setOperator } = await import('../../../src/core/token/TokenService.js');
     const res = await setOperator(wallet, TOKEN, RECIPIENT, 1_900_000_000, 'sepolia');
-    expect(res.txHash).toBe('0xop');
-    expect(contractStubs.setOperator).toHaveBeenCalledWith(RECIPIENT, 1_900_000_000);
+    expect(res).toEqual({ txHash: SIGNED_HASH, receipt });
+    expect(contractStubs.getFunction).toHaveBeenCalledWith('setOperator(address,uint48)');
+    expect(contractStubs.setOperator.estimateGas).toHaveBeenCalledWith(RECIPIENT, 1_900_000_000);
+    // 50k estimate + 20% buffer
+    expect(contractStubs.setOperator.populateTransaction).toHaveBeenCalledWith(
+      RECIPIENT,
+      1_900_000_000,
+      { gasLimit: 60_000n },
+    );
+    expect(fakeProvider.broadcastTransaction).toHaveBeenCalledWith(SIGNED);
+  });
+
+  it('setOperator keeps the hash when the broadcast times out', async () => {
+    fakeProvider.broadcastTransaction.mockRejectedValue(ethersError('TIMEOUT', 'request timeout'));
+    const { setOperator } = await import('../../../src/core/token/TokenService.js');
+    const err = await setOperator(wallet, TOKEN, RECIPIENT, 1_900_000_000, 'sepolia').catch(
+      (e) => e,
+    );
+    expect(err).toMatchObject({ code: 'SENT_UNCONFIRMED', txHash: SIGNED_HASH });
+    expect(err.hint).toContain(`/tx/${SIGNED_HASH}`);
+  });
+
+  it('setOperator names the operator change when it reverts on-chain', async () => {
+    broadcastWith(async () => {
+      throw ethersError('CALL_EXCEPTION', 'transaction execution reverted', {
+        action: 'sendTransaction',
+        data: null,
+        receipt: { hash: SIGNED_HASH, status: 0 },
+      });
+    });
+    const { setOperator } = await import('../../../src/core/token/TokenService.js');
+    const err = await setOperator(wallet, TOKEN, RECIPIENT, 1_900_000_000, 'sepolia').catch(
+      (e) => e,
+    );
+    expect(err).toMatchObject({ code: 'TX_REVERTED', txHash: SIGNED_HASH });
+    expect(err.message).toMatch(/operator change/);
+  });
+
+  it('setOperator does not sign when the simulation fails', async () => {
+    contractStubs.setOperator.estimateGas.mockRejectedValue(
+      ethersError('CALL_EXCEPTION', 'reverted', { reason: 'paused' }),
+    );
+    const { setOperator } = await import('../../../src/core/token/TokenService.js');
+    await expect(
+      setOperator(wallet, TOKEN, RECIPIENT, 1_900_000_000, 'sepolia'),
+    ).rejects.toMatchObject({ code: 'CONTRACT_REJECTED' });
+    expect(signingWallet.signTransaction).not.toHaveBeenCalled();
   });
 
   it('setOperator rejects expiries outside uint48', async () => {

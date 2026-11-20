@@ -121,8 +121,15 @@ Every unit of work goes through this loop until it comes out clean:
 - Files are written with owner-only permissions via `src/storage/secureFs.ts` (Phase 2).
   Do not call `fs.writeFileSync` on user data directly.
 - Network calls have timeouts.
-- After a transaction is broadcast, never tell the user to "try again": show the hash
-  and explorer link (`SENT_UNCONFIRMED`). Resending could pay twice.
+- Sign locally first (`signAndBroadcast` in `TokenService`) so the hash is known before
+  anything leaves the machine. Once a transaction is signed and handed to the RPC, any
+  failure goes through `sentButUnconfirmed` and is shown as `SENT_UNCONFIRMED` with the
+  hash and explorer link, never "try again": resending could pay twice. The only node
+  refusals that count as "definitely not sent" (safe to retry) are the ethers codes
+  `INSUFFICIENT_FUNDS` and `REPLACEMENT_UNDERPRICED`. `NONCE_EXPIRED` ("nonce too low")
+  is *not* safe: an RPC gateway may have retried the broadcast on another backend after
+  ours was already accepted. Mined reverts stay `TX_REVERTED`; a nonce taken by another
+  transaction is `TX_REPLACED`. Both keep the hash.
 - Never write plaintext token amounts to the audit log.
 - Set `FHEW_DEBUG=1` to print redacted technical details under error messages.
 - No emoji in menus (they break column alignment in many terminals).

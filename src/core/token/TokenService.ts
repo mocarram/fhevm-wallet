@@ -10,6 +10,8 @@ import {
   Transaction,
   TransactionReceipt,
   Signer,
+  type JsonRpcProvider,
+  type TransactionRequest,
 } from 'ethers';
 import { sentButUnconfirmed, translateTxError, WalletTxError } from './txErrors.js';
 import { getProvider, NetworkName, getNetworkConfig } from '../network/index.js';
@@ -84,6 +86,94 @@ function bestEffort(fn: () => void): void {
   } catch {
     // Intentionally ignored: the on-chain result is what matters to the user.
   }
+}
+
+/** Options for `signAndBroadcast`. */
+interface SignAndBroadcastOptions {
+  /** Wallet already connected to `provider`; it fills in nonce, fees and chain id. */
+  signer: Wallet | HDNodeWallet;
+  provider: JsonRpcProvider;
+  /** Builds the unsigned call (to, data, gasLimit). Runs before anything is signed. */
+  build: () => Promise<TransactionRequest>;
+  network: NetworkName;
+  /** What is being sent, for error titles: "send" or "operator change". */
+  action: string;
+  /** Best-effort hooks for the audit log. Never given amounts. */
+  onSigned?: (txHash: string) => void;
+  onBroadcast?: (txHash: string) => void;
+}
+
+/**
+ * Sign a transaction locally, then broadcast it and wait for one confirmation.
+ *
+ * Signing first means the hash is known before anything leaves this machine. Sending via
+ * `contract.fn(...)` instead would give us no hash when the broadcast call itself times
+ * out, even though the node may have accepted it, and the user could be told to "try
+ * again" and pay twice. Used by both transfers and operator changes.
+ */
+async function signAndBroadcast(opts: SignAndBroadcastOptions): Promise<TransferResult> {
+  const { signer, provider, network, action } = opts;
+  const translateOpts = { iface: ERC7984_INTERFACE, action };
+
+  // Step 1: build and sign locally. Nothing has left this machine yet, so a failure
+  // here is safe to retry.
+  let signed: string;
+  try {
+    const request = await signer.populateTransaction(await opts.build());
+    signed = await signer.signTransaction(request);
+  } catch (err) {
+    throw translateTxError(err, translateOpts);
+  }
+
+  // The hash is known before broadcasting. From here on, *every* failure must carry it
+  // and must not say "try again" unless the node provably refused it: a broadcast that
+  // timed out may still be in the mempool, and resending would pay twice.
+  const txHash = Transaction.from(signed).hash!;
+  const explorerUrl = getTxExplorerUrl(txHash, network);
+  if (opts.onSigned) bestEffort(() => opts.onSigned!(txHash));
+
+  let tx: Awaited<ReturnType<JsonRpcProvider['broadcastTransaction']>>;
+  try {
+    tx = await provider.broadcastTransaction(signed);
+  } catch (err) {
+    // "nonce too low" can mean our own transaction was already mined (an RPC gateway
+    // retried the broadcast on another backend). If the chain has a receipt for our
+    // hash, report what actually happened instead of an unclear error.
+    if ((err as { code?: string } | null)?.code === 'NONCE_EXPIRED') {
+      const receipt = await provider.getTransactionReceipt(txHash).catch(() => null);
+      if (receipt && receipt.status === 1) {
+        if (opts.onBroadcast) bestEffort(() => opts.onBroadcast!(txHash));
+        return { txHash, receipt };
+      }
+      if (receipt) {
+        // Same shape ethers' wait() throws for a status-0 receipt, so it maps to TX_REVERTED.
+        throw sentButUnconfirmed(
+          Object.assign(new Error('transaction execution reverted'), {
+            code: 'CALL_EXCEPTION',
+            action: 'sendTransaction',
+            receipt,
+          }),
+          txHash,
+          explorerUrl,
+          translateOpts,
+        );
+      }
+    }
+    throw sentButUnconfirmed(err, txHash, explorerUrl, translateOpts);
+  }
+  if (opts.onBroadcast) bestEffort(() => opts.onBroadcast!(txHash));
+
+  let receipt: TransactionReceipt | null;
+  try {
+    // ethers v6 wait() throws CALL_EXCEPTION (action "sendTransaction") on a status-0
+    // receipt, and TRANSACTION_REPLACED if another tx took the nonce; sentButUnconfirmed
+    // maps those to TX_REVERTED and TX_REPLACED.
+    receipt = await tx.wait();
+    if (!receipt) throw new Error('No receipt returned'); // only with confirmations=0
+  } catch (err) {
+    throw sentButUnconfirmed(err, txHash, explorerUrl, translateOpts);
+  }
+  return { txHash, receipt };
 }
 
 /**
@@ -251,45 +341,25 @@ export async function prepareConfidentialTransfer(
     }
 
     const send = async (): Promise<TransferResult> => {
-      // Step 1: build and sign locally. Nothing has left this machine yet, so a failure
-      // here is safe to retry.
-      let signed: string;
-      try {
-        const unsigned = await transfer.populateTransaction(...args, { gasLimit });
-        const request = await connectedWallet.populateTransaction(unsigned);
-        signed = await connectedWallet.signTransaction(request);
-      } catch (err) {
-        throw translateTxError(err, { iface: ERC7984_INTERFACE });
-      }
-
-      // The hash is known before broadcasting. From here on, *every* failure must carry it
-      // and must not say "try again": a broadcast that timed out may still be in the
-      // mempool, and resending would pay twice.
-      const txHash = Transaction.from(signed).hash!;
-      const explorerUrl = getTxExplorerUrl(txHash, network);
-      bestEffort(() =>
-        logEvent('TRANSFER_SENT', { token: tokenAddress, to: toAddress, txHash, network }),
-      );
-
-      let receipt: TransactionReceipt | null;
-      try {
-        const tx = await provider.broadcastTransaction(signed);
-        // ethers v6 wait() throws CALL_EXCEPTION (action "sendTransaction") on a status-0
-        // receipt; sentButUnconfirmed keeps that as TX_REVERTED.
-        receipt = await tx.wait();
-        if (!receipt) throw new Error('No receipt returned'); // only with confirmations=0
-      } catch (err) {
-        throw sentButUnconfirmed(err, txHash, explorerUrl, { iface: ERC7984_INTERFACE });
-      }
+      const audit = { token: tokenAddress, to: toAddress, network };
+      const result = await signAndBroadcast({
+        signer: connectedWallet,
+        provider,
+        build: () => transfer.populateTransaction(...args, { gasLimit }),
+        network,
+        action: 'send',
+        // Signed is not sent: TRANSFER_SIGNED without TRANSFER_BROADCAST means the
+        // broadcast failed or its answer was lost.
+        onSigned: (txHash) => logEvent('TRANSFER_SIGNED', { ...audit, txHash }),
+        onBroadcast: (txHash) => logEvent('TRANSFER_BROADCAST', { ...audit, txHash }),
+      });
 
       // Confirmed. Local bookkeeping must never turn a successful transfer into an error.
       // The encrypted handle changed, so drop the cached plaintext balance; the amount is
       // deliberately not logged so the audit log doesn't undo the token's confidentiality.
       bestEffort(() => invalidateBalance(wallet.address, tokenAddress, network));
-      bestEffort(() =>
-        logEvent('TRANSFER', { token: tokenAddress, to: toAddress, txHash, network }),
-      );
-      return { txHash, receipt };
+      bestEffort(() => logEvent('TRANSFER', { ...audit, txHash: result.txHash }));
+      return result;
     };
 
     return { gasLimit, feeWei, ethBalanceWei, send };
@@ -691,28 +761,31 @@ export async function setOperator(
   }
   try {
     const provider = getProvider(network);
-    const contract = getTokenContract(tokenAddress, network, wallet.connect(provider));
+    const connectedWallet = wallet.connect(provider);
+    const contract = getTokenContract(tokenAddress, network, connectedWallet);
+    const fn = contract.getFunction('setOperator(address,uint48)');
     // Simulate first so a revert is reported before anything is signed.
-    await contract.setOperator.estimateGas(operator, untilUnixSeconds);
-    const tx = await contract.setOperator(operator, untilUnixSeconds);
-    let receipt: TransactionReceipt | null;
-    try {
-      receipt = await tx.wait();
-    } catch (err) {
-      throw sentButUnconfirmed(err, tx.hash, getTxExplorerUrl(tx.hash, network), {
-        iface: ERC7984_INTERFACE,
-        action: 'operator change',
-      });
-    }
+    const estimate = await fn.estimateGas(operator, untilUnixSeconds);
+    const gasLimit = (estimate * (100n + GAS_BUFFER_PERCENT)) / 100n;
+    // Same sign-locally-then-broadcast flow as transfers, so a timed-out broadcast still
+    // reports the hash instead of "could not reach the network, try again".
+    const result = await signAndBroadcast({
+      signer: connectedWallet,
+      provider,
+      build: () => fn.populateTransaction(operator, untilUnixSeconds, { gasLimit }),
+      network,
+      action: 'operator change',
+    });
     bestEffort(() =>
       logEvent('OPERATOR_SET', {
         token: tokenAddress,
         operator,
         until: String(untilUnixSeconds),
         network,
+        txHash: result.txHash,
       }),
     );
-    return { txHash: tx.hash, receipt: receipt! };
+    return result;
   } catch (err) {
     throw translateTxError(err, { iface: ERC7984_INTERFACE, action: 'operator change' });
   }
