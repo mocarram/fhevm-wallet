@@ -2,8 +2,8 @@
  * ERC-7984 token interactions
  */
 
-import { Contract, Wallet, HDNodeWallet, TransactionReceipt, Signer } from 'ethers';
-import { translateTxError, WalletTxError } from './txErrors.js';
+import { Contract, Interface, Wallet, HDNodeWallet, TransactionReceipt, Signer } from 'ethers';
+import { sentButUnconfirmed, translateTxError, WalletTxError } from './txErrors.js';
 import { getProvider, NetworkName, getNetworkConfig } from '../network/index.js';
 import { encryptAmount } from '../fhe/EncryptionService.js';
 import { decryptBalance } from '../fhe/DecryptionService.js';
@@ -39,6 +39,9 @@ export const ERC7984_ABI = [
   'error ERC7984ZeroBalance(address holder)',
   'error ZamaProtocolUnsupported()',
 ];
+
+/** Parsed ABI, used to decode custom-error revert data that ethers leaves undecoded. */
+export const ERC7984_INTERFACE = new Interface(ERC7984_ABI);
 
 /** Largest value an euint64 can hold. Amounts are in the token's base units. */
 export const MAX_EUINT64 = 2n ** 64n - 1n;
@@ -100,8 +103,10 @@ export async function getEncryptedBalance(
   network: NetworkName,
 ): Promise<bigint> {
   const contract = getTokenContract(tokenAddress, network);
-  const balance = await contract.confidentialBalanceOf(userAddress);
-  return balance;
+  // The ABI returns bytes32 (a 0x-hex string). Convert once here so the rest of the
+  // wallet (zero check, cache key, decryption) works with a single bigint representation.
+  const handle: string | bigint = await contract.confidentialBalanceOf(userAddress);
+  return BigInt(handle);
 }
 
 /**
@@ -203,7 +208,16 @@ export async function prepareConfidentialTransfer(
       provider.getFeeData(),
       provider.getBalance(wallet.address),
     ]);
-    const pricePerGas = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n;
+    const pricePerGas = feeData.maxFeePerGas ?? feeData.gasPrice;
+    if (!pricePerGas) {
+      // Without a price we can't check affordability or show a fee; don't guess "0".
+      throw new WalletTxError(
+        'RPC_UNAVAILABLE',
+        'Could not get the current network fee.',
+        'The RPC endpoint did not return gas price information.',
+        'Try again, or use a different RPC endpoint in Settings.',
+      );
+    }
     const feeWei = gasLimit * pricePerGas;
 
     if (ethBalanceWei < feeWei) {
@@ -216,37 +230,50 @@ export async function prepareConfidentialTransfer(
     }
 
     const send = async (): Promise<TransferResult> => {
+      // Phase 1: sign and broadcast. Failures here mean nothing was sent.
+      let tx;
       try {
-        const tx = await transfer(...args, { gasLimit });
-        const receipt = await tx.wait();
-        if (!receipt || receipt.status !== 1) {
-          throw new WalletTxError(
-            'TX_REVERTED',
-            'The transfer was mined but reverted.',
-            'The contract rejected it on-chain after the simulation passed.',
-            'Check the transaction on the explorer, then try again.',
-            tx.hash,
-          );
-        }
-
-        // The encrypted handle changed; drop the cached plaintext balance.
-        invalidateBalance(wallet.address, tokenAddress, network);
-        logEvent('TRANSFER', {
-          token: tokenAddress,
-          to: toAddress,
-          amount: amount.toString(),
-          txHash: tx.hash,
-          network,
-        });
-        return { txHash: tx.hash, receipt };
+        tx = await transfer(...args, { gasLimit });
       } catch (err) {
-        throw translateTxError(err);
+        throw translateTxError(err, { iface: ERC7984_INTERFACE });
       }
+
+      // From here on the transaction exists on the network. Record it immediately so the
+      // hash is never lost, even if waiting for the receipt fails.
+      logEvent('TRANSFER_SENT', { token: tokenAddress, to: toAddress, txHash: tx.hash, network });
+
+      // Phase 2: wait for one confirmation. A failure here must NOT read as "try again":
+      // the transfer may still confirm, and resending could pay twice.
+      let receipt: TransactionReceipt | null;
+      try {
+        // ethers v6 wait() throws CALL_EXCEPTION (action "sendTransaction") on a status-0
+        // receipt; sentButUnconfirmed keeps that as TX_REVERTED.
+        receipt = await tx.wait();
+      } catch (err) {
+        throw sentButUnconfirmed(err, tx.hash, getTxExplorerUrl(tx.hash, network), {
+          iface: ERC7984_INTERFACE,
+        });
+      }
+      if (!receipt) {
+        // Only possible with confirmations=0, which we never request.
+        throw sentButUnconfirmed(
+          new Error('No receipt returned'),
+          tx.hash,
+          getTxExplorerUrl(tx.hash, network),
+        );
+      }
+
+      // The encrypted handle changed; drop the cached plaintext balance.
+      invalidateBalance(wallet.address, tokenAddress, network);
+      // The amount is deliberately not logged: the audit log should not undo the
+      // confidentiality the token provides.
+      logEvent('TRANSFER', { token: tokenAddress, to: toAddress, txHash: tx.hash, network });
+      return { txHash: tx.hash, receipt };
     };
 
     return { gasLimit, feeWei, ethBalanceWei, send };
   } catch (err) {
-    throw translateTxError(err);
+    throw translateTxError(err, { iface: ERC7984_INTERFACE });
   }
 }
 
@@ -644,6 +671,8 @@ export async function setOperator(
   try {
     const provider = getProvider(network);
     const contract = getTokenContract(tokenAddress, network, wallet.connect(provider));
+    // Simulate first so a revert is reported before anything is signed.
+    await contract.setOperator.estimateGas(operator, untilUnixSeconds);
     const tx = await contract.setOperator(operator, untilUnixSeconds);
     const receipt = await tx.wait();
     logEvent('OPERATOR_SET', {
@@ -654,7 +683,7 @@ export async function setOperator(
     });
     return { txHash: tx.hash, receipt };
   } catch (err) {
-    throw translateTxError(err);
+    throw translateTxError(err, { iface: ERC7984_INTERFACE, action: 'operator change' });
   }
 }
 

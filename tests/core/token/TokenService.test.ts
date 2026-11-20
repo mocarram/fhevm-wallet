@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Interface, ZeroHash, zeroPadValue } from 'ethers';
 import { wipeTestDataDir } from '../../helpers/dataDir.js';
 
 const TOKEN = '0xde709f2102306220921060314715629080e2fb77';
@@ -14,7 +15,7 @@ const contractStubs = {
   // (address,bytes32,bytes) overload; the stub doubles as the callable and holds estimateGas.
   confidentialTransfer: Object.assign(vi.fn(), { estimateGas: vi.fn() }),
   getFunction: vi.fn(),
-  setOperator: vi.fn(),
+  setOperator: Object.assign(vi.fn(), { estimateGas: vi.fn() }),
   isOperator: vi.fn(),
 };
 
@@ -61,6 +62,8 @@ beforeEach(() => {
   wipeTestDataDir();
   Object.values(contractStubs).forEach((fn) => fn.mockReset());
   contractStubs.confidentialTransfer.estimateGas.mockReset();
+  contractStubs.setOperator.estimateGas.mockReset();
+  contractStubs.setOperator.estimateGas.mockResolvedValue(50_000n);
   contractStubs.getFunction.mockImplementation(() => contractStubs.confidentialTransfer);
   fakeProvider.getFeeData.mockResolvedValue({ maxFeePerGas: 10n, gasPrice: null });
   fakeProvider.getBalance.mockResolvedValue(10n ** 18n);
@@ -133,6 +136,36 @@ describe('TokenService.getDecryptedBalance', () => {
     await getDecryptedBalance(TOKEN, wallet, 'sepolia');
     await getDecryptedBalance(TOKEN, wallet, 'sepolia', { forceRefresh: true });
     expect(decryption.decryptBalance).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('TokenService balance handles from the real ABI', () => {
+  // confidentialBalanceOf returns bytes32, which ethers decodes to a 0x-hex string.
+  // Run real encoded data through the real Interface so the mocks match production.
+  const iface = new Interface(['function confidentialBalanceOf(address) view returns (bytes32)']);
+  const decoded = (hex: string) =>
+    iface.decodeFunctionResult(
+      'confidentialBalanceOf',
+      iface.encodeFunctionResult('confidentialBalanceOf', [hex]),
+    )[0] as string;
+
+  it('treats the zero handle as a zero balance without decrypting', async () => {
+    contractStubs.confidentialBalanceOf.mockResolvedValue(decoded(ZeroHash));
+    const { getDecryptedBalance } = await import('../../../src/core/token/TokenService.js');
+    const decryption = await import('../../../src/core/fhe/DecryptionService.js');
+    const wallet = { address: USER, connect: () => wallet } as never;
+    expect(await getDecryptedBalance(TOKEN, wallet, 'sepolia')).toBe(0n);
+    expect(decryption.decryptBalance).not.toHaveBeenCalled();
+  });
+
+  it('passes a non-zero hex handle to decryption as a bigint', async () => {
+    const handle = zeroPadValue('0x2a', 32);
+    contractStubs.confidentialBalanceOf.mockResolvedValue(decoded(handle));
+    const { getDecryptedBalance } = await import('../../../src/core/token/TokenService.js');
+    const decryption = await import('../../../src/core/fhe/DecryptionService.js');
+    const wallet = { address: USER, connect: () => wallet } as never;
+    await getDecryptedBalance(TOKEN, wallet, 'sepolia', { forceRefresh: true });
+    expect(decryption.decryptBalance).toHaveBeenCalledWith(42n, TOKEN, wallet, 'sepolia');
   });
 });
 
@@ -215,15 +248,43 @@ describe('TokenService.confidentialTransfer', () => {
     expect(encryption.encryptAmount).not.toHaveBeenCalled();
   });
 
-  it('throws TX_REVERTED when the mined receipt has status 0', async () => {
+  it('maps a reverted receipt from wait() to TX_REVERTED with the hash', async () => {
+    // ethers v6 wait() throws this shape for a status-0 receipt.
     contractStubs.confidentialTransfer.mockResolvedValue({
       hash: '0xbad',
-      wait: vi.fn().mockResolvedValue({ status: 0 }),
+      wait: vi.fn().mockRejectedValue(
+        Object.assign(new Error('transaction execution reverted'), {
+          code: 'CALL_EXCEPTION',
+          action: 'sendTransaction',
+          data: null,
+          receipt: { hash: '0xbad', status: 0 },
+        }),
+      ),
     });
     const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
     await expect(
       confidentialTransfer(wallet, TOKEN, RECIPIENT, 5n, 'sepolia'),
-    ).rejects.toMatchObject({ code: 'TX_REVERTED' });
+    ).rejects.toMatchObject({ code: 'TX_REVERTED', txHash: '0xbad' });
+  });
+
+  it('never says "try again" when waiting fails after broadcast', async () => {
+    contractStubs.confidentialTransfer.mockResolvedValue({
+      hash: '0xsent',
+      wait: vi.fn().mockRejectedValue(Object.assign(new Error('timeout'), { code: 'TIMEOUT' })),
+    });
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const err = await confidentialTransfer(wallet, TOKEN, RECIPIENT, 5n, 'sepolia').catch((e) => e);
+    expect(err).toMatchObject({ code: 'SENT_UNCONFIRMED', txHash: '0xsent' });
+    expect(err.hint).toMatch(/Do not send again/);
+    expect(err.hint).toMatch(/sepolia\.etherscan\.io\/tx\/0xsent/);
+  });
+
+  it('refuses to guess a zero fee when the RPC returns no gas price', async () => {
+    fakeProvider.getFeeData.mockResolvedValue({ maxFeePerGas: null, gasPrice: null });
+    const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    await expect(
+      prepareConfidentialTransfer(wallet, TOKEN, RECIPIENT, 5n, 'sepolia'),
+    ).rejects.toMatchObject({ code: 'RPC_UNAVAILABLE' });
   });
 });
 
