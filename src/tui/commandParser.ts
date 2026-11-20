@@ -1,0 +1,81 @@
+/**
+ * Parser for the `:` command bar. Pure: turns text into a command; the app decides what
+ * to do with it (and checks contacts, tokens and amounts).
+ */
+
+/** Screens reachable by name from the command bar. */
+export const GO_TARGETS: Record<string, string> = {
+  balances: 'balances',
+  balance: 'balances',
+  b: 'balances',
+  receive: 'receive',
+  r: 'receive',
+  history: 'history',
+  h: 'history',
+  doctor: 'doctor',
+  d: 'doctor',
+  settings: 'settings',
+  wallets: 'wallets',
+  wallet: 'wallets',
+  tokens: 'tokens',
+  token: 'tokens',
+  contacts: 'contacts',
+  contact: 'contacts',
+  'address book': 'contacts',
+};
+
+/** A parsed command. */
+export type Command =
+  | { type: 'send'; to?: string; amount?: string; token?: string }
+  | { type: 'go'; screen: string }
+  | { type: 'lock' }
+  | { type: 'help' }
+  | { type: 'quit' }
+  | { type: 'none' }
+  | { type: 'error'; message: string };
+
+/** Examples shown above the command bar while it is open. */
+export const COMMAND_EXAMPLES = [
+  'send bob 25 cusdc',
+  'balances',
+  'receive',
+  'history',
+  'doctor',
+  'settings',
+  'lock',
+  'help',
+];
+
+/**
+ * Parse command bar text.
+ *
+ * `send` takes `<contact|address> <amount> [token]`; with no arguments it opens the send
+ * wizard. Other commands take no arguments. Matching is case-insensitive; a leading `:` is
+ * ignored so pasting ":send …" works.
+ */
+export function parseCommand(input: string): Command {
+  const text = input.trim().replace(/^:/, '').trim();
+  if (text === '') return { type: 'none' };
+  const words = text.split(/\s+/);
+  const verb = words[0].toLowerCase();
+
+  if (verb === 'send' || verb === 's') {
+    const args = words.slice(1);
+    if (args.length === 0) return { type: 'send' };
+    if (args.length < 2 || args.length > 3) {
+      return { type: 'error', message: 'Use: send <contact or address> <amount> [token]' };
+    }
+    return { type: 'send', to: args[0], amount: args[1], token: args[2] };
+  }
+
+  const lower = text.toLowerCase();
+  if (GO_TARGETS[lower]) return { type: 'go', screen: GO_TARGETS[lower] };
+  if (lower === 'lock' || lower === 'l') return { type: 'lock' };
+  if (lower === 'help' || lower === '?') return { type: 'help' };
+  if (lower === 'quit' || lower === 'q' || lower === 'exit') return { type: 'quit' };
+
+  return {
+    type: 'error',
+    message: `Unknown command "${text}". Try: send bob 25 cusdc · balances · doctor · lock`,
+  };
+}
