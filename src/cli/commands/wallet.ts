@@ -381,7 +381,6 @@ export function registerWalletCommands(program: Command): void {
         } catch (err) {
           process.exitCode = 1;
           console.log(error(describeError(err, 'Export failed')));
-          process.exitCode = 1;
         }
         return;
       }

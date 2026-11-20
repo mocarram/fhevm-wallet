@@ -36,13 +36,13 @@ try {
   process.stderr.write(
     code === 'EACCES' || code === 'EPERM'
       ? `Cannot use the wallet data folder ${DATA_DIR}: permission denied. Make it writable by your user, or set FHEVM_WALLET_HOME to another folder.\n`
-      : `Cannot open the wallet data folder ${DATA_DIR}: ${err instanceof Error ? err.message : String(err)}\n`,
+      : `Cannot open the wallet data folder ${DATA_DIR}: ${safeText(err instanceof Error ? err.message : String(err))}\n`,
   );
   process.exit(1);
 }
 
 import { createProgram, runInteractiveMode } from './cli/index.js';
-import { describeError } from './cli/utils/userError.js';
+import { describeError, safeText } from './cli/utils/userError.js';
 import { clearProviderCache } from './core/network/ProviderFactory.js';
 
 // Last line of defence: an error no command caught must not print its raw message or
@@ -58,11 +58,23 @@ process.on('uncaughtException', (err) => {
   process.exit(1); // state is unknown after an uncaught exception: stop
 });
 
+/** How long a finished one-shot command may linger on open sockets before we exit. */
+const EXIT_GRACE_MS = 1_000;
+
 const program = createProgram();
 
 // If no arguments provided, launch interactive mode
 if (process.argv.length <= 2) {
   runInteractiveMode().catch(failSafely);
 } else {
-  program.parseAsync(process.argv).catch(failSafely);
+  program
+    .parseAsync(process.argv)
+    .catch(failSafely)
+    .finally(() => {
+      // The command has printed its result. Relayer SDK requests take no AbortSignal, so
+      // one that timed out (see withTimeout) can keep a socket open for minutes. Give
+      // stdout a moment to drain, then exit with the code the command set. unref: a
+      // process that is already done exits at once, without waiting for this.
+      setTimeout(() => process.exit(), EXIT_GRACE_MS).unref();
+    });
 }
