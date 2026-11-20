@@ -24,8 +24,7 @@ describe('fhew binary', () => {
     expect(res.stdout).toMatch(/send/);
   });
 
-  it('refuses an amount with more decimals than the token supports before loading keys', () => {
-    // No wallet or token exists, so this checks the command fails cleanly, not with a stack trace.
+  it('fails cleanly (no stack trace) when sending with no wallet or token set up', () => {
     const t = tempHome();
     cleanup = t.cleanup;
     const res = runCli(

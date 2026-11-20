@@ -353,7 +353,7 @@ export function registerTransferCommand(program: Command): void {
             });
 
             console.log();
-            console.log(success('Transfer successful!'));
+            console.log(success('Transfer confirmed on-chain.'));
             console.log(`  Transaction: ${result.txHash}`);
             console.log(`  Explorer:    ${getTxExplorerUrl(result.txHash, network)}`);
           } catch (err) {
