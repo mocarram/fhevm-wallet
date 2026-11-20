@@ -29,6 +29,7 @@ import { CHAIN_IDS } from '../network/NetworkConfig.js';
 import { logEvent } from '../../storage/AuditLog.js';
 import { recordLocalTransaction } from '../../storage/TransactionStore.js';
 import { getCachedBalance, setCachedBalance, invalidateBalance } from './BalanceCache.js';
+import { MAX_EUINT64 } from './limits.js';
 
 /**
  * Minimal ERC-7984 ABI.
@@ -61,8 +62,8 @@ export const ERC7984_ABI = [
 /** Parsed ABI, used to decode custom-error revert data that ethers leaves undecoded. */
 export const ERC7984_INTERFACE = new Interface(ERC7984_ABI);
 
-/** Largest value an euint64 can hold. Amounts are in the token's base units. */
-export const MAX_EUINT64 = 2n ** 64n - 1n;
+/** Largest value an euint64 can hold (re-exported from `limits.ts`, its home). */
+export { MAX_EUINT64 };
 
 /**
  * How long to wait for a broadcast transaction to be mined before reporting it as sent but
