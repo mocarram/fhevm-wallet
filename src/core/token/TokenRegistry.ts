@@ -8,6 +8,7 @@ import { join } from 'path';
 import { z } from 'zod';
 import { NetworkName } from '../network/NetworkConfig.js';
 import { getTokenInfo } from './TokenService.js';
+import { sanitizeTokenName, sanitizeTokenSymbol } from './tokenText.js';
 import { logEvent } from '../../storage/AuditLog.js';
 import { DATA_DIR, ensureDataDir } from '../../storage/paths.js';
 
@@ -41,7 +42,14 @@ function loadRegistry(): TokenRegistry {
 
   try {
     const data = readFileSync(TOKENS_FILE, 'utf-8');
-    return TokenRegistrySchema.parse(JSON.parse(data));
+    const registry = TokenRegistrySchema.parse(JSON.parse(data));
+    // Entries saved by older versions were stored unsanitized; clean them on the way out.
+    registry.tokens = registry.tokens.map((t) => ({
+      ...t,
+      name: sanitizeTokenName(t.name),
+      symbol: sanitizeTokenSymbol(t.symbol),
+    }));
+    return registry;
   } catch {
     return { tokens: [] };
   }

@@ -14,6 +14,7 @@ import {
   type TransactionRequest,
 } from 'ethers';
 import { sentButUnconfirmed, translateTxError, WalletTxError } from './txErrors.js';
+import { sanitizeTokenName, sanitizeTokenSymbol } from './tokenText.js';
 import { getProvider, NetworkName, getNetworkConfig } from '../network/index.js';
 import { encryptAmount } from '../fhe/EncryptionService.js';
 import { decryptBalance } from '../fhe/DecryptionService.js';
@@ -244,10 +245,13 @@ export async function getTokenInfo(tokenAddress: string, network: NetworkName): 
     contract.decimals(),
   ]);
 
+  // name() and symbol() are whatever the (user-added, untrusted) contract returns: strip
+  // terminal escapes and invisible characters, and cap the length, before anything
+  // stores or prints them. decimals is a uint8, so it is already bounded.
   return {
     address: tokenAddress,
-    name,
-    symbol,
+    name: sanitizeTokenName(String(name)),
+    symbol: sanitizeTokenSymbol(String(symbol)),
     decimals: Number(decimals),
   };
 }

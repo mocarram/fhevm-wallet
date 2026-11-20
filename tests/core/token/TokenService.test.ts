@@ -107,6 +107,24 @@ describe('TokenService.getTokenInfo', () => {
   });
 });
 
+describe('TokenService.getTokenInfo with a hostile contract', () => {
+  it('strips terminal escapes and caps the length of name and symbol', async () => {
+    contractStubs.name.mockResolvedValue('\u001b[31mReal USDC\u001b[0m' + 'x'.repeat(200));
+    contractStubs.symbol.mockResolvedValue('\u200bUSDC\u202e');
+    const { getTokenInfo } = await import('../../../src/core/token/TokenService.js');
+    const info = await getTokenInfo(TOKEN, 'sepolia');
+    expect(info.name).not.toMatch(/\u001b/);
+    expect(info.name.length).toBeLessThanOrEqual(64);
+    expect(info.symbol).toBe('USDC');
+  });
+
+  it('never stores an empty symbol', async () => {
+    contractStubs.symbol.mockResolvedValue('\u0007\u0007');
+    const { getTokenInfo } = await import('../../../src/core/token/TokenService.js');
+    expect((await getTokenInfo(TOKEN, 'sepolia')).symbol).toBe('???');
+  });
+});
+
 describe('TokenService.getEncryptedBalance', () => {
   it('forwards to confidentialBalanceOf', async () => {
     contractStubs.confidentialBalanceOf.mockResolvedValueOnce(123n);

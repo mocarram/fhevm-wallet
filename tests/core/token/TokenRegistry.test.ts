@@ -54,4 +54,29 @@ describe('TokenRegistry', () => {
     expect(removeToken(TOKEN, 'sepolia')).toBe(true);
     expect(isTokenRegistered(TOKEN, 'sepolia')).toBe(false);
   });
+
+  it('cleans names saved unsanitized by older versions', async () => {
+    const { writeFileSync, mkdirSync } = await import('fs');
+    const { DATA_DIR } = await import('../../../src/storage/paths.js');
+    mkdirSync(DATA_DIR, { recursive: true });
+    writeFileSync(
+      `${DATA_DIR}/tokens.json`,
+      JSON.stringify({
+        tokens: [
+          {
+            address: TOKEN,
+            name: 'Evil\u001b[2J Token',
+            symbol: 'U\u202eSDC',
+            decimals: 6,
+            network: 'sepolia',
+            addedAt: new Date().toISOString(),
+          },
+        ],
+      }),
+    );
+    const { getToken } = await import('../../../src/core/token/TokenRegistry.js');
+    const token = getToken(TOKEN, 'sepolia')!;
+    expect(token.name).not.toContain('\u001b');
+    expect(token.symbol).toBe('U SDC');
+  });
 });
