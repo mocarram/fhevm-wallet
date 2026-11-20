@@ -7,7 +7,7 @@
  * --etherscan-key -`). RPC URL options take `-` the same way, since URLs often hold keys.
  */
 
-import inquirer from 'inquirer';
+import { password } from '@inquirer/prompts';
 import { maskUrl } from '../../utils/redact.js';
 
 /** Minimal readable stream we need, so tests can pass their own. */
@@ -18,12 +18,7 @@ export interface SecretInputIO {
 
 const defaultIO: SecretInputIO = {
   stdin: process.stdin,
-  ask: async (label) => {
-    const { value } = await inquirer.prompt([
-      { type: 'password', name: 'value', message: `${label}:`, mask: '*' },
-    ]);
-    return String(value);
-  },
+  ask: async (label) => String(await password({ message: `${label}:`, mask: '*' })),
 };
 
 /** Read all of `stream` as text. */
@@ -70,7 +65,7 @@ export function rpcOptionHelp(network: string): string {
 }
 
 /**
- * inquirer `transformer` for an RPC URL prompt: shows what is typed while typing, and
+ * Prompt `transformer` for an RPC URL prompt: shows what is typed while typing, and
  * only the masked URL (scheme and host) once answered, so the key in it does not stay
  * on screen or in the scrollback.
  */
