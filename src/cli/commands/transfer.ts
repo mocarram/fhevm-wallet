@@ -12,7 +12,7 @@ import {
   getTxExplorerUrl,
   recordTransferTransaction,
 } from '../../core/token/TokenService.js';
-import { WalletTxError, formatTxError, translateTxError } from '../../core/token/txErrors.js';
+import { formatTxError, translateTxError } from '../../core/token/txErrors.js';
 import { formatEther } from 'ethers';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { checkFheReadiness } from '../../core/fhe/FheService.js';
@@ -23,6 +23,7 @@ import {
   formatNetworkName,
   error,
   success,
+  warning,
   bold,
 } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork, isValidAmount } from '../../utils/validation.js';
@@ -337,10 +338,24 @@ export function registerTransferCommand(program: Command): void {
           console.log();
           const sendSpinner = ora('Sending transaction and waiting for confirmation...').start();
 
+          let result;
           try {
-            const result = await prepared.send();
+            result = await prepared.send();
             sendSpinner.succeed('Transaction confirmed');
+          } catch (err) {
+            const txErr = translateTxError(err);
+            // After broadcast the transfer may still confirm: never present that as a failure.
+            if (txErr.code === 'SENT_UNCONFIRMED') sendSpinner.warn('Sent, not confirmed yet');
+            else
+              sendSpinner.fail(
+                txErr.code === 'TX_REVERTED' ? 'Transaction reverted' : 'Transaction failed',
+              );
+            console.log(error(formatTxError(txErr)));
+            return;
+          }
 
+          // Local history is a convenience; failing to save it must not hide a confirmed transfer.
+          try {
             recordTransferTransaction({
               tokenAddress: token.address,
               tokenSymbol: token.symbol,
@@ -351,16 +366,14 @@ export function registerTransferCommand(program: Command): void {
               network,
               blockNumber: result.receipt.blockNumber,
             });
-
-            console.log();
-            console.log(success('Transfer confirmed on-chain.'));
-            console.log(`  Transaction: ${result.txHash}`);
-            console.log(`  Explorer:    ${getTxExplorerUrl(result.txHash, network)}`);
-          } catch (err) {
-            sendSpinner.fail('Transaction failed');
-            const txErr = err instanceof WalletTxError ? err : translateTxError(err);
-            console.log(error(formatTxError(txErr)));
+          } catch {
+            console.log(warning("Couldn't save this transfer to local history."));
           }
+
+          console.log();
+          console.log(success('Transfer confirmed on-chain.'));
+          console.log(`  Transaction: ${result.txHash}`);
+          console.log(`  Explorer:    ${getTxExplorerUrl(result.txHash, network)}`);
         } catch (err) {
           console.log(error(err instanceof Error ? err.message : 'Failed to send transaction'));
         }

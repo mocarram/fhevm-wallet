@@ -1496,31 +1496,42 @@ async function handleSend(): Promise<void> {
   console.log();
   const encryptSpinner = ora('Sending transaction and waiting for confirmation...').start();
 
+  let result;
   try {
-    const result = await prepared.send();
-
+    result = await prepared.send();
     encryptSpinner.succeed('Transaction confirmed');
+  } catch (err) {
+    const txErr = translateTxError(err);
+    // After broadcast the transfer may still confirm: never present that as a failure.
+    if (txErr.code === 'SENT_UNCONFIRMED') encryptSpinner.warn('Sent, not confirmed yet');
+    else
+      encryptSpinner.fail(
+        txErr.code === 'TX_REVERTED' ? 'Transaction reverted' : 'Transaction failed',
+      );
+    console.log(error(formatTxError(txErr)));
+    return;
+  }
 
-    // Record transaction in history
+  // Local history is a convenience; failing to save it must not hide a confirmed transfer.
+  try {
     recordTransferTransaction({
       tokenAddress: token.address,
       tokenSymbol: token.symbol,
       from: wallet.address,
-      to,
-      amount,
+      to: to,
+      amount: amount,
       txHash: result.txHash,
       network,
       blockNumber: result.receipt.blockNumber,
     });
-
-    console.log();
-    console.log(success('Transfer confirmed on-chain.'));
-    console.log(`  Transaction: ${result.txHash}`);
-    console.log(`  Explorer:    ${getTxExplorerUrl(result.txHash, network)}`);
-  } catch (err) {
-    encryptSpinner.fail('Transaction failed');
-    console.log(error(formatTxError(translateTxError(err))));
+  } catch {
+    console.log(warning("Couldn't save this transfer to local history."));
   }
+
+  console.log();
+  console.log(success('Transfer confirmed on-chain.'));
+  console.log(`  Transaction: ${result.txHash}`);
+  console.log(`  Explorer:    ${getTxExplorerUrl(result.txHash, network)}`);
 }
 
 async function handleHistory(): Promise<void> {
