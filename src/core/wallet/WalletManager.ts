@@ -2,7 +2,9 @@
  * Wallet CRUD operations
  */
 
+import { resolve as resolvePath } from 'path';
 import { Wallet, HDNodeWallet } from 'ethers';
+import { writeNewPrivateFile } from '../../storage/secureFs.js';
 import {
   createNewWallet,
   importFromMnemonic,
@@ -148,4 +150,27 @@ export async function exportWalletPrivateKey(name: string, password: string): Pr
   const wallet = await loadWallet(name, password);
   logEvent('WALLET_EXPORTED', { name });
   return wallet.privateKey;
+}
+
+/**
+ * Copy a wallet's encrypted keystore (standard Ethereum JSON keystore, still protected by
+ * the wallet password) to `destPath` with owner-only permissions. Safer than exporting the
+ * raw private key: the file is useless without the password.
+ *
+ * Refuses to overwrite anything already at `destPath`, and leaves the permissions of the
+ * folder it lands in alone (that folder belongs to the user, not to the wallet).
+ */
+export function exportKeystoreFile(name: string, destPath: string): string {
+  const target = resolvePath(destPath);
+  const keystore = loadWalletKeystore(name);
+  try {
+    writeNewPrivateFile(target, keystore);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EEXIST') throw new Error(`${target} already exists; choose another file name`);
+    if (code === 'ENOENT') throw new Error(`The folder for ${target} does not exist`);
+    throw err;
+  }
+  logEvent('WALLET_EXPORTED', { name, format: 'keystore' });
+  return target;
 }

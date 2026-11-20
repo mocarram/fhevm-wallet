@@ -9,6 +9,7 @@ import { describeBalanceCheck } from '../utils/transferReport.js';
 import { formatTxError, translateTxError } from '../../core/token/txErrors.js';
 import chalk from 'chalk';
 import ora from 'ora';
+import { formatPhrase, showSecretScreen } from '../utils/secretScreen.js';
 import Table from 'cli-table3';
 import {
   createWallet,
@@ -19,6 +20,7 @@ import {
   hasWallet,
   loadWallet,
   exportWalletPrivateKey,
+  exportKeystoreFile,
 } from '../../core/wallet/index.js';
 import {
   addToken,
@@ -64,6 +66,7 @@ import {
   isValidAddress,
   isValidAmount,
   isValidContactName,
+  passwordStrengthHint,
 } from '../../utils/validation.js';
 import { addAddress, listAddresses, removeAddress } from '../../storage/AddressBook.js';
 import { DynamicBalanceTable } from '../utils/DynamicBalanceTable.js';
@@ -534,6 +537,9 @@ async function handleCreateWallet(): Promise<void> {
     console.log(error('\nPasswords do not match'));
     return;
   }
+  // Soft advice only; never blocks wallet creation.
+  const strengthHint = passwordStrengthHint(password);
+  if (strengthHint) console.log(warning(strengthHint));
 
   const spinner = ora('Creating wallet...').start();
   const result = await createWallet(name, password);
@@ -544,12 +550,13 @@ async function handleCreateWallet(): Promise<void> {
   console.log(`  Name:    ${name}`);
   console.log(`  Address: ${result.address}`);
   console.log();
-  console.log(warning('IMPORTANT: Save your recovery phrase securely!'));
+  console.log(warning('Next: your recovery phrase opens on a private screen.'));
   console.log(warning('Anyone with this phrase can access your wallet.'));
-  console.log();
-  console.log(bold('Recovery Phrase:'));
-  console.log(chalk.cyan(`  ${result.mnemonic}`));
-  console.log();
+  const wiped = await showSecretScreen(
+    'Recovery phrase for ' + name,
+    formatPhrase(result.mnemonic!),
+  );
+  if (wiped) console.log(success('Recovery phrase screen wiped.'));
 
   const { setAsDefault } = await inquirer.prompt([
     {
@@ -626,6 +633,9 @@ async function handleImportWallet(): Promise<void> {
       console.log(error('\nPasswords do not match'));
       return;
     }
+    // Soft advice only; never blocks wallet creation.
+    const strengthHint = passwordStrengthHint(password);
+    if (strengthHint) console.log(warning(strengthHint));
 
     const spinner = ora('Importing wallet...').start();
     address = await importWalletFromMnemonic(name, mnemonic, password);
@@ -658,6 +668,9 @@ async function handleImportWallet(): Promise<void> {
       console.log(error('\nPasswords do not match'));
       return;
     }
+    // Soft advice only; never blocks wallet creation.
+    const strengthHint = passwordStrengthHint(password);
+    if (strengthHint) console.log(warning(strengthHint));
 
     const spinner = ora('Importing wallet...').start();
     address = await importWalletFromPrivateKey(name, privateKey, password);
@@ -808,12 +821,7 @@ async function handleExportWallet(): Promise<void> {
     return;
   }
 
-  console.log();
-  console.log(warning('WARNING: Your private key grants full access to your wallet.'));
-  console.log(warning('Never share it with anyone or enter it on untrusted websites.'));
-  console.log();
-
-  const { walletName, confirm } = await inquirer.prompt([
+  const { walletName, format } = await inquirer.prompt([
     {
       type: 'list',
       name: 'walletName',
@@ -823,6 +831,43 @@ async function handleExportWallet(): Promise<void> {
         value: w.name,
       })),
     },
+    {
+      type: 'list',
+      name: 'format',
+      message: 'Export as:',
+      choices: [
+        { name: 'Encrypted keystore file (still needs the password)', value: 'keystore' },
+        { name: 'Private key (shown on screen)', value: 'key' },
+      ],
+    },
+  ]);
+
+  if (format === 'keystore') {
+    // The safer export: nothing is decrypted, the file stays protected by the password.
+    const { file } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'file',
+        message: 'Save keystore to:',
+        default: `${walletName}-keystore.json`,
+        validate: (input: string) => (input.trim() ? true : 'Enter a file name'),
+      },
+    ]);
+    try {
+      const path = exportKeystoreFile(walletName, file.trim());
+      console.log(success(`Encrypted keystore saved to ${path} (owner-only access)`));
+    } catch (err) {
+      console.log(error(err instanceof Error ? err.message : 'Export failed'));
+    }
+    return;
+  }
+
+  console.log();
+  console.log(warning('WARNING: Your private key grants full access to your wallet.'));
+  console.log(warning('Never share it with anyone or enter it on untrusted websites.'));
+  console.log();
+
+  const { confirm } = await inquirer.prompt([
     {
       type: 'confirm',
       name: 'confirm',
@@ -851,11 +896,8 @@ async function handleExportWallet(): Promise<void> {
     const privateKey = await exportWalletPrivateKey(walletName, password);
     spinner.succeed('Wallet decrypted');
 
-    console.log();
-    console.log(bold('Private Key:'));
-    console.log(chalk.yellow(privateKey));
-    console.log();
-    console.log(warning('Copy this key securely and clear your terminal history.'));
+    const wiped = await showSecretScreen('Private key for ' + walletName, [privateKey]);
+    if (wiped) console.log(success('Private key screen wiped.'));
   } catch (err) {
     spinner.fail('Failed to decrypt wallet');
     console.log(error(err instanceof Error ? err.message : 'Invalid password'));

@@ -63,3 +63,21 @@ export function isValidNetwork(network: string): network is 'mainnet' | 'sepolia
 export function isValidContactName(name: string): boolean {
   return /^[a-zA-Z0-9 ]{1,32}$/.test(name) && name.trim().length > 0;
 }
+
+/**
+ * Soft password advice. Returns a hint for weak-looking passwords, or null if it looks fine.
+ * Never blocks: the keystore's scrypt KDF already slows guessing, and users may have a
+ * password-manager-generated value that defeats simple heuristics.
+ */
+export function passwordStrengthHint(password: string): string | null {
+  const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((re) =>
+    re.test(password),
+  ).length;
+  if (password.length < 12) {
+    return 'Tip: a password of 12+ characters (or a few random words) is much harder to guess.';
+  }
+  if (classes < 2 || /^(.)\1+$/.test(password)) {
+    return 'Tip: mix letters with numbers or symbols, or use several random words.';
+  }
+  return null;
+}

@@ -6,6 +6,7 @@ import { Command } from 'commander';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import ora from 'ora';
+import { formatPhrase, showSecretScreen } from '../utils/secretScreen.js';
 import Table from 'cli-table3';
 import {
   createWallet,
@@ -15,6 +16,7 @@ import {
   removeWallet,
   hasWallet,
   exportWalletPrivateKey,
+  exportKeystoreFile,
 } from '../../core/wallet/index.js';
 import { setDefaultWallet, getDefaultWallet } from '../../storage/ConfigStore.js';
 import {
@@ -25,7 +27,12 @@ import {
   warning,
   bold,
 } from '../../utils/formatting.js';
-import { isValidWalletName, isValidMnemonic, isValidPrivateKey } from '../../utils/validation.js';
+import {
+  isValidWalletName,
+  isValidMnemonic,
+  isValidPrivateKey,
+  passwordStrengthHint,
+} from '../../utils/validation.js';
 
 export function registerWalletCommands(program: Command): void {
   const wallet = program.command('wallet').description('Manage wallets');
@@ -80,6 +87,9 @@ export function registerWalletCommands(program: Command): void {
           console.log(error('Passwords do not match'));
           return;
         }
+        // Soft advice only; never blocks wallet creation.
+        const strengthHint = passwordStrengthHint(password);
+        if (strengthHint) console.log(warning(strengthHint));
 
         const spinner = ora('Creating wallet...').start();
 
@@ -92,12 +102,13 @@ export function registerWalletCommands(program: Command): void {
         console.log(`  Name:    ${name}`);
         console.log(`  Address: ${result.address}`);
         console.log();
-        console.log(warning('IMPORTANT: Save your recovery phrase securely!'));
+        console.log(warning('Next: your recovery phrase opens on a private screen.'));
         console.log(warning('Anyone with this phrase can access your wallet.'));
-        console.log();
-        console.log(bold('Recovery Phrase:'));
-        console.log(chalk.cyan(`  ${result.mnemonic}`));
-        console.log();
+        const wiped = await showSecretScreen(
+          'Recovery phrase for ' + name,
+          formatPhrase(result.mnemonic!),
+        );
+        if (wiped) console.log(success('Recovery phrase screen wiped.'));
 
         if (options?.setDefault) {
           setDefaultWallet(name!);
@@ -191,6 +202,9 @@ export function registerWalletCommands(program: Command): void {
               console.log(error('Passwords do not match'));
               return;
             }
+            // Soft advice only; never blocks wallet creation.
+            const strengthHint = passwordStrengthHint(password);
+            if (strengthHint) console.log(warning(strengthHint));
 
             const spinner = ora('Importing wallet...').start();
             address = await importWalletFromMnemonic(name!, mnemonic, password);
@@ -223,6 +237,9 @@ export function registerWalletCommands(program: Command): void {
               console.log(error('Passwords do not match'));
               return;
             }
+            // Soft advice only; never blocks wallet creation.
+            const strengthHint = passwordStrengthHint(password);
+            if (strengthHint) console.log(warning(strengthHint));
 
             const spinner = ora('Importing wallet...').start();
             address = await importWalletFromPrivateKey(name!, privateKey, password);
@@ -340,9 +357,25 @@ export function registerWalletCommands(program: Command): void {
   // Export wallet private key
   wallet
     .command('export')
-    .description('Export wallet private key')
+    .description('Export wallet private key, or its encrypted keystore file with --keystore')
     .argument('<name>', 'Wallet name')
-    .action(async (name: string) => {
+    .option(
+      '-k, --keystore <file>',
+      'Write the encrypted keystore (still password-protected) to <file> instead',
+    )
+    .action(async (name: string, options?: { keystore?: string }) => {
+      if (options?.keystore) {
+        // The safer export: no decryption, the file stays protected by the wallet password.
+        try {
+          const path = exportKeystoreFile(name, options.keystore);
+          console.log(success(`Encrypted keystore saved to ${path} (owner-only access)`));
+        } catch (err) {
+          console.log(error(err instanceof Error ? err.message : 'Export failed'));
+          process.exitCode = 1;
+        }
+        return;
+      }
+
       if (!hasWallet(name)) {
         console.log(error(`Wallet "${name}" not found`));
         return;
@@ -382,11 +415,8 @@ export function registerWalletCommands(program: Command): void {
         const privateKey = await exportWalletPrivateKey(name, password);
         spinner.succeed('Wallet decrypted');
 
-        console.log();
-        console.log(bold('Private Key:'));
-        console.log(chalk.yellow(privateKey));
-        console.log();
-        console.log(warning('Copy this key securely and clear your terminal history.'));
+        const wiped = await showSecretScreen('Private key for ' + name, [privateKey]);
+        if (wiped) console.log(success('Private key screen wiped.'));
       } catch (err) {
         spinner.fail('Failed to decrypt wallet');
         console.log(error(err instanceof Error ? err.message : 'Invalid password'));

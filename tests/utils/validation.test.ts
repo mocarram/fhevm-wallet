@@ -94,3 +94,12 @@ describe('isValidContactName', () => {
     expect(isValidContactName('has/slash')).toBe(false);
   });
 });
+
+describe('passwordStrengthHint', () => {
+  it('nudges short or single-class passwords and stays quiet for strong ones', async () => {
+    const { passwordStrengthHint } = await import('../../src/utils/validation.js');
+    expect(passwordStrengthHint('abcdefgh')).toMatch(/12\+/);
+    expect(passwordStrengthHint('aaaaaaaaaaaaaaaa')).toMatch(/mix/);
+    expect(passwordStrengthHint('correct horse battery 9')).toBeNull();
+  });
+});
