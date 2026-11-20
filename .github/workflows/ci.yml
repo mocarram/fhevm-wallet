@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main, staging]
 
+# Least privilege: CI only needs to read the repository.
+permissions:
+  contents: read
+
 jobs:
   check-and-build:
     name: Lint, Format, Build & Test
@@ -18,8 +22,6 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npm run lint
-      - run: npm run format:check
-      - run: npm run build
-      - run: npm test
-      - run: npm audit --omit=dev
+      # Same gate agents run locally: lint, format, build, unit and e2e tests.
+      - run: npm run verify
+      - run: npm audit

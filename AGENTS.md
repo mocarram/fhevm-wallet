@@ -37,18 +37,18 @@ npm run verify         # everything above, in order; must pass before any merge
 src/
   index.ts                 entry; loads env, starts commander
   cli/                     commander subcommands (non-interactive: fhew send, fhew balance …)
-  cli/commands/interactive.ts   legacy interactive entry, delegates to src/tui
-  tui/                     interactive terminal app (router, screens, status bar, keymap)
+  cli/commands/interactive.ts   interactive menu (being replaced by src/tui, Phase 3)
+  tui/                     [planned, Phase 3] router, screens, status bar, keymap
   core/
     network/               RPC config, provider factory, chain checks
     fhe/                   relayer SDK instance, encryption, decryption
     token/                 ERC-7984 calls (TokenService), registry, balance cache
     wallet/                keystore encryption and wallet loading
-    backend/               the Backend interface + real and mock implementations
+    backend/               [planned, Phase 3] Backend interface + real and mock implementations
   storage/                 JSON stores under the data dir (owner-only permissions)
   utils/                   validation, formatting, amount parsing
 tests/                     vitest; mirrors src/
-tests/e2e/                 end-to-end runs of dist/index.js with FHEW_BACKEND=mock
+tests/e2e/                 end-to-end runs of dist/index.js in a throwaway HOME
 ```
 
 ### ERC-7984 rules that bit us before
@@ -63,7 +63,7 @@ tests/e2e/                 end-to-end runs of dist/index.js with FHEW_BACKEND=mo
   decrypted balance before sending and confirm it moved afterwards.
 - Encrypted inputs are bound to `(contract, sender)`. The sender must be `msg.sender`.
 
-## Offline mock backend
+## Offline mock backend (planned, Phase 3)
 
 `FHEW_BACKEND=mock` swaps the chain + relayer for an in-memory simulation
 (`src/core/backend/MockBackend.ts`). Use it for e2e tests and demos. It must never be the
@@ -118,9 +118,13 @@ Every unit of work goes through this loop until it comes out clean:
 - User-facing text: plain English, active voice, says what happened and what to do next.
   Never show a raw ethers error to the user without a translation; keep the raw text one
   keypress away ("Show technical details").
-- Files are written with owner-only permissions via `src/storage/secureFs.ts`. Do not call
-  `fs.writeFileSync` on user data directly.
+- Files are written with owner-only permissions via `src/storage/secureFs.ts` (Phase 2).
+  Do not call `fs.writeFileSync` on user data directly.
 - Network calls have timeouts.
+- After a transaction is broadcast, never tell the user to "try again": show the hash
+  and explorer link (`SENT_UNCONFIRMED`). Resending could pay twice.
+- Never write plaintext token amounts to the audit log.
+- Set `FHEW_DEBUG=1` to print redacted technical details under error messages.
 - No emoji in menus (they break column alignment in many terminals).
 
 ## Where the plan lives
