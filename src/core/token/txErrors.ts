@@ -76,8 +76,11 @@ interface EthersLikeError {
   reason?: string | null;
   data?: string | null;
   revert?: { name?: string; args?: unknown[] } | null;
-  receipt?: { hash?: string } | null;
-  /** TRANSACTION_REPLACED only: why ethers thinks the transaction was replaced. */
+  receipt?: { hash?: string; status?: number | null } | null;
+  /**
+   * TRANSACTION_REPLACED only: the hash of the transaction that was mined *instead*
+   * (ethers sets `hash`, `replacement` and `receipt` all to the replacement).
+   */
   hash?: string;
   replacement?: { hash?: string } | null;
 }
@@ -186,8 +189,12 @@ function replacedError(
   txHash?: string,
   explorerUrl?: string,
 ): WalletTxError {
-  const original = txHash ?? e.hash;
-  const replacementHash = e.replacement?.hash ?? undefined;
+  // In ethers' TRANSACTION_REPLACED error, `hash`, `replacement` and `receipt` all describe
+  // the replacement, never our transaction. The original hash is only known when the
+  // caller passes it (sentButUnconfirmed); on the bare translateTxError path it stays
+  // undefined rather than being mislabelled.
+  const original = txHash;
+  const replacementHash = e.replacement?.hash ?? e.hash ?? e.receipt?.hash ?? undefined;
   // Point at the transaction that was actually mined when we know it. Explorer URLs end
   // in /tx/<hash>, so swap the hash rather than needing the network here.
   let link = explorerUrl;
@@ -196,6 +203,19 @@ function replacedError(
   }
   const check = link ? `Check ${link}` : 'Check the transaction on the block explorer';
   if (e.reason === 'repriced') {
+    // Same call, different fee. ethers reports this once the replacement is mined, but
+    // mined is not succeeded: its receipt can still say it reverted.
+    if (e.receipt?.status === 0) {
+      return new WalletTxError(
+        'TX_REPLACED',
+        'The transaction was re-sent with a different fee, and that version reverted.',
+        `Another transaction with the same nonce, recipient and data was mined instead, but it reverted on-chain, so the ${action} did not go through. The network fee was still paid.`,
+        `${check} before trying again.`,
+        raw,
+        original,
+        replacementHash,
+      );
+    }
     return new WalletTxError(
       'TX_REPLACED',
       'The transaction was re-sent with a different fee.',

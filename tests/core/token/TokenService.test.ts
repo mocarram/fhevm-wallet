@@ -496,6 +496,16 @@ describe('TokenService.confidentialTransfer', () => {
     expect(err).toMatchObject({ code: 'TX_REVERTED', txHash: SIGNED_HASH });
   });
 
+  it('"nonce too low" with a status-less receipt is SENT_UNCONFIRMED, not TX_REVERTED', async () => {
+    fakeProvider.broadcastTransaction.mockRejectedValue(
+      ethersError('NONCE_EXPIRED', 'nonce too low'),
+    );
+    fakeProvider.getTransactionReceipt.mockResolvedValue({ status: null, hash: SIGNED_HASH });
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const err = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia').catch((e) => e);
+    expect(err).toMatchObject({ code: 'SENT_UNCONFIRMED', txHash: SIGNED_HASH });
+  });
+
   it('"nonce too low" stays SENT_UNCONFIRMED when the receipt lookup fails', async () => {
     fakeProvider.broadcastTransaction.mockRejectedValue(
       ethersError('NONCE_EXPIRED', 'nonce too low'),
@@ -524,7 +534,7 @@ describe('TokenService.confidentialTransfer', () => {
       throw ethersError('TRANSACTION_REPLACED', 'transaction was replaced', {
         reason: 'cancelled',
         cancelled: true,
-        hash: SIGNED_HASH,
+        hash: replacement, // ethers puts the replacement's hash here
         replacement: { hash: replacement },
         receipt: { hash: replacement, status: 1 },
       });

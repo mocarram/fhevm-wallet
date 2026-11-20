@@ -160,11 +160,16 @@ async function signAndBroadcast(opts: SignAndBroadcastOptions): Promise<Transfer
     // hash, report what actually happened instead of an unclear error.
     if ((err as { code?: string } | null)?.code === 'NONCE_EXPIRED') {
       const receipt = await provider.getTransactionReceipt(txHash).catch(() => null);
-      if (receipt && receipt.status === 1) {
+      // Only an explicit status decides. 1 is success and 0 is a revert (what ethers'
+      // wait() checks). A null status only exists on pre-Byzantium receipts, which
+      // mainnet and Sepolia never produce, so it means the RPC gave a malformed answer:
+      // trust it neither way and fall through to SENT_UNCONFIRMED ("check the explorer").
+      // That is the safe side: we never claim success, and never say "not sent".
+      if (receipt?.status === 1) {
         if (opts.onBroadcast) bestEffort(() => opts.onBroadcast!(txHash));
         return { txHash, receipt };
       }
-      if (receipt) {
+      if (receipt?.status === 0) {
         // Same shape ethers' wait() throws for a status-0 receipt, so it maps to TX_REVERTED.
         throw sentButUnconfirmed(
           Object.assign(new Error('transaction execution reverted'), {

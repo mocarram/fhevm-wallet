@@ -81,11 +81,20 @@ describe('translateTxError', () => {
   });
 
   it('maps TRANSACTION_REPLACED to TX_REPLACED instead of UNKNOWN', () => {
+    // Real ethers shape: `hash` is the REPLACEMENT's hash, not ours.
     const err = translateTxError(
-      ethersError({ code: 'TRANSACTION_REPLACED', reason: 'repriced', hash: '0xaa' }),
+      ethersError({
+        code: 'TRANSACTION_REPLACED',
+        reason: 'repriced',
+        hash: '0xaa',
+        replacement: { hash: '0xaa' },
+        receipt: { hash: '0xaa', status: 1 },
+      }),
     );
     expect(err.code).toBe('TX_REPLACED');
-    expect(err.txHash).toBe('0xaa');
+    expect(err.replacementHash).toBe('0xaa');
+    // Without the caller's hash we don't know the original; never mislabel the replacement.
+    expect(err.txHash).toBeUndefined();
   });
 
   it('maps a wrong-chain RPC to WRONG_CHAIN', () => {
@@ -167,12 +176,13 @@ describe('sentButUnconfirmed', () => {
     ['repriced', /different fee/, /most likely went through/],
   ])('maps TRANSACTION_REPLACED (%s) to TX_REPLACED', (reason, title, cause) => {
     const err = sentButUnconfirmed(
+      // Real ethers shape: hash, replacement and receipt all describe the replacement.
       ethersError({
         code: 'TRANSACTION_REPLACED',
         reason,
-        hash: HASH,
+        hash: REPL,
         replacement: { hash: REPL },
-        receipt: { hash: REPL },
+        receipt: { hash: REPL, status: 1 },
       }),
       HASH,
       LINK,
@@ -188,13 +198,35 @@ describe('sentButUnconfirmed', () => {
 
   it('TX_REPLACED without a replacement hash still links the original', () => {
     const err = sentButUnconfirmed(
-      ethersError({ code: 'TRANSACTION_REPLACED', reason: 'replaced', hash: HASH }),
+      ethersError({ code: 'TRANSACTION_REPLACED', reason: 'replaced' }),
       HASH,
       LINK,
     );
     expect(err.code).toBe('TX_REPLACED');
+    expect(err.txHash).toBe(HASH);
     expect(err.replacementHash).toBeUndefined();
     expect(err.hint).toContain(LINK);
+  });
+
+  it('a repriced replacement that reverted is not reported as "went through"', () => {
+    const err = sentButUnconfirmed(
+      ethersError({
+        code: 'TRANSACTION_REPLACED',
+        reason: 'repriced',
+        hash: REPL,
+        replacement: { hash: REPL },
+        receipt: { hash: REPL, status: 0 },
+      }),
+      HASH,
+      LINK,
+    );
+    expect(err.code).toBe('TX_REPLACED');
+    expect(err.message).toMatch(/reverted/);
+    expect(err.likelyCause).toMatch(/reverted on-chain/);
+    expect(err.likelyCause).not.toMatch(/most likely went through/);
+    expect(err.hint).not.toMatch(/Do not send again/);
+    expect(err).toMatchObject({ txHash: HASH, replacementHash: REPL });
+    expect(err.hint).toContain(`https://sepolia.etherscan.io/tx/${REPL}`);
   });
 });
 
