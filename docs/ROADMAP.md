@@ -107,6 +107,7 @@ pseudo-terminal against the mock backend.
 
 - [ ] `fhew doctor` (Node, RPC + chain, relayer, ETH, ERC-7984 support per token, data perms)
 - [ ] ERC-7984 interface check when adding a token
+- [ ] Find tokens: scan ConfidentialTransfer events where the wallet is the recipient and a curated known-token list per network; one checkbox list (Space toggle, a all, Enter bulk-add); unverified tokens unselected and labelled
 - [ ] One signature decrypts all tracked balances (session-scoped keypair + signature)
 - [ ] Decrypted amounts in history where the user is allowed to decrypt
 - [ ] Operators screen (view, grant with expiry, revoke)
