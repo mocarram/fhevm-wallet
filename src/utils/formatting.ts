@@ -44,27 +44,23 @@ export function formatTokenAmount(amount: bigint, decimals: number, precision = 
 }
 
 /**
- * Parse a token amount string to bigint
+ * Parse a human amount such as "1.25" into base units for a token with `decimals`.
+ *
+ * Strict on purpose: extra decimal places are rejected rather than silently truncated,
+ * so the amount the user typed is exactly the amount that gets encrypted and sent.
  */
 export function parseTokenAmount(amount: string, decimals: number): bigint {
-  const parts = amount.split('.');
-
-  if (parts.length > 2) {
+  const trimmed = amount.trim();
+  if (!/^\d+(\.\d+)?$/.test(trimmed)) {
     throw new Error('Invalid amount format');
   }
 
-  const integerPart = parts[0] || '0';
-  let fractionalPart = parts[1] || '';
-
-  // Pad or truncate fractional part
+  const [integerPart, fractionalPart = ''] = trimmed.split('.');
   if (fractionalPart.length > decimals) {
-    fractionalPart = fractionalPart.slice(0, decimals);
-  } else {
-    fractionalPart = fractionalPart.padEnd(decimals, '0');
+    throw new Error(`Too many decimal places: this token supports at most ${decimals}`);
   }
 
-  const combined = integerPart + fractionalPart;
-  return BigInt(combined);
+  return BigInt(integerPart + fractionalPart.padEnd(decimals, '0'));
 }
 
 /**

@@ -47,8 +47,14 @@ describe('formatTokenAmount / parseTokenAmount', () => {
     expect(formatTokenAmount(1_234_567n, 6, 2)).toBe('1.23');
   });
 
-  it('truncates excess decimals in parsing', () => {
-    expect(parseTokenAmount('1.123456789', 6)).toBe(1_123_456n);
+  it('rejects excess decimals instead of truncating', () => {
+    expect(() => parseTokenAmount('1.123456789', 6)).toThrow(/Too many decimal places/);
+  });
+
+  it('rejects signs, spaces inside and exponent notation', () => {
+    for (const bad of ['-1', '1e6', '1 000', '.5', '1.']) {
+      expect(() => parseTokenAmount(bad, 6)).toThrow(/Invalid amount format/);
+    }
   });
 
   it('throws on multiple decimal points', () => {
