@@ -15,6 +15,7 @@ import { updateConfig, loadConfig } from '../storage/ConfigStore.js';
 import { isValidNetwork } from '../utils/validation.js';
 import { NetworkName, DEFAULT_RPC_URLS } from '../core/network/NetworkConfig.js';
 import { saveEnvVar, getEnvVar } from '../storage/paths.js';
+import { setCustomRpc } from '../core/network/rpcSettings.js';
 
 /**
  * Read the version from package.json at runtime so `--version` can never drift from the
@@ -67,7 +68,7 @@ export function createProgram(): Command {
     .option('--etherscan-key <key>', 'Set Etherscan API key')
     .option('--zama-key <key>', 'Set Zama Mainnet API key')
     .action(
-      (options: {
+      async (options: {
         network?: string;
         show?: boolean;
         rpcMainnet?: string;
@@ -121,13 +122,23 @@ export function createProgram(): Command {
         }
 
         if (options.rpcMainnet) {
-          saveEnvVar('MAINNET_RPC_URL', options.rpcMainnet);
-          console.log(chalk.green('Mainnet RPC URL updated'));
+          try {
+            const probe = await setCustomRpc('mainnet', options.rpcMainnet);
+            console.log(chalk.green(`Mainnet RPC URL updated (answered in ${probe.latencyMs} ms)`));
+          } catch (err) {
+            console.log(chalk.red(err instanceof Error ? err.message : 'Could not set RPC URL'));
+            process.exitCode = 1;
+          }
         }
 
         if (options.rpcSepolia) {
-          saveEnvVar('SEPOLIA_RPC_URL', options.rpcSepolia);
-          console.log(chalk.green('Sepolia RPC URL updated'));
+          try {
+            const probe = await setCustomRpc('sepolia', options.rpcSepolia);
+            console.log(chalk.green(`Sepolia RPC URL updated (answered in ${probe.latencyMs} ms)`));
+          } catch (err) {
+            console.log(chalk.red(err instanceof Error ? err.message : 'Could not set RPC URL'));
+            process.exitCode = 1;
+          }
         }
 
         if (options.etherscanKey) {

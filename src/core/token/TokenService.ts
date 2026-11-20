@@ -56,6 +56,12 @@ export const ERC7984_INTERFACE = new Interface(ERC7984_ABI);
 /** Largest value an euint64 can hold. Amounts are in the token's base units. */
 export const MAX_EUINT64 = 2n ** 64n - 1n;
 
+/**
+ * How long to wait for a broadcast transaction to be mined before reporting it as sent but
+ * not confirmed yet. Sepolia blocks are ~12 s; five minutes covers a congested mempool.
+ */
+export const CONFIRMATION_TIMEOUT_MS = 5 * 60_000;
+
 /** Extra gas on top of the estimate; FHE operations make estimates slightly unstable. */
 const GAS_BUFFER_PERCENT = 20n;
 
@@ -168,7 +174,9 @@ async function signAndBroadcast(opts: SignAndBroadcastOptions): Promise<Transfer
     // ethers v6 wait() throws CALL_EXCEPTION (action "sendTransaction") on a status-0
     // receipt, and TRANSACTION_REPLACED if another tx took the nonce; sentButUnconfirmed
     // maps those to TX_REVERTED and TX_REPLACED.
-    receipt = await tx.wait();
+    // Bounded wait: past it the user gets SENT_UNCONFIRMED with the hash to check,
+    // rather than a spinner that never ends.
+    receipt = await tx.wait(1, CONFIRMATION_TIMEOUT_MS);
     if (!receipt) throw new Error('No receipt returned'); // only with confirmations=0
   } catch (err) {
     throw sentButUnconfirmed(err, txHash, explorerUrl, translateOpts);
@@ -302,10 +310,24 @@ export async function prepareConfidentialTransfer(
   const chainId = network === 'mainnet' ? CHAIN_IDS.MAINNET : CHAIN_IDS.SEPOLIA;
 
   try {
+    const provider = getProvider(network);
+
+    // The RPC must serve the chain we sign for; a mixed-up custom URL fails confusingly.
+    // The provider also checks once per process, but ask again right before signing:
+    // this is the one place where a wrong chain could cost money.
+    const rpcChainId = BigInt((await provider.send('eth_chainId', [])) as string);
+    if (rpcChainId !== chainId) {
+      throw new WalletTxError(
+        'WRONG_CHAIN',
+        'Your RPC endpoint is on the wrong network.',
+        `It serves chain ${rpcChainId}, but ${network} is chain ${chainId}.`,
+        'Fix the RPC URL in Settings, or reset it to the default.',
+      );
+    }
+
     // The encrypted input is bound to (token, sender): the sender must be msg.sender.
     const encrypted = await encryptAmount(chainId, tokenAddress, wallet.address, amount);
 
-    const provider = getProvider(network);
     const connectedWallet = wallet.connect(provider);
     const contract = getTokenContract(tokenAddress, network, connectedWallet);
     const transfer = contract.getFunction('confidentialTransfer(address,bytes32,bytes)');
@@ -452,6 +474,9 @@ interface EtherscanTxResponse {
   result: EtherscanTx[] | string;
 }
 
+/** Etherscan requests give up after this long instead of hanging the history screen. */
+const ETHERSCAN_TIMEOUT_MS = 15_000;
+
 // Etherscan V2 API base URL
 const ETHERSCAN_V2_API = 'https://api.etherscan.io/v2/api';
 
@@ -548,8 +573,8 @@ export async function getWalletTransactions(
     incomingUrl.searchParams.set('apikey', apiKey);
 
     const [outgoingRes, incomingRes] = await Promise.all([
-      fetch(outgoingUrl.toString()),
-      fetch(incomingUrl.toString()),
+      fetch(outgoingUrl.toString(), { signal: AbortSignal.timeout(ETHERSCAN_TIMEOUT_MS) }),
+      fetch(incomingUrl.toString(), { signal: AbortSignal.timeout(ETHERSCAN_TIMEOUT_MS) }),
     ]);
 
     const [outgoingData, incomingData] = await Promise.all([
@@ -615,7 +640,9 @@ export async function getWalletTransactions(
   ethUrl.searchParams.set('sort', 'desc');
   ethUrl.searchParams.set('apikey', apiKey);
 
-  const ethRes = await fetch(ethUrl.toString());
+  const ethRes = await fetch(ethUrl.toString(), {
+    signal: AbortSignal.timeout(ETHERSCAN_TIMEOUT_MS),
+  });
   const ethData = (await ethRes.json()) as EtherscanTxResponse;
 
   if (ethData.status === '1' && Array.isArray(ethData.result)) {

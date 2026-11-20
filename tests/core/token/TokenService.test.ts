@@ -40,6 +40,7 @@ const fakeProvider = {
   destroy: vi.fn(),
   broadcastTransaction: vi.fn(),
   getTransactionReceipt: vi.fn(),
+  send: vi.fn(),
   getFeeData: vi.fn(),
   getBalance: vi.fn(),
 };
@@ -80,6 +81,8 @@ beforeEach(() => {
   );
   fakeProvider.getFeeData.mockResolvedValue({ maxFeePerGas: 10n, gasPrice: null });
   fakeProvider.getBalance.mockResolvedValue(10n ** 18n);
+  // Sepolia chain id, so the RPC chain check passes by default.
+  fakeProvider.send.mockResolvedValue('0xaa36a7');
   contractStubs.confidentialTransfer.estimateGas.mockResolvedValue(100_000n);
   contractStubs.name.mockResolvedValue('Confidential Token');
   contractStubs.symbol.mockResolvedValue('cTKN');
@@ -259,6 +262,16 @@ describe('TokenService.confidentialTransfer', () => {
       { gasLimit: 120_000n },
     );
     expect(fakeProvider.broadcastTransaction).toHaveBeenCalledWith(SIGNED);
+  });
+
+  it('refuses when the RPC serves a different chain', async () => {
+    fakeProvider.send.mockResolvedValue('0x1'); // mainnet id while sending on sepolia
+    const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const encryption = await import('../../../src/core/fhe/EncryptionService.js');
+    await expect(
+      prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia'),
+    ).rejects.toMatchObject({ code: 'WRONG_CHAIN' });
+    expect(encryption.encryptAmount).not.toHaveBeenCalled();
   });
 
   it('reports the fee and ETH balance before anything is signed', async () => {

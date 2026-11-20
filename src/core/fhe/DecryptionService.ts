@@ -4,6 +4,8 @@
 
 import { Wallet, HDNodeWallet } from 'ethers';
 import { getFheInstance } from './FheService.js';
+import { FHE_OPERATION_TIMEOUT_MS } from './timeouts.js';
+import { withTimeout } from '../../utils/timeout.js';
 import { CHAIN_IDS, NetworkName } from '../network/NetworkConfig.js';
 
 export interface ReencryptionParams {
@@ -103,15 +105,19 @@ export async function decryptBalance(
   const handleHex = ('0x' + encryptedHandle.toString(16).padStart(64, '0')) as `0x${string}`;
 
   // Request user decrypt from the Gateway
-  const results = await fheInstance.userDecrypt(
-    [{ handle: handleHex, contractAddress }],
-    privateKey,
-    publicKey,
-    signature,
-    [contractAddress],
-    wallet.address,
-    startTimestamp,
-    durationDays,
+  const results = await withTimeout(
+    fheInstance.userDecrypt(
+      [{ handle: handleHex, contractAddress }],
+      privateKey,
+      publicKey,
+      signature,
+      [contractAddress],
+      wallet.address,
+      startTimestamp,
+      durationDays,
+    ),
+    FHE_OPERATION_TIMEOUT_MS,
+    'Decrypting the balance',
   );
 
   // The results are indexed by handle hex

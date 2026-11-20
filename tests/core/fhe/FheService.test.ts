@@ -40,6 +40,27 @@ describe('FheService', () => {
     expect(createInstance).toHaveBeenCalledOnce();
   });
 
+  it('hands the SDK our provider (timeouts, fallbacks), not a bare URL', async () => {
+    const { getFheInstance } = await import('../../../src/core/fhe/FheService.js');
+    await getFheInstance(CHAIN_IDS.SEPOLIA);
+    const call = createInstance.mock.calls.at(-1)![0] as { network?: unknown };
+    expect(typeof (call.network as { request?: unknown }).request).toBe('function');
+  });
+
+  it('gives up on a relayer that never answers', async () => {
+    vi.useFakeTimers();
+    try {
+      createInstance.mockImplementationOnce(() => new Promise(() => {}));
+      const { getFheInstance } = await import('../../../src/core/fhe/FheService.js');
+      const pending = getFheInstance(CHAIN_IDS.SEPOLIA);
+      const assertion = expect(pending).rejects.toMatchObject({ code: 'TIMEOUT' });
+      await vi.advanceTimersByTimeAsync(60_001);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('caches instances per chain', async () => {
     const { getFheInstance } = await import('../../../src/core/fhe/FheService.js');
     await getFheInstance(CHAIN_IDS.SEPOLIA);

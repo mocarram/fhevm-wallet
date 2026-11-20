@@ -12,9 +12,11 @@ import {
 import {
   CHAIN_IDS,
   isSupportedChainId,
-  getNetworkConfig,
   getNetworkNameFromChainId,
 } from '../network/NetworkConfig.js';
+import { getEip1193Provider } from '../network/ProviderFactory.js';
+import { withTimeout } from '../../utils/timeout.js';
+import { FHE_INIT_TIMEOUT_MS } from './timeouts.js';
 
 // Cache instances per chain ID
 const fheInstanceCache = new Map<bigint, FhevmInstance>();
@@ -35,7 +37,9 @@ export async function getFheInstance(chainId: bigint): Promise<FhevmInstance> {
   let config: FhevmInstanceConfig;
 
   const networkName = getNetworkNameFromChainId(chainId)!;
-  const { rpcUrl } = getNetworkConfig(networkName);
+  // Our provider rather than the bare URL: the SDK then gets our RPC timeouts, fallback
+  // endpoints and chain-ID check instead of ethers' 5-minute default.
+  const rpc = getEip1193Provider(networkName);
 
   if (chainId === CHAIN_IDS.MAINNET) {
     const apiKey = process.env.ZAMA_MAINNET_API_KEY;
@@ -44,7 +48,7 @@ export async function getFheInstance(chainId: bigint): Promise<FhevmInstance> {
     }
     config = {
       ...MainnetConfig,
-      network: rpcUrl,
+      network: rpc,
       auth: {
         __type: 'ApiKeyHeader',
         value: apiKey,
@@ -53,11 +57,15 @@ export async function getFheInstance(chainId: bigint): Promise<FhevmInstance> {
   } else {
     config = {
       ...SepoliaConfig,
-      network: rpcUrl,
+      network: rpc,
     };
   }
 
-  const instance = await createInstance(config);
+  const instance = await withTimeout(
+    createInstance(config),
+    FHE_INIT_TIMEOUT_MS,
+    'Connecting to the Zama relayer',
+  );
   fheInstanceCache.set(chainId, instance);
 
   return instance;

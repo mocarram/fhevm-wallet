@@ -3,6 +3,8 @@
  */
 
 import { getFheInstance } from './FheService.js';
+import { FHE_OPERATION_TIMEOUT_MS } from './timeouts.js';
+import { withTimeout } from '../../utils/timeout.js';
 
 export interface EncryptedAmount {
   handle: Uint8Array;
@@ -40,10 +42,11 @@ export async function encryptAmount(
 ): Promise<EncryptedAmount> {
   const fheInstance = await getFheInstance(chainId);
 
-  const encryptedInput = await fheInstance
-    .createEncryptedInput(contractAddress, userAddress)
-    .add64(amount)
-    .encrypt();
+  const encryptedInput = await withTimeout(
+    fheInstance.createEncryptedInput(contractAddress, userAddress).add64(amount).encrypt(),
+    FHE_OPERATION_TIMEOUT_MS,
+    'Encrypting the amount',
+  );
 
   const handle = encryptedInput.handles[0];
   const inputProof = encryptedInput.inputProof;

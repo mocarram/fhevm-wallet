@@ -23,6 +23,7 @@ export type TxErrorCode =
   | 'TX_REVERTED'
   | 'SENT_UNCONFIRMED'
   | 'TX_REPLACED'
+  | 'WRONG_CHAIN'
   | 'UNKNOWN';
 
 /** A user-facing transaction error. `raw` is only shown when the user asks for details. */
@@ -262,6 +263,18 @@ export function translateTxError(err: unknown, opts: TranslateOptions = {}): Wal
   if (revertName && CUSTOM_ERRORS[revertName]) {
     const m = CUSTOM_ERRORS[revertName];
     return new WalletTxError(m.code, m.title, m.cause, m.hint, raw);
+  }
+
+  // The RPC answers for another chain (ProviderFactory's WrongChainError). Signing for
+  // one chain while reading another would give nonsense balances and failed sends.
+  if (e.code === 'WRONG_CHAIN') {
+    return new WalletTxError(
+      'WRONG_CHAIN',
+      'Your RPC endpoint is on the wrong network.',
+      e.message ?? 'The RPC endpoint serves a different chain.',
+      'Fix the RPC URL in Settings, or reset it to the default.',
+      raw,
+    );
   }
 
   // The RPC is unreachable, slow or misbehaving.

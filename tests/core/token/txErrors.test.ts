@@ -6,6 +6,8 @@ import {
   sentButUnconfirmed,
   translateTxError,
 } from '../../../src/core/token/txErrors.js';
+import { WrongChainError } from '../../../src/core/network/ProviderFactory.js';
+import { TimeoutError } from '../../../src/utils/timeout.js';
 
 /** Build an object shaped like an ethers v6 error. */
 function ethersError(fields: Record<string, unknown>, message = 'boom'): Error {
@@ -84,6 +86,18 @@ describe('translateTxError', () => {
     );
     expect(err.code).toBe('TX_REPLACED');
     expect(err.txHash).toBe('0xaa');
+  });
+
+  it('maps a wrong-chain RPC to WRONG_CHAIN', () => {
+    const err = translateTxError(new WrongChainError(1n, 11155111n));
+    expect(err.code).toBe('WRONG_CHAIN');
+    expect(err.likelyCause).toMatch(/chain 1\b/);
+  });
+
+  it('maps a relayer timeout to RPC_UNAVAILABLE', () => {
+    expect(translateTxError(new TimeoutError('Encrypting the amount', 1000)).code).toBe(
+      'RPC_UNAVAILABLE',
+    );
   });
 
   it('maps nonce problems to NONCE_CONFLICT', () => {

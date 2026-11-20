@@ -36,6 +36,7 @@ import { NetworkName, DEFAULT_RPC_URLS } from '../../core/network/NetworkConfig.
 import { getProvider, clearProviderCache } from '../../core/network/ProviderFactory.js';
 import { checkFheReadiness } from '../../core/fhe/FheService.js';
 import { getEnvVar, removeEnvVar, saveEnvVar } from '../../storage/paths.js';
+import { setCustomRpc, validateRpcUrl } from '../../core/network/rpcSettings.js';
 import {
   loadConfig,
   updateConfig,
@@ -333,25 +334,21 @@ async function handleSetRpcEndpoint(): Promise<void> {
       name: 'url',
       message: 'Enter RPC URL:',
       default: currentCustom,
-      validate: (input) => {
-        if (!input.trim()) {
-          return 'URL cannot be empty';
-        }
-        try {
-          new URL(input);
-          return true;
-        } catch {
-          return 'Invalid URL format';
-        }
-      },
+      validate: (input) => validateRpcUrl(input) ?? true,
     },
   ]);
 
-  saveEnvVar(envKey, url.trim());
-  clearProviderCache();
-
-  console.log();
-  console.log(success(`${network.charAt(0).toUpperCase() + network.slice(1)} RPC updated`));
+  // Probe the endpoint and refuse it if it serves a different chain.
+  const spinner = ora('Checking the endpoint...').start();
+  try {
+    const probe = await setCustomRpc(network, url);
+    clearProviderCache();
+    spinner.succeed(
+      `${network.charAt(0).toUpperCase() + network.slice(1)} RPC updated (answered in ${probe.latencyMs} ms)`,
+    );
+  } catch (err) {
+    spinner.fail(err instanceof Error ? err.message : 'Could not set RPC URL');
+  }
 }
 
 async function handleResetRpcEndpoints(): Promise<void> {
