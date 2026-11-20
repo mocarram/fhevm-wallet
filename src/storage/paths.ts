@@ -29,16 +29,18 @@ export function ensureDataDir(): void {
 /**
  * Load environment variables from .env files
  * Priority: ~/.fhevm-wallet/.env first, then cwd/.env
- * This allows user-specific config to override project defaults
+ * This allows user-specific config to override project defaults.
+ * `quiet: true` stops dotenv 17+ printing a promotional line to stdout, which would
+ * corrupt machine-readable output.
  */
 export function loadEnv(): void {
   // First, load from cwd (lower priority)
-  dotenvConfig();
+  dotenvConfig({ quiet: true });
 
   // Then, load from ~/.fhevm-wallet/.env (higher priority, overrides cwd)
   ensureDataDir();
   if (existsSync(ENV_FILE_PATH)) {
-    dotenvConfig({ path: ENV_FILE_PATH, override: true });
+    dotenvConfig({ path: ENV_FILE_PATH, override: true, quiet: true });
   }
 }
 

@@ -3,6 +3,7 @@
  */
 
 import { Command } from 'commander';
+import { createRequire } from 'module';
 import chalk from 'chalk';
 import { registerWalletCommands } from './commands/wallet.js';
 import { registerTokenCommands } from './commands/token.js';
@@ -15,13 +16,22 @@ import { isValidNetwork } from '../utils/validation.js';
 import { NetworkName, DEFAULT_RPC_URLS } from '../core/network/NetworkConfig.js';
 import { saveEnvVar, getEnvVar } from '../storage/paths.js';
 
+/**
+ * Read the version from package.json at runtime so `--version` can never drift from the
+ * published package. Resolved relative to this module: src/cli or dist/cli → ../../.
+ */
+function packageVersion(): string {
+  const require = createRequire(import.meta.url);
+  return (require('../../package.json') as { version: string }).version;
+}
+
 export function createProgram(): Command {
   const program = new Command();
 
   program
     .name('fhevm-wallet')
     .description('CLI wallet for managing encrypted ERC-7984 tokens using Zama FHE')
-    .version('1.0.0');
+    .version(packageVersion());
 
   // Global options
   program
