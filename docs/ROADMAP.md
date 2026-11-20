@@ -21,15 +21,18 @@ Root cause of the failed send: the wallet called `$_transfer(from, to, …)`, a 
 only exists on OpenZeppelin's hardhat-exposed mock. Real ERC-7984 tokens revert during gas
 estimation.
 
-- [ ] Transfers use `confidentialTransfer(to, handle, proof)`
-- [ ] `confidentialApprove` replaced by operator helpers (`setOperator`, `isOperator`)
-- [ ] Minimal ABI lists the real `ConfidentialTransfer` event
-- [ ] Pre-send simulation (`estimateGas`) with plain-English error translation
-- [ ] ETH-for-gas check before sending
-- [ ] Amount bounded to `uint64` after applying decimals; excess precision rejected
-- [ ] Node 24 in `engines` (`>=24.11`), `.nvmrc`, Dockerfile, CI
-- [ ] In-range dependency upgrades; `npm audit` clean
-- [ ] Replace `ts-node` with `tsx` for `npm run dev`
+- [x] Transfers use `confidentialTransfer(to, handle, proof)`
+- [x] `confidentialApprove` replaced by operator helpers (`setOperator`, `isOperator`)
+- [x] Minimal ABI lists the real `ConfidentialTransfer` event
+- [x] Pre-send simulation (`estimateGas`) with plain-English error translation
+- [x] ETH-for-gas check before sending
+- [x] Amount bounded to `uint64` after applying decimals; excess precision rejected
+- [x] Node 24 in `engines` (`>=24.11`), `.nvmrc`, Dockerfile, CI
+- [x] In-range dependency upgrades; `npm audit` clean
+- [x] Replace `ts-node` with `tsx` for `npm run dev`
+
+Done: merged to staging after 4 review rounds and independent validation. On-chain check on
+Sepolia still to be done by the user (see bottom of this file).
 
 Acceptance: unit tests prove the transfer call encodes `confidentialTransfer`; a simulated
 revert produces the translated message; `npm audit` reports 0 vulnerabilities.
