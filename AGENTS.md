@@ -122,9 +122,19 @@ Every unit of work goes through this loop until it comes out clean:
   (`writeSecureFile`, `appendSecureFile`, `ensureSecureDir`; `writeNewPrivateFile` for
   exports to a user-chosen path). Do not call `fs.writeFileSync`, `mkdirSync` or
   `appendFileSync` on user data directly.
+- Startup tightening (`tightenPermissions`) only touches the data dir and the paths in
+  `WALLET_DATA_ENTRIES`, only clears group/other bits, and does nothing when
+  `FHEVM_WALLET_HOME` is the home folder, the current folder or `/`. A new store file must
+  be added to `WALLET_DATA_ENTRIES`.
 - Network calls have timeouts: JSON-RPC through `getProvider` (20 s per request, chain-ID
-  check, fallback endpoints), `fetch` with `AbortSignal.timeout`, relayer SDK calls via
-  `withTimeout` (`src/utils/timeout.ts`).
+  check per URL, fallback endpoints, `abortableGetUrl` so a timed-out socket is closed),
+  `fetch` with `AbortSignal.timeout`, relayer SDK calls via `withTimeout`
+  (`src/utils/timeout.ts`). The relayer SDK reads the chain through `getEip1193Provider`,
+  which answers `eth_chainId` locally. A one-shot command exits about a second after it
+  finishes even if a timed-out relayer request is still open (`src/index.ts`).
+- A failing command sets `process.exitCode = 1`. A prompt without a terminal ends with
+  one sentence (`describePromptError`); flows that can do without asking (history sync)
+  check `process.stdin.isTTY` and skip the prompt instead.
 - Text that comes from a contract (token name and symbol, revert reasons) is untrusted:
   pass it through `sanitizeContractText` / `src/core/token/tokenText.ts` before storing
   or printing it.

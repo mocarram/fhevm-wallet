@@ -62,6 +62,25 @@ Notes on how these landed:
   choice and is never silently replaced. Raw transactions are never resent to another node.
   Relayer SDK calls take no AbortSignal, so their timeouts stop the wait, not the request.
 - Token names and symbols from contracts are sanitised before they are stored or shown.
+- Review round (blocking B1, B2, V1 and non-blocking N1-N12, V2-V5), all fixed:
+  - Startup tightening only touches the data dir and the files the wallet creates, only
+    clears group/other bits (an executable stays executable) and refuses to act when
+    `FHEVM_WALLET_HOME` is home, the current folder or `/`.
+  - Every CLI error goes through `describeError`: no raw ethers text, custom RPC URLs
+    shown with path and query masked (`config --show`, interactive menu, prompts). An e2e
+    sweep checks that no private key, password or API key reaches stdout, stderr or any
+    data file outside the keystore and the owner-only `.env`.
+  - An RPC that accepts the connection and never answers no longer hangs a command:
+    sockets are closed on timeout, the error is translated and the exit code is 1.
+    Failing commands exit 1; prompts without a terminal end with one sentence.
+  - The chain check runs per RPC URL (again after a fail-over; transport errors are not
+    cached). The relayer SDK's EIP-1193 view answers `eth_chainId` locally and keeps
+    JSON-RPC error data.
+  - Pre-send decrypt failures are `BALANCE_CHECK_FAILED`; relayer timeouts are not
+    worded as RPC problems. The post-send re-check reads at the receipt's block.
+  - `./.env` only supplies RPC URLs and API keys; API key flags take `-` or no value for
+    hidden input; the terminal is restored if the process is killed while a secret
+    screen is open; `make env` and `docker` create owner-only files.
 
 Acceptance: tests assert file modes; a wrong-chain RPC is refused; no test output or log
 contains a private key, phrase or API key.
