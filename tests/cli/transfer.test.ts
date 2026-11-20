@@ -98,11 +98,16 @@ describe('send command early exits', () => {
     addAddress('Alice', OTHER_ADDRESS);
 
     // After contact + amount + token are resolved, the action enters wallet
-    // selection via inquirer. Stub it to throw so we don't hang, then assert
+    // selection prompt. Stub the prompts to throw so we don't hang, then assert
     // the contact line was already logged.
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const inquirer = (await import('inquirer')).default;
-    const promptSpy = vi.spyOn(inquirer, 'prompt').mockRejectedValue(new Error('prompt-fence'));
+    const { prompts } = await import('../../src/cli/utils/prompts.js');
+    const fence = new Error('prompt-fence');
+    const promptSpies = [
+      vi.spyOn(prompts, 'select').mockRejectedValue(fence),
+      vi.spyOn(prompts, 'input').mockRejectedValue(fence),
+      vi.spyOn(prompts, 'password').mockRejectedValue(fence),
+    ];
 
     const program = createProgram();
     program.exitOverride();
@@ -122,6 +127,6 @@ describe('send command early exits', () => {
 
     const out = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
     expect(out).toMatch(/Using contact: Alice/);
-    promptSpy.mockRestore();
+    promptSpies.forEach((spy) => spy.mockRestore());
   });
 });

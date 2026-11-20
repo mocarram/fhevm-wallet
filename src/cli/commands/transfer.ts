@@ -3,7 +3,7 @@
  */
 
 import { Command } from 'commander';
-import inquirer from 'inquirer';
+import { prompts, SECRET_MASK } from '../utils/prompts.js';
 import ora from 'ora';
 import { loadWallet, listWallets, hasWallet } from '../../core/wallet/index.js';
 import { listTokens, getToken, TokenEntry } from '../../core/token/TokenRegistry.js';
@@ -103,20 +103,16 @@ export function registerTransferCommand(program: Command): void {
           } else if (tokens.length === 1) {
             token = tokens[0];
           } else {
-            const { tokenAddress } = await inquirer.prompt([
-              {
-                type: 'list',
-                name: 'tokenAddress',
-                message: 'Select token:',
-                choices: [
-                  ...tokens.map((t) => ({
-                    name: `${t.symbol} - ${t.name} (${formatAddress(t.address)})`,
-                    value: t.address,
-                  })),
-                  { name: '← Cancel', value: '__cancel__' },
-                ],
-              },
-            ]);
+            const tokenAddress = await prompts.select({
+              message: 'Select token:',
+              choices: [
+                ...tokens.map((t) => ({
+                  name: `${t.symbol} - ${t.name} (${formatAddress(t.address)})`,
+                  value: t.address,
+                })),
+                { name: '← Cancel', value: '__cancel__' },
+              ],
+            });
             if (tokenAddress === '__cancel__') {
               return;
             }
@@ -147,31 +143,23 @@ export function registerTransferCommand(program: Command): void {
                 { name: '← Cancel', value: '__cancel__' },
               ];
 
-              const { recipient } = await inquirer.prompt([
-                {
-                  type: 'list',
-                  name: 'recipient',
-                  message: 'Select recipient:',
-                  choices,
-                },
-              ]);
+              const recipient = await prompts.select({
+                message: 'Select recipient:',
+                choices,
+              });
 
               if (recipient === '__cancel__') {
                 return;
               }
 
               if (recipient === '__new__') {
-                const { address } = await inquirer.prompt([
-                  {
-                    type: 'input',
-                    name: 'address',
-                    message: 'Enter recipient address (empty to cancel):',
-                    validate: (input) => {
-                      if (input === '') return true;
-                      return isValidAddress(input) || 'Invalid Ethereum address';
-                    },
+                const address = await prompts.input({
+                  message: 'Enter recipient address (empty to cancel):',
+                  validate: (input) => {
+                    if (input === '') return true;
+                    return isValidAddress(input) || 'Invalid Ethereum address';
                   },
-                ]);
+                });
                 if (!address) {
                   return;
                 }
@@ -180,21 +168,17 @@ export function registerTransferCommand(program: Command): void {
                 to = recipient;
               }
             } else {
-              const answers = await inquirer.prompt([
-                {
-                  type: 'input',
-                  name: 'to',
-                  message: 'Enter recipient address (empty to cancel):',
-                  validate: (input) => {
-                    if (input === '') return true;
-                    return isValidAddress(input) || 'Invalid Ethereum address';
-                  },
+              const enteredTo = await prompts.input({
+                message: 'Enter recipient address (empty to cancel):',
+                validate: (input) => {
+                  if (input === '') return true;
+                  return isValidAddress(input) || 'Invalid Ethereum address';
                 },
-              ]);
-              if (!answers.to) {
+              });
+              if (!enteredTo) {
                 return;
               }
-              to = answers.to;
+              to = enteredTo;
             }
           }
 
@@ -206,21 +190,17 @@ export function registerTransferCommand(program: Command): void {
 
           // Prompt for amount if not provided
           if (!amount) {
-            const answers = await inquirer.prompt([
-              {
-                type: 'input',
-                name: 'amount',
-                message: `Enter amount in ${token.symbol} (empty to cancel):`,
-                validate: (input) => {
-                  if (input === '') return true;
-                  return isValidAmount(input) || 'Invalid amount';
-                },
+            const enteredAmount = await prompts.input({
+              message: `Enter amount in ${token.symbol} (empty to cancel):`,
+              validate: (input) => {
+                if (input === '') return true;
+                return isValidAmount(input) || 'Invalid amount';
               },
-            ]);
-            if (!answers.amount) {
+            });
+            if (!enteredAmount) {
               return;
             }
-            amount = answers.amount;
+            amount = enteredAmount;
           }
 
           if (!isValidAmount(amount!)) {
@@ -240,20 +220,16 @@ export function registerTransferCommand(program: Command): void {
               return;
             }
 
-            const { name } = await inquirer.prompt([
-              {
-                type: 'list',
-                name: 'name',
-                message: 'Select wallet:',
-                choices: [
-                  ...wallets.map((w) => ({
-                    name: `${w.name} (${formatAddress(w.address)})`,
-                    value: w.name,
-                  })),
-                  { name: '← Cancel', value: '__cancel__' },
-                ],
-              },
-            ]);
+            const name = await prompts.select({
+              message: 'Select wallet:',
+              choices: [
+                ...wallets.map((w) => ({
+                  name: `${w.name} (${formatAddress(w.address)})`,
+                  value: w.name,
+                })),
+                { name: '← Cancel', value: '__cancel__' },
+              ],
+            });
             if (name === '__cancel__') {
               return;
             }
@@ -269,14 +245,10 @@ export function registerTransferCommand(program: Command): void {
           }
 
           // Get password
-          const { password } = await inquirer.prompt([
-            {
-              type: 'password',
-              name: 'password',
-              message: 'Enter wallet password:',
-              mask: '*',
-            },
-          ]);
+          const password = await prompts.password({
+            message: 'Enter wallet password:',
+            mask: SECRET_MASK,
+          });
 
           // Load wallet
           const loadSpinner = ora('Decrypting wallet...').start();
@@ -334,14 +306,10 @@ export function registerTransferCommand(program: Command): void {
           );
           console.log();
 
-          const { confirm } = await inquirer.prompt([
-            {
-              type: 'confirm',
-              name: 'confirm',
-              message: 'Confirm transaction?',
-              default: false,
-            },
-          ]);
+          const confirm = await prompts.confirm({
+            message: 'Confirm transaction?',
+            default: false,
+          });
 
           if (!confirm) {
             console.log('Transaction cancelled');

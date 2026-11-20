@@ -6,7 +6,7 @@ import { Command } from 'commander';
 import ora from 'ora';
 import Table from 'cli-table3';
 import chalk from 'chalk';
-import inquirer from 'inquirer';
+import { prompts, SECRET_MASK } from '../utils/prompts.js';
 import {
   listTransactions,
   getLastSyncedBlock,
@@ -30,7 +30,7 @@ import { isValidNetwork, isValidAddress } from '../../utils/validation.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getNameByAddress } from '../../storage/AddressBook.js';
 import { saveEnvVar, getEnvVar, loadEnv } from '../../storage/paths.js';
-import { setCustomRpc, validateRpcUrl } from '../../core/network/rpcSettings.js';
+import { RPC_ENV_KEYS, setCustomRpc, validateRpcUrl } from '../../core/network/rpcSettings.js';
 import { maskUrl } from '../../utils/redact.js';
 import { maskUrlWhenAnswered } from '../utils/secretInput.js';
 import { describeError } from '../utils/userError.js';
@@ -209,29 +209,21 @@ async function handleSyncError(
     return false;
   }
 
-  const { action } = await inquirer.prompt([
-    {
-      type: 'list',
-      name: 'action',
-      message: 'How would you like to proceed?',
-      choices: [
-        { name: 'Set Etherscan API key (recommended)', value: 'set_key' },
-        { name: 'Set custom RPC URL', value: 'set_rpc' },
-        { name: 'Skip sync for now', value: 'skip' },
-      ],
-    },
-  ]);
+  const action = await prompts.select({
+    message: 'How would you like to proceed?',
+    choices: [
+      { name: 'Set Etherscan API key (recommended)', value: 'set_key' },
+      { name: 'Set custom RPC URL', value: 'set_rpc' },
+      { name: 'Skip sync for now', value: 'skip' },
+    ],
+  });
 
   if (action === 'set_key') {
-    const { apiKey } = await inquirer.prompt([
-      {
-        type: 'password',
-        name: 'apiKey',
-        message: 'Enter Etherscan API key:',
-        mask: '*',
-        validate: (input: string) => input.trim().length > 0 || 'API key cannot be empty',
-      },
-    ]);
+    const apiKey = await prompts.password({
+      message: 'Enter Etherscan API key:',
+      mask: SECRET_MASK,
+      validate: (input: string) => input.trim().length > 0 || 'API key cannot be empty',
+    });
 
     // A key that cannot be saved (a space in it, say) must not skip the saved history.
     try {
@@ -256,22 +248,18 @@ async function handleSyncError(
     }
   }
   if (action === 'set_rpc') {
-    const envKey = network === 'mainnet' ? 'MAINNET_RPC_URL' : 'SEPOLIA_RPC_URL';
-    const currentCustom = getEnvVar(envKey);
+    const currentCustom = getEnvVar(RPC_ENV_KEYS[network]);
 
-    const { url } = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'url',
-        // No prefilled default: it would print the saved URL (and its API key) on screen.
-        message: currentCustom
-          ? `Enter ${network} RPC URL (current: ${maskUrl(currentCustom)}):`
-          : `Enter ${network} RPC URL:`,
-        validate: (input: string) => validateRpcUrl(input) ?? true,
-        // Once answered, show only scheme and host: the key must not stay on screen.
-        transformer: maskUrlWhenAnswered,
-      },
-    ]);
+    const url = await prompts.input({
+      // No prefilled default: it would print the saved URL (and its API key) on screen.
+      message: currentCustom
+        ? `Enter ${network} RPC URL (current: ${maskUrl(currentCustom)}):`
+        : `Enter ${network} RPC URL:`,
+      validate: (input: string) => validateRpcUrl(input) ?? true,
+      // Once answered, show only scheme and host: the key must not stay on screen.
+      transformer: (input: string, { isFinal }: { isFinal: boolean }) =>
+        maskUrlWhenAnswered(input, undefined, { isFinal }),
+    });
 
     // Same path as `fhew config --rpc-*`: probe the chain before saving.
     try {

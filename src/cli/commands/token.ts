@@ -3,7 +3,7 @@
  */
 
 import { Command } from 'commander';
-import inquirer from 'inquirer';
+import { prompts } from '../utils/prompts.js';
 import ora from 'ora';
 import Table from 'cli-table3';
 import { addToken, removeToken, listTokens } from '../../core/token/TokenRegistry.js';
@@ -37,15 +37,11 @@ export function registerTokenCommands(program: Command): void {
 
         // Prompt for address if not provided
         if (!address) {
-          const answers = await inquirer.prompt([
-            {
-              type: 'input',
-              name: 'address',
-              message: 'Enter token contract address:',
-              validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
-            },
-          ]);
-          address = answers.address;
+          const enteredAddress = await prompts.input({
+            message: 'Enter token contract address:',
+            validate: (input) => isValidAddress(input) || 'Invalid Ethereum address',
+          });
+          address = enteredAddress;
         }
 
         if (!isValidAddress(address!)) {
@@ -148,14 +144,10 @@ export function registerTokenCommands(program: Command): void {
       }
 
       if (!options.force) {
-        const { confirm } = await inquirer.prompt([
-          {
-            type: 'confirm',
-            name: 'confirm',
-            message: `Remove token ${formatAddress(address)} from ${network}?`,
-            default: false,
-          },
-        ]);
+        const confirm = await prompts.confirm({
+          message: `Remove token ${formatAddress(address)} from ${network}?`,
+          default: false,
+        });
 
         if (!confirm) {
           console.log('Cancelled');

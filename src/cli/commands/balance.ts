@@ -3,7 +3,7 @@
  */
 
 import { Command } from 'commander';
-import inquirer from 'inquirer';
+import { prompts, SECRET_MASK } from '../utils/prompts.js';
 import ora from 'ora';
 import chalk from 'chalk';
 import { loadWallet, listWallets, hasWallet } from '../../core/wallet/index.js';
@@ -66,17 +66,13 @@ export function registerBalanceCommand(program: Command): void {
               return;
             }
 
-            const { name } = await inquirer.prompt([
-              {
-                type: 'list',
-                name: 'name',
-                message: 'Select wallet:',
-                choices: wallets.map((w) => ({
-                  name: `${w.name} (${formatAddress(w.address)})`,
-                  value: w.name,
-                })),
-              },
-            ]);
+            const name = await prompts.select({
+              message: 'Select wallet:',
+              choices: wallets.map((w) => ({
+                name: `${w.name} (${formatAddress(w.address)})`,
+                value: w.name,
+              })),
+            });
             walletName = name;
           }
 
@@ -89,14 +85,10 @@ export function registerBalanceCommand(program: Command): void {
           }
 
           // Get password
-          const { password } = await inquirer.prompt([
-            {
-              type: 'password',
-              name: 'password',
-              message: 'Enter wallet password:',
-              mask: '*',
-            },
-          ]);
+          const password = await prompts.password({
+            message: 'Enter wallet password:',
+            mask: SECRET_MASK,
+          });
 
           // Load wallet
           const loadSpinner = ora('Decrypting wallet...').start();
@@ -177,18 +169,14 @@ export function registerBalanceCommand(program: Command): void {
           let continueLoop = true;
           while (continueLoop) {
             console.log('');
-            const { action } = await inquirer.prompt([
-              {
-                type: 'list',
-                name: 'action',
-                message: 'What would you like to do?',
-                choices: [
-                  { name: 'Refresh', value: 'refresh' },
-                  { name: 'Force decrypt', value: 'force' },
-                  { name: 'Back', value: 'back' },
-                ],
-              },
-            ]);
+            const action = await prompts.select({
+              message: 'What would you like to do?',
+              choices: [
+                { name: 'Refresh', value: 'refresh' },
+                { name: 'Force decrypt', value: 'force' },
+                { name: 'Back', value: 'back' },
+              ],
+            });
 
             if (action === 'back') {
               continueLoop = false;

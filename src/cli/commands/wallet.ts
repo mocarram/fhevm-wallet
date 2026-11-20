@@ -3,11 +3,11 @@
  */
 
 import { Command } from 'commander';
-import inquirer from 'inquirer';
 import chalk from 'chalk';
 import ora from 'ora';
 import { formatPhrase, showSecretScreen } from '../utils/secretScreen.js';
 import Table from 'cli-table3';
+import { prompts, SECRET_MASK } from '../utils/prompts.js';
 import {
   createWallet,
   importWalletFromMnemonic,
@@ -35,6 +35,31 @@ import {
 } from '../../utils/validation.js';
 import { describeError } from '../utils/userError.js';
 
+/** Validation for a new wallet's name: allowed characters and not already taken. */
+function validateNewWalletName(input: string): string | true {
+  if (!isValidWalletName(input)) {
+    return 'Wallet name must be 1-32 alphanumeric characters, hyphens, or underscores';
+  }
+  if (hasWallet(input)) {
+    return `Wallet "${input}" already exists`;
+  }
+  return true;
+}
+
+/** Ask for a new wallet password twice; the caller compares the two. */
+async function askNewPassword(): Promise<{ password: string; confirmPassword: string }> {
+  const password = await prompts.password({
+    message: 'Enter password to encrypt wallet:',
+    mask: SECRET_MASK,
+    validate: (input) => input.length >= 8 || 'Password must be at least 8 characters',
+  });
+  const confirmPassword = await prompts.password({
+    message: 'Confirm password:',
+    mask: SECRET_MASK,
+  });
+  return { password, confirmPassword };
+}
+
 export function registerWalletCommands(program: Command): void {
   const wallet = program.command('wallet').description('Manage wallets');
 
@@ -48,41 +73,14 @@ export function registerWalletCommands(program: Command): void {
       try {
         // Prompt for name if not provided
         if (!name) {
-          const answers = await inquirer.prompt([
-            {
-              type: 'input',
-              name: 'name',
-              message: 'Enter wallet name:',
-              validate: (input) => {
-                if (!isValidWalletName(input)) {
-                  return 'Wallet name must be 1-32 alphanumeric characters, hyphens, or underscores';
-                }
-                if (hasWallet(input)) {
-                  return `Wallet "${input}" already exists`;
-                }
-                return true;
-              },
-            },
-          ]);
-          name = answers.name;
+          name = await prompts.input({
+            message: 'Enter wallet name:',
+            validate: validateNewWalletName,
+          });
         }
 
         // Prompt for password
-        const { password, confirmPassword } = await inquirer.prompt([
-          {
-            type: 'password',
-            name: 'password',
-            message: 'Enter password to encrypt wallet:',
-            mask: '*',
-            validate: (input) => input.length >= 8 || 'Password must be at least 8 characters',
-          },
-          {
-            type: 'password',
-            name: 'confirmPassword',
-            message: 'Confirm password:',
-            mask: '*',
-          },
-        ]);
+        const { password, confirmPassword } = await askNewPassword();
 
         if (password !== confirmPassword) {
           process.exitCode = 1;
@@ -140,66 +138,32 @@ export function registerWalletCommands(program: Command): void {
           let importType = options?.mnemonic ? 'mnemonic' : options?.key ? 'key' : null;
 
           if (!importType) {
-            const { type } = await inquirer.prompt([
-              {
-                type: 'list',
-                name: 'type',
-                message: 'Import from:',
-                choices: [
-                  { name: 'Mnemonic phrase (12 or 24 words)', value: 'mnemonic' },
-                  { name: 'Private key', value: 'key' },
-                ],
-              },
-            ]);
-            importType = type;
+            importType = await prompts.select({
+              message: 'Import from:',
+              choices: [
+                { name: 'Mnemonic phrase (12 or 24 words)', value: 'mnemonic' },
+                { name: 'Private key', value: 'key' },
+              ],
+            });
           }
 
           // Prompt for name if not provided
           if (!name) {
-            const answers = await inquirer.prompt([
-              {
-                type: 'input',
-                name: 'name',
-                message: 'Enter wallet name:',
-                validate: (input) => {
-                  if (!isValidWalletName(input)) {
-                    return 'Wallet name must be 1-32 alphanumeric characters, hyphens, or underscores';
-                  }
-                  if (hasWallet(input)) {
-                    return `Wallet "${input}" already exists`;
-                  }
-                  return true;
-                },
-              },
-            ]);
-            name = answers.name;
+            name = await prompts.input({
+              message: 'Enter wallet name:',
+              validate: validateNewWalletName,
+            });
           }
 
           let address: string;
 
           if (importType === 'mnemonic') {
-            const { mnemonic, password, confirmPassword } = await inquirer.prompt([
-              {
-                type: 'password',
-                name: 'mnemonic',
-                message: 'Enter mnemonic phrase:',
-                mask: '*',
-                validate: (input) => isValidMnemonic(input) || 'Invalid mnemonic phrase',
-              },
-              {
-                type: 'password',
-                name: 'password',
-                message: 'Enter password to encrypt wallet:',
-                mask: '*',
-                validate: (input) => input.length >= 8 || 'Password must be at least 8 characters',
-              },
-              {
-                type: 'password',
-                name: 'confirmPassword',
-                message: 'Confirm password:',
-                mask: '*',
-              },
-            ]);
+            const mnemonic = await prompts.password({
+              message: 'Enter mnemonic phrase:',
+              mask: SECRET_MASK,
+              validate: (input) => isValidMnemonic(input) || 'Invalid mnemonic phrase',
+            });
+            const { password, confirmPassword } = await askNewPassword();
 
             if (password !== confirmPassword) {
               process.exitCode = 1;
@@ -214,28 +178,12 @@ export function registerWalletCommands(program: Command): void {
             address = await importWalletFromMnemonic(name!, mnemonic, password);
             spinner.succeed('Wallet imported');
           } else {
-            const { privateKey, password, confirmPassword } = await inquirer.prompt([
-              {
-                type: 'password',
-                name: 'privateKey',
-                message: 'Enter private key:',
-                mask: '*',
-                validate: (input) => isValidPrivateKey(input) || 'Invalid private key',
-              },
-              {
-                type: 'password',
-                name: 'password',
-                message: 'Enter password to encrypt wallet:',
-                mask: '*',
-                validate: (input) => input.length >= 8 || 'Password must be at least 8 characters',
-              },
-              {
-                type: 'password',
-                name: 'confirmPassword',
-                message: 'Confirm password:',
-                mask: '*',
-              },
-            ]);
+            const privateKey = await prompts.password({
+              message: 'Enter private key:',
+              mask: SECRET_MASK,
+              validate: (input) => isValidPrivateKey(input) || 'Invalid private key',
+            });
+            const { password, confirmPassword } = await askNewPassword();
 
             if (password !== confirmPassword) {
               process.exitCode = 1;
@@ -316,14 +264,10 @@ export function registerWalletCommands(program: Command): void {
       }
 
       if (!options.force) {
-        const { confirm } = await inquirer.prompt([
-          {
-            type: 'confirm',
-            name: 'confirm',
-            message: `Are you sure you want to remove wallet "${name}"? This cannot be undone.`,
-            default: false,
-          },
-        ]);
+        const confirm = await prompts.confirm({
+          message: `Are you sure you want to remove wallet "${name}"? This cannot be undone.`,
+          default: false,
+        });
 
         if (!confirm) {
           console.log('Cancelled');
@@ -396,28 +340,20 @@ export function registerWalletCommands(program: Command): void {
       console.log(warning('Never share it with anyone or enter it on untrusted websites.'));
       console.log();
 
-      const { confirm } = await inquirer.prompt([
-        {
-          type: 'confirm',
-          name: 'confirm',
-          message: 'Do you understand the risks and want to continue?',
-          default: false,
-        },
-      ]);
+      const confirm = await prompts.confirm({
+        message: 'Do you understand the risks and want to continue?',
+        default: false,
+      });
 
       if (!confirm) {
         console.log('Cancelled');
         return;
       }
 
-      const { password } = await inquirer.prompt([
-        {
-          type: 'password',
-          name: 'password',
-          message: 'Enter wallet password:',
-          mask: '*',
-        },
-      ]);
+      const password = await prompts.password({
+        message: 'Enter wallet password:',
+        mask: SECRET_MASK,
+      });
 
       const spinner = ora('Decrypting wallet...').start();
 
