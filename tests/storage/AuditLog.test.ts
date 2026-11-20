@@ -44,4 +44,28 @@ describe('AuditLog', () => {
     logEvent('WALLET_REMOVED', { name: 'a' });
     expect(getAuditLog(0)).toHaveLength(2);
   });
+
+  it('redacts secrets in values', () => {
+    const key = '0x' + 'ab'.repeat(32);
+    logEvent('TRANSFER', {
+      note: `privateKey: ${key}`,
+      rpc: 'https://eth.example/v2/SUPERSECRETAPIKEY123',
+    });
+    const [line] = getAuditLog();
+    expect(line).not.toContain(key);
+    expect(line).not.toContain('SUPERSECRETAPIKEY123');
+  });
+
+  it('cannot be tricked into writing an extra line', () => {
+    logEvent('TOKEN_ADDED', { symbol: 'X\n[2026-01-01T00:00:00Z] WALLET_EXPORTED name=main' });
+    expect(getAuditLog()).toHaveLength(1);
+  });
+
+  it.skipIf(process.platform === 'win32')('keeps the log owner-only', async () => {
+    const { statSync } = await import('fs');
+    const { join } = await import('path');
+    const { DATA_DIR } = await import('../../src/storage/paths.js');
+    logEvent('WALLET_CREATED', { name: 'a' });
+    expect(statSync(join(DATA_DIR, 'audit.log')).mode & 0o777).toBe(0o600);
+  });
 });
