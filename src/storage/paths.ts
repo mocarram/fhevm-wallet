@@ -2,11 +2,16 @@
  * Centralized path configuration and the user's private `.env` file.
  */
 
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, statSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
 import { config as dotenvConfig } from 'dotenv';
-import { ensureSecureDir, tightenPermissions, writeSecureFile } from './secureFs.js';
+import {
+  ensureSecureDir,
+  isSharedLocation,
+  tightenPermissions,
+  writeSecureFile,
+} from './secureFs.js';
 
 /**
  * Root data directory.
@@ -28,11 +33,53 @@ export function ensureDataDir(): void {
 }
 
 /**
- * Tighten permissions on data written by older versions (which used the default umask).
- * Returns how many paths were fixed so the UI can mention it once.
+ * Everything the wallet creates inside the data dir, relative to it. Startup tightening
+ * touches only these (plus the dir itself), never anything else the user keeps there.
+ * Keep in sync with the stores: a new store file belongs in this list.
  */
-export function secureExistingData(): number {
-  return tightenPermissions(DATA_DIR).length;
+export const WALLET_DATA_ENTRIES = [
+  'wallets',
+  '.env',
+  'audit.log',
+  'config.json',
+  'tokens.json',
+  'addressbook.json',
+  'transactions.json',
+  'balance-cache.json',
+] as const;
+
+/** Outcome of the startup permission check, for one short stderr notice. */
+export interface DataDirSecurity {
+  /** Paths (folders and files) whose group/other access was removed. */
+  tightened: number;
+  /** A sentence to show the user when something could not be secured, else null. */
+  warning: string | null;
+}
+
+/**
+ * Tighten permissions on data written by older versions (which used the default umask),
+ * and explain once when the data dir cannot be made private.
+ */
+export function secureExistingData(): DataDirSecurity {
+  if (isSharedLocation(DATA_DIR)) {
+    return {
+      tightened: 0,
+      warning: `FHEVM_WALLET_HOME points at ${DATA_DIR}, a shared folder (home, current folder or root). The wallet will not change its permissions. Point it at a dedicated folder.`,
+    };
+  }
+  const tightened = tightenPermissions(DATA_DIR, WALLET_DATA_ENTRIES).length;
+  let warning: string | null = null;
+  try {
+    const st = statSync(DATA_DIR);
+    // Writable but not ours (a Docker volume created by root, say): chmod is refused,
+    // so other users may still be able to list it.
+    if (typeof process.getuid === 'function' && st.uid !== process.getuid()) {
+      warning = `The wallet data folder ${DATA_DIR} belongs to another user, so its permissions cannot be restricted. Give it to your user (chown) to keep it private.`;
+    }
+  } catch {
+    /* missing dir: nothing to warn about */
+  }
+  return { tightened, warning };
 }
 
 /**

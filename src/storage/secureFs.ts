@@ -13,32 +13,77 @@
  */
 
 import {
-  appendFileSync,
   chmodSync,
   closeSync,
+  constants as fsConstants,
   existsSync,
+  fchmodSync,
   fsyncSync,
   mkdirSync,
   openSync,
   readdirSync,
+  realpathSync,
   renameSync,
   lstatSync,
   statSync,
   unlinkSync,
   writeSync,
 } from 'fs';
-import { dirname, join } from 'path';
+import { dirname, join, parse, resolve } from 'path';
+import { homedir } from 'os';
 import { randomBytes } from 'crypto';
 
 export const DIR_MODE = 0o700;
 export const FILE_MODE = 0o600;
 
-/** Create `dir` (and parents) if missing and make sure it is owner-only. */
+/** Group and other permission bits: what tightening removes. Owner bits are kept. */
+const GROUP_OTHER_BITS = 0o077;
+
+/** Resolve symlinks where possible, so `~/link-to-home` is recognised as home. */
+function canonical(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+/**
+ * True for folders the wallet must never chmod even if FHEVM_WALLET_HOME points there:
+ * the user's home, the current directory and the filesystem root. Making those 0700
+ * would break other programs (a web server's home, a shared project folder).
+ */
+export function isSharedLocation(dir: string): boolean {
+  const target = canonical(dir);
+  const shared = [homedir(), process.cwd(), parse(target).root].map(canonical);
+  return shared.includes(target);
+}
+
+/** chmod that tolerates "not yours to change" (a volume created by root, say). */
+function chmodIfPermitted(path: string, mode: number): boolean {
+  try {
+    chmodSync(path, mode);
+    return true;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'EPERM' || code === 'EACCES') return false;
+    throw err;
+  }
+}
+
+/**
+ * Create `dir` (and parents) if missing and make sure it is owner-only.
+ *
+ * Does not chmod a shared location (see `isSharedLocation`), and does not fail when the
+ * folder belongs to another user but is still writable: writes then still work and the
+ * files we create are ours (and 0600). Startup warns about that case once.
+ */
 export function ensureSecureDir(dir: string): void {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true, mode: DIR_MODE });
   }
-  chmodSync(dir, DIR_MODE);
+  if (isSharedLocation(dir)) return;
+  chmodIfPermitted(dir, DIR_MODE);
 }
 
 /**
@@ -79,14 +124,48 @@ export function writeSecureFile(path: string, data: string): void {
 /**
  * Append to an owner-only file (used by the audit log). Refuses a symlink at `path`:
  * appending through one would write wallet events into whatever file it points at.
+ *
+ * O_NOFOLLOW makes that check part of the open itself, so there is no window between
+ * "is it a link?" and the write (and a dangling link is refused too, instead of creating
+ * its target). Windows has no O_NOFOLLOW; there the lstat check below is all we have.
  */
 export function appendSecureFile(path: string, data: string): void {
   ensureSecureDir(dirname(path));
-  if (existsSync(path) && lstatSync(path).isSymbolicLink()) {
-    throw new Error(`Refusing to write through a symbolic link: ${path}`);
+  if (existsSync(path) || isDanglingLink(path)) {
+    if (lstatSync(path).isSymbolicLink()) {
+      throw new Error(`Refusing to write through a symbolic link: ${path}`);
+    }
   }
-  appendFileSync(path, data, { mode: FILE_MODE });
-  chmodSync(path, FILE_MODE);
+  const flags =
+    fsConstants.O_WRONLY |
+    fsConstants.O_APPEND |
+    fsConstants.O_CREAT |
+    (fsConstants.O_NOFOLLOW ?? 0);
+  let fd: number;
+  try {
+    fd = openSync(path, flags, FILE_MODE);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ELOOP') {
+      throw new Error(`Refusing to write through a symbolic link: ${path}`);
+    }
+    throw err;
+  }
+  try {
+    // An existing file keeps its old mode on open; fix it through the descriptor.
+    fchmodSync(fd, FILE_MODE);
+    writeSync(fd, data);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** True if `path` is a symlink whose target does not exist (existsSync says false). */
+function isDanglingLink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -115,47 +194,54 @@ export function writeNewPrivateFile(path: string, data: string): void {
 }
 
 /**
- * Walk `root` and remove group/other access: directories become 0700, files 0600.
+ * Remove group/other access from the data dir and the paths the wallet itself creates.
  * Returns the paths that were changed so the caller can tell the user once.
  * Used at startup to fix data written by older versions.
  *
- * `root` itself is followed if it is a symlink (the user may keep the data dir on another
- * disk), but links *inside* it are skipped: chmod would change the link target, possibly
- * a file outside the data dir. Errors on single entries (a file owned by another user,
- * say) are skipped too, so a stray file can never stop the wallet from starting.
+ * Deliberately narrow, because FHEVM_WALLET_HOME can point at a folder that also holds
+ * other things:
+ * - only `root` and the listed `entries` (relative to it) are touched; a listed directory
+ *   also gets its direct children (the keystores in wallets/), nothing deeper;
+ * - only group/other bits are cleared: owner bits stay as they are, so an executable
+ *   keeps its x bit and a read-only file stays read-only;
+ * - nothing happens at all when `root` is a shared location (home, cwd, /);
+ * - symlinks inside `root` are skipped (chmod would change their target), while `root`
+ *   itself is followed (the data dir may live on another disk);
+ * - entries that cannot be changed (owned by someone else) are skipped, so a stray file
+ *   never stops the wallet from starting.
  */
-export function tightenPermissions(root: string): string[] {
-  if (!existsSync(root) || process.platform === 'win32') return [];
+export function tightenPermissions(root: string, entries: readonly string[]): string[] {
+  if (!existsSync(root) || process.platform === 'win32' || isSharedLocation(root)) return [];
   const changed: string[] = [];
 
-  const visit = (path: string, isRoot: boolean): void => {
+  const tighten = (path: string, follow: boolean): ReturnType<typeof statSync> | null => {
     let st;
     try {
-      st = isRoot ? statSync(path) : lstatSync(path);
+      st = follow ? statSync(path) : lstatSync(path);
     } catch {
-      return;
+      return null;
     }
-    if (st.isSymbolicLink()) return;
-    if (!st.isDirectory() && !st.isFile()) return; // sockets, fifos: leave alone
-    if ((st.mode & 0o077) !== 0) {
-      try {
-        chmodSync(path, st.isDirectory() ? DIR_MODE : FILE_MODE);
-        changed.push(path);
-      } catch {
-        // Not ours to change; carry on with the rest.
-      }
+    if (st.isSymbolicLink()) return null;
+    if (!st.isDirectory() && !st.isFile()) return null; // sockets, fifos: leave alone
+    if ((st.mode & GROUP_OTHER_BITS) !== 0) {
+      if (chmodIfPermitted(path, st.mode & 0o7700 & ~GROUP_OTHER_BITS)) changed.push(path);
     }
-    if (st.isDirectory()) {
-      let entries: string[] = [];
-      try {
-        entries = readdirSync(path);
-      } catch {
-        return;
-      }
-      for (const entry of entries) visit(join(path, entry), false);
-    }
+    return st;
   };
 
-  visit(root, true);
+  tighten(root, true);
+  for (const entry of entries) {
+    const path = join(root, entry);
+    const st = tighten(path, false);
+    if (st?.isDirectory()) {
+      let children: string[] = [];
+      try {
+        children = readdirSync(path);
+      } catch {
+        continue;
+      }
+      for (const child of children) tighten(join(path, child), false);
+    }
+  }
   return changed;
 }
