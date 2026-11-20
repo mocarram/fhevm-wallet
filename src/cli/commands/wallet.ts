@@ -33,6 +33,7 @@ import {
   isValidPrivateKey,
   passwordStrengthHint,
 } from '../../utils/validation.js';
+import { describeError } from '../utils/userError.js';
 
 export function registerWalletCommands(program: Command): void {
   const wallet = program.command('wallet').description('Manage wallets');
@@ -115,7 +116,7 @@ export function registerWalletCommands(program: Command): void {
           console.log(success(`Set "${name}" as default wallet`));
         }
       } catch (err) {
-        console.log(error(err instanceof Error ? err.message : 'Failed to create wallet'));
+        console.log(error(describeError(err, 'Failed to create wallet')));
       }
     });
 
@@ -257,7 +258,7 @@ export function registerWalletCommands(program: Command): void {
             console.log(success(`Set "${name}" as default wallet`));
           }
         } catch (err) {
-          console.log(error(err instanceof Error ? err.message : 'Failed to import wallet'));
+          console.log(error(describeError(err, 'Failed to import wallet')));
         }
       },
     );
@@ -370,7 +371,7 @@ export function registerWalletCommands(program: Command): void {
           const path = exportKeystoreFile(name, options.keystore);
           console.log(success(`Encrypted keystore saved to ${path} (owner-only access)`));
         } catch (err) {
-          console.log(error(err instanceof Error ? err.message : 'Export failed'));
+          console.log(error(describeError(err, 'Export failed')));
           process.exitCode = 1;
         }
         return;
@@ -419,7 +420,7 @@ export function registerWalletCommands(program: Command): void {
         if (wiped) console.log(success('Private key screen wiped.'));
       } catch (err) {
         spinner.fail('Failed to decrypt wallet');
-        console.log(error(err instanceof Error ? err.message : 'Invalid password'));
+        console.log(error(describeError(err, 'Invalid password')));
       }
     });
 }

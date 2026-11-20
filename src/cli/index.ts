@@ -16,6 +16,8 @@ import { isValidNetwork } from '../utils/validation.js';
 import { NetworkName, DEFAULT_RPC_URLS } from '../core/network/NetworkConfig.js';
 import { saveEnvVar, getEnvVar } from '../storage/paths.js';
 import { setCustomRpc } from '../core/network/rpcSettings.js';
+import { describeError } from './utils/userError.js';
+import { maskUrl } from '../utils/redact.js';
 
 /**
  * Read the version from package.json at runtime so `--version` can never drift from the
@@ -96,10 +98,10 @@ export function createProgram(): Command {
           console.log();
           console.log('RPC Endpoints:');
           console.log(
-            `  Mainnet: ${mainnetRpc || DEFAULT_RPC_URLS.mainnet}${mainnetRpc ? chalk.cyan(' (custom)') : chalk.dim(' (default)')}`,
+            `  Mainnet: ${mainnetRpc ? maskUrl(mainnetRpc) : DEFAULT_RPC_URLS.mainnet}${mainnetRpc ? chalk.cyan(' (custom)') : chalk.dim(' (default)')}`,
           );
           console.log(
-            `  Sepolia: ${sepoliaRpc || DEFAULT_RPC_URLS.sepolia}${sepoliaRpc ? chalk.cyan(' (custom)') : chalk.dim(' (default)')}`,
+            `  Sepolia: ${sepoliaRpc ? maskUrl(sepoliaRpc) : DEFAULT_RPC_URLS.sepolia}${sepoliaRpc ? chalk.cyan(' (custom)') : chalk.dim(' (default)')}`,
           );
           console.log();
           console.log('API Keys:');
@@ -126,7 +128,7 @@ export function createProgram(): Command {
             const probe = await setCustomRpc('mainnet', options.rpcMainnet);
             console.log(chalk.green(`Mainnet RPC URL updated (answered in ${probe.latencyMs} ms)`));
           } catch (err) {
-            console.log(chalk.red(err instanceof Error ? err.message : 'Could not set RPC URL'));
+            console.log(chalk.red(describeError(err, 'Could not set RPC URL')));
             process.exitCode = 1;
           }
         }
@@ -136,7 +138,7 @@ export function createProgram(): Command {
             const probe = await setCustomRpc('sepolia', options.rpcSepolia);
             console.log(chalk.green(`Sepolia RPC URL updated (answered in ${probe.latencyMs} ms)`));
           } catch (err) {
-            console.log(chalk.red(err instanceof Error ? err.message : 'Could not set RPC URL'));
+            console.log(chalk.red(describeError(err, 'Could not set RPC URL')));
             process.exitCode = 1;
           }
         }
@@ -146,7 +148,7 @@ export function createProgram(): Command {
             saveEnvVar('ETHERSCAN_API_KEY', options.etherscanKey.trim());
             console.log(chalk.green('Etherscan API key saved'));
           } catch (err) {
-            console.log(chalk.red(err instanceof Error ? err.message : 'Could not save key'));
+            console.log(chalk.red(describeError(err, 'Could not save key')));
             process.exitCode = 1;
           }
         }
@@ -156,7 +158,7 @@ export function createProgram(): Command {
             saveEnvVar('ZAMA_MAINNET_API_KEY', options.zamaKey.trim());
             console.log(chalk.green('Zama Mainnet API key saved'));
           } catch (err) {
-            console.log(chalk.red(err instanceof Error ? err.message : 'Could not save key'));
+            console.log(chalk.red(describeError(err, 'Could not save key')));
             process.exitCode = 1;
           }
         }

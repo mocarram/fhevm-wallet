@@ -11,6 +11,7 @@ import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getDefaultNetwork } from '../../storage/ConfigStore.js';
 import { formatAddress, success, error } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
+import { describeError } from '../utils/userError.js';
 
 export function registerTokenCommands(program: Command): void {
   const token = program.command('token').description('Manage tracked tokens');
@@ -64,7 +65,7 @@ export function registerTokenCommands(program: Command): void {
         console.log(`  Address:  ${entry.address}`);
         console.log(`  Network:  ${entry.network}`);
       } catch (err) {
-        console.log(error(err instanceof Error ? err.message : 'Failed to add token'));
+        console.log(error(describeError(err, 'Failed to add token')));
       }
     });
 

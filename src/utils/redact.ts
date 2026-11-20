@@ -60,3 +60,30 @@ export function redactSecrets(text: string): string {
 
   return out;
 }
+
+/**
+ * Show only where a URL points, not its credentials: `https://host/…` keeps scheme, host
+ * and port but hides path, query, fragment and user:password. Provider keys live in any
+ * of those (Infura `/v3/<key>`, QuickNode path tokens, `?apikey=`), and there is no
+ * reliable pattern for all of them, so for display we hide them all.
+ */
+export function maskUrl(url: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return REDACTED;
+  }
+  const hidden =
+    (parsed.pathname !== '/' && parsed.pathname !== '') ||
+    parsed.search !== '' ||
+    parsed.hash !== '' ||
+    parsed.username !== '' ||
+    parsed.password !== '';
+  return `${parsed.protocol}//${parsed.host}${hidden ? '/…' : ''}`;
+}
+
+/** Mask every http(s) URL inside `text` with `maskUrl`, for one-line user messages. */
+export function maskUrlsInText(text: string): string {
+  return text.replace(/https?:\/\/[^\s"'<>)]+/gi, (url) => maskUrl(url));
+}

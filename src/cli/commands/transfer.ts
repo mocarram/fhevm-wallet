@@ -29,6 +29,7 @@ import {
 } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork, isValidAmount } from '../../utils/validation.js';
 import { listAddresses, getAddressByName } from '../../storage/AddressBook.js';
+import { describeError } from '../utils/userError.js';
 
 export function registerTransferCommand(program: Command): void {
   program
@@ -277,7 +278,7 @@ export function registerTransferCommand(program: Command): void {
             loadSpinner.succeed('Wallet loaded');
           } catch (err) {
             loadSpinner.fail('Failed to decrypt wallet');
-            console.log(error(err instanceof Error ? err.message : 'Invalid password'));
+            console.log(error(describeError(err, 'Invalid password')));
             return;
           }
 
@@ -286,7 +287,7 @@ export function registerTransferCommand(program: Command): void {
           try {
             amountBigInt = parseTokenAmount(amount!, token.decimals);
           } catch (err) {
-            console.log(error(err instanceof Error ? err.message : 'Invalid amount'));
+            console.log(error(describeError(err, 'Invalid amount')));
             return;
           }
 
@@ -380,7 +381,7 @@ export function registerTransferCommand(program: Command): void {
             console.log(line);
           }
         } catch (err) {
-          console.log(error(err instanceof Error ? err.message : 'Failed to send transaction'));
+          console.log(error(describeError(err, 'Failed to send transaction')));
         }
       },
     );

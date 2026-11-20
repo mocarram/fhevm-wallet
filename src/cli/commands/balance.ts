@@ -24,6 +24,7 @@ import {
 } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
 import { DynamicBalanceTable } from '../utils/DynamicBalanceTable.js';
+import { describeError } from '../utils/userError.js';
 
 export function registerBalanceCommand(program: Command): void {
   program
@@ -102,7 +103,7 @@ export function registerBalanceCommand(program: Command): void {
             loadSpinner.succeed('Wallet loaded');
           } catch (err) {
             loadSpinner.fail('Failed to decrypt wallet');
-            console.log(error(err instanceof Error ? err.message : 'Invalid password'));
+            console.log(error(describeError(err, 'Invalid password')));
             return;
           }
 

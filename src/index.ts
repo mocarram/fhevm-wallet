@@ -33,12 +33,25 @@ try {
 }
 
 import { createProgram, runInteractiveMode } from './cli/index.js';
+import { describeError } from './cli/utils/userError.js';
+
+// Last line of defence: an error no command caught must not print its raw message or
+// stack, which for ethers errors includes the RPC URL and its API key.
+const failSafely = (err: unknown): void => {
+  process.stderr.write(`Error: ${describeError(err)}\n`);
+  process.exitCode = 1;
+};
+process.on('unhandledRejection', failSafely);
+process.on('uncaughtException', (err) => {
+  failSafely(err);
+  process.exit(1); // state is unknown after an uncaught exception: stop
+});
 
 const program = createProgram();
 
 // If no arguments provided, launch interactive mode
 if (process.argv.length <= 2) {
-  runInteractiveMode().catch(console.error);
+  runInteractiveMode().catch(failSafely);
 } else {
-  program.parse(process.argv);
+  program.parseAsync(process.argv).catch(failSafely);
 }

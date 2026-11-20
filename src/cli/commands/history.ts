@@ -30,6 +30,7 @@ import { isValidNetwork, isValidAddress } from '../../utils/validation.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getNameByAddress } from '../../storage/AddressBook.js';
 import { saveEnvVar, getEnvVar, loadEnv } from '../../storage/paths.js';
+import { describeError } from '../utils/userError.js';
 
 /**
  * Format date for display
@@ -178,14 +179,16 @@ async function handleSyncError(
   // Clear the broken provider from cache to stop retry loop
   clearProviderForNetwork(network);
 
-  const message = err instanceof Error ? err.message : 'Unknown error';
+  // Detect on the raw text (never printed: it can contain the RPC URL and its key).
+  const raw = err instanceof Error ? err.message : String(err);
+  const message = describeError(err, 'Unknown error');
 
   // Check for common RPC block range errors
   const isBlockRangeError =
-    message.includes('block range') ||
-    message.includes('query returned more than') ||
-    message.includes('exceed maximum') ||
-    message.includes('Log response size exceeded');
+    raw.includes('block range') ||
+    raw.includes('query returned more than') ||
+    raw.includes('exceed maximum') ||
+    raw.includes('Log response size exceeded');
 
   if (isBlockRangeError) {
     console.log(chalk.yellow('\nRPC provider limits the block range for queries.'));
@@ -228,7 +231,7 @@ async function handleSyncError(
       retrySpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
     } catch (retryErr) {
       retrySpinner.fail('Sync failed');
-      console.log(error(retryErr instanceof Error ? retryErr.message : 'Unknown error'));
+      console.log(error(describeError(retryErr, 'Unknown error')));
     }
   }
   if (action === 'set_rpc') {
@@ -265,7 +268,7 @@ async function handleSyncError(
       retrySpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
     } catch (retryErr) {
       retrySpinner.fail('Sync failed');
-      console.log(error(retryErr instanceof Error ? retryErr.message : 'Unknown error'));
+      console.log(error(describeError(retryErr, 'Unknown error')));
     }
   }
   // 'skip' action: do nothing, proceed to show cached transactions
@@ -381,7 +384,7 @@ export function registerHistoryCommand(program: Command): void {
 
         displayTransactionTable(transactions, walletAddress);
       } catch (err) {
-        console.log(error(err instanceof Error ? err.message : 'Failed to load history'));
+        console.log(error(describeError(err, 'Failed to load history')));
       }
     });
 }

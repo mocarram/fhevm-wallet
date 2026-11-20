@@ -71,6 +71,8 @@ import {
 import { addAddress, listAddresses, removeAddress } from '../../storage/AddressBook.js';
 import { DynamicBalanceTable } from '../utils/DynamicBalanceTable.js';
 import { displayHistoryInteractive } from './history.js';
+import { describeError } from '../utils/userError.js';
+import { maskUrl } from '../../utils/redact.js';
 
 type MenuChoice =
   | 'wallet'
@@ -303,13 +305,13 @@ async function handleViewRpcEndpoints(): Promise<void> {
   console.log();
 
   if (mainnetCustom) {
-    console.log(`  Mainnet: ${mainnetCustom} ${chalk.cyan('(custom)')}`);
+    console.log(`  Mainnet: ${maskUrl(mainnetCustom)} ${chalk.cyan('(custom)')}`);
   } else {
     console.log(`  Mainnet: ${DEFAULT_RPC_URLS.mainnet} ${chalk.dim('(default)')}`);
   }
 
   if (sepoliaCustom) {
-    console.log(`  Sepolia: ${sepoliaCustom} ${chalk.cyan('(custom)')}`);
+    console.log(`  Sepolia: ${maskUrl(sepoliaCustom)} ${chalk.cyan('(custom)')}`);
   } else {
     console.log(`  Sepolia: ${DEFAULT_RPC_URLS.sepolia} ${chalk.dim('(default)')}`);
   }
@@ -336,8 +338,10 @@ async function handleSetRpcEndpoint(): Promise<void> {
     {
       type: 'input',
       name: 'url',
-      message: 'Enter RPC URL:',
-      default: currentCustom,
+      // No prefilled default: it would print the saved URL (and its API key) on screen.
+      message: currentCustom
+        ? `Enter RPC URL (current: ${maskUrl(currentCustom)}):`
+        : 'Enter RPC URL:',
       validate: (input) => validateRpcUrl(input) ?? true,
     },
   ]);
@@ -351,7 +355,7 @@ async function handleSetRpcEndpoint(): Promise<void> {
       `${network.charAt(0).toUpperCase() + network.slice(1)} RPC updated (answered in ${probe.latencyMs} ms)`,
     );
   } catch (err) {
-    spinner.fail(err instanceof Error ? err.message : 'Could not set RPC URL');
+    spinner.fail(describeError(err, 'Could not set RPC URL'));
   }
 }
 
@@ -405,7 +409,7 @@ async function handleSetEtherscanKey(): Promise<void> {
   try {
     saveEnvVar('ETHERSCAN_API_KEY', apiKey.trim());
   } catch (err) {
-    console.log(error(err instanceof Error ? err.message : 'Could not save the key'));
+    console.log(error(describeError(err, 'Could not save the key')));
     return;
   }
 
@@ -480,7 +484,7 @@ async function handleSetZamaApiKey(): Promise<void> {
   try {
     saveEnvVar('ZAMA_MAINNET_API_KEY', apiKey.trim());
   } catch (err) {
-    console.log(error(err instanceof Error ? err.message : 'Could not save the key'));
+    console.log(error(describeError(err, 'Could not save the key')));
     return;
   }
 
@@ -857,7 +861,7 @@ async function handleExportWallet(): Promise<void> {
       const path = exportKeystoreFile(walletName, file.trim());
       console.log(success(`Encrypted keystore saved to ${path} (owner-only access)`));
     } catch (err) {
-      console.log(error(err instanceof Error ? err.message : 'Export failed'));
+      console.log(error(describeError(err, 'Export failed')));
     }
     return;
   }
@@ -900,7 +904,7 @@ async function handleExportWallet(): Promise<void> {
     if (wiped) console.log(success('Private key screen wiped.'));
   } catch (err) {
     spinner.fail('Failed to decrypt wallet');
-    console.log(error(err instanceof Error ? err.message : 'Invalid password'));
+    console.log(error(describeError(err, 'Invalid password')));
   }
 }
 
@@ -930,7 +934,7 @@ async function handleAddToken(): Promise<void> {
     console.log(`  Network:  ${entry.network}`);
   } catch (err) {
     spinner.fail('Failed to add token');
-    console.log(error(err instanceof Error ? err.message : 'Unknown error'));
+    console.log(error(describeError(err, 'Unknown error')));
   }
 }
 
@@ -1082,7 +1086,7 @@ async function handleAddContact(): Promise<void> {
     addAddress(name.trim(), address);
     console.log(success(`Contact "${name.trim()}" added`));
   } catch (err) {
-    console.log(error(err instanceof Error ? err.message : 'Failed to add contact'));
+    console.log(error(describeError(err, 'Failed to add contact')));
   }
 }
 
@@ -1281,7 +1285,7 @@ async function handleBalance(): Promise<void> {
     loadSpinner.succeed('Wallet loaded');
   } catch (err) {
     loadSpinner.fail('Failed to decrypt wallet');
-    console.log(error(err instanceof Error ? err.message : 'Invalid password'));
+    console.log(error(describeError(err, 'Invalid password')));
     return;
   }
 
@@ -1492,7 +1496,7 @@ async function handleSend(): Promise<void> {
     loadSpinner.succeed('Wallet loaded');
   } catch (err) {
     loadSpinner.fail('Failed to decrypt wallet');
-    console.log(error(err instanceof Error ? err.message : 'Invalid password'));
+    console.log(error(describeError(err, 'Invalid password')));
     return;
   }
 
@@ -1501,7 +1505,7 @@ async function handleSend(): Promise<void> {
   try {
     amountBigInt = parseTokenAmount(amount, token.decimals);
   } catch (err) {
-    console.log(error(err instanceof Error ? err.message : 'Invalid amount'));
+    console.log(error(describeError(err, 'Invalid amount')));
     return;
   }
 
