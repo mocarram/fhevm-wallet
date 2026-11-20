@@ -1,0 +1,130 @@
+# Agent Guide — fhEVM Wallet
+
+This file is the single source of truth for any coding agent (Claude Code, Codex, Cursor, …)
+working in this repository. `CLAUDE.md` imports it. Keep it current: if you change a
+workflow, a command or the architecture, update this file in the same commit.
+
+## What this project is
+
+A terminal wallet (`fhevm-wallet`, alias `fhew`) for **ERC-7984 confidential tokens** on
+Zama's fhEVM. Balances and transfer amounts are encrypted on-chain; the wallet encrypts
+amounts with the Zama relayer SDK and decrypts balances via EIP-712 "user decrypt".
+
+- Language: TypeScript (ESM, `"type": "module"`, imports end in `.js`)
+- Runtime: **Node.js 24 LTS** (`engines: >=24.11`). Do not use Node 22 or 26 features without
+  checking the roadmap.
+- Key libraries: `ethers` v6, `@zama-fhe/relayer-sdk` (Node entry `@zama-fhe/relayer-sdk/node`),
+  `commander`, `@inquirer/prompts`, `chalk`, `zod`.
+- User data lives in `~/.fhevm-wallet/` (override with `FHEVM_WALLET_HOME`).
+
+## Commands
+
+```bash
+npm ci                 # install exactly from the lockfile
+npm run build          # tsc → dist/
+npm run lint           # eslint
+npm run format:check   # prettier
+npm test               # vitest unit + integration tests
+npm run test:e2e       # drives the real CLI binary against the offline mock backend
+npm run verify         # everything above, in order; must pass before any merge
+```
+
+`npm run verify` is the gate. A change that does not pass it is not done.
+
+## Architecture
+
+```
+src/
+  index.ts                 entry; loads env, starts commander
+  cli/                     commander subcommands (non-interactive: fhew send, fhew balance …)
+  cli/commands/interactive.ts   legacy interactive entry, delegates to src/tui
+  tui/                     interactive terminal app (router, screens, status bar, keymap)
+  core/
+    network/               RPC config, provider factory, chain checks
+    fhe/                   relayer SDK instance, encryption, decryption
+    token/                 ERC-7984 calls (TokenService), registry, balance cache
+    wallet/                keystore encryption and wallet loading
+    backend/               the Backend interface + real and mock implementations
+  storage/                 JSON stores under the data dir (owner-only permissions)
+  utils/                   validation, formatting, amount parsing
+tests/                     vitest; mirrors src/
+tests/e2e/                 end-to-end runs of dist/index.js with FHEW_BACKEND=mock
+```
+
+### ERC-7984 rules that bit us before
+
+- Transfer with `confidentialTransfer(address to, bytes32 encryptedAmount, bytes inputProof)`.
+  Never call `$_transfer` / `$_mint` / `$_burn`: those exist only on OpenZeppelin's
+  hardhat-exposed **mock** contracts and revert on real tokens.
+- There is no `approve`. Delegation uses `setOperator(address operator, uint48 until)` and
+  `isOperator(holder, spender)`.
+- Encrypted amounts are `euint64`. Reject amounts above `2^64 - 1` base units.
+- A transfer larger than the balance does **not** revert: it moves 0. Always check the
+  decrypted balance before sending and confirm it moved afterwards.
+- Encrypted inputs are bound to `(contract, sender)`. The sender must be `msg.sender`.
+
+## Offline mock backend
+
+`FHEW_BACKEND=mock` swaps the chain + relayer for an in-memory simulation
+(`src/core/backend/MockBackend.ts`). Use it for e2e tests and demos. It must never be the
+default and must print a visible `MOCK` badge in the status bar.
+
+The sandboxed cloud environment usually cannot reach Ethereum RPCs. When you cannot test
+on-chain, say so explicitly in your report and list what the user should run by hand.
+
+## Git workflow (mandatory)
+
+```
+feature branch  ──merge --no-ff──▶  staging  ──merge --no-ff──▶  main
+```
+
+1. `main` and `staging` must stay in sync before new work starts. Branch from `staging`.
+2. Work on a feature branch (`claude/<topic>`, `feat/<topic>`, `fix/<topic>`).
+3. Small, focused commits using Conventional Commits: `feat(tui): …`, `fix(token): …`,
+   `test: …`, `docs: …`, `chore(deps): …`, `refactor: …`, `ci: …`.
+   Subject ≤ 72 chars, imperative mood; body explains *why*.
+4. Before merging into `staging`: `npm run verify` passes **and** an independent review
+   (see below) has no open blocking findings.
+5. Merge into `staging` with `--no-ff` so each phase is one visible merge commit.
+6. Promote `staging` → `main` only after a full e2e pass on `staging`.
+7. Never force-push `staging` or `main`. Never rewrite published history.
+8. Never commit secrets, `.env`, keystores or anything from the data dir.
+
+## Quality loop (mandatory)
+
+Every unit of work goes through this loop until it comes out clean:
+
+1. **Plan**: write down the change and how you will prove it works.
+2. **Implement** with comments that explain intent and non-obvious decisions
+   (why, not what). Every exported function gets a short doc comment.
+3. **Test**: add or update tests in `tests/` for the behaviour you changed. Bug fixes get a
+   regression test that fails without the fix.
+4. **Verify**: `npm run verify`.
+5. **Independent review**: a *separate* agent that did not write the code reviews the diff
+   against `origin/staging`. In Claude Code use the `reviewer` subagent
+   (`.claude/agents/reviewer.md`) and, for anything touching keys, storage, network or
+   signing, also the `security-reviewer` subagent. Other agents: run an equivalent fresh
+   session with the reviewer prompt.
+6. **Fix** every confirmed finding, then go back to step 3.
+7. **Validate** with the `verifier` subagent: it runs the build, tests and e2e on its own and
+   checks the change against the acceptance criteria in `docs/ROADMAP.md`.
+8. Merge (see Git workflow) and tick the item in `docs/ROADMAP.md`.
+
+## Coding conventions
+
+- Strict TypeScript; no `any` unless commented with the reason.
+- Pure logic (parsing, validation, formatting, routing) lives outside UI code so it can be
+  unit-tested.
+- User-facing text: plain English, active voice, says what happened and what to do next.
+  Never show a raw ethers error to the user without a translation; keep the raw text one
+  keypress away ("Show technical details").
+- Files are written with owner-only permissions via `src/storage/secureFs.ts`. Do not call
+  `fs.writeFileSync` on user data directly.
+- Network calls have timeouts.
+- No emoji in menus (they break column alignment in many terminals).
+
+## Where the plan lives
+
+- `docs/ROADMAP.md`: phases, acceptance criteria and status. Agents pick the next unchecked
+  item from here.
+- `docs/ui-design.md`: the approved terminal design (screens, keymap, behaviours).
