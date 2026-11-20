@@ -160,7 +160,10 @@ The wallet merges local and synced transactions, preserving known amounts when a
 
 ## Data Directory
 
-All data is stored centrally in `~/.fhevm-wallet` in your home directory. This allows you to run the CLI from any directory while accessing the same wallets and configuration.
+All data is stored centrally in `~/.fhevm-wallet` in your home directory. This allows you to run the CLI from any directory while accessing the same wallets and configuration. Set `FHEVM_WALLET_HOME` to keep it somewhere else (the Docker image uses `/data`).
+
+The folder is owner-only (`0700`) and every file in it `0600`. If an older version left
+looser permissions, the wallet fixes them on start and prints a one-line notice on stderr.
 
 ```
 ~/.fhevm-wallet/
@@ -172,4 +175,6 @@ All data is stored centrally in `~/.fhevm-wallet` in your home directory. This a
 └── balance-cache.json    # Cached decrypted balances
 ```
 
-Back up `~/.fhevm-wallet/wallets/` to protect your encrypted keys.
+Back up `~/.fhevm-wallet/wallets/` to protect your encrypted keys, or export one wallet's
+encrypted keystore with `fhew wallet export <name> --keystore <file>`. The exported file
+is a standard Ethereum JSON keystore that still needs your wallet password.

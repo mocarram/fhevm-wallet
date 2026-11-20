@@ -39,17 +39,29 @@ revert produces the translated message; `npm audit` reports 0 vulnerabilities.
 
 ## Phase 2: Security hardening
 
-- [ ] S1 Data dir 0700, files 0600, atomic writes, loose permissions tightened on start
-- [ ] S2 `FHEVM_WALLET_HOME`; Docker non-root and persists the data dir
-- [ ] S3 Decrypted-balance check before sending; balance re-check after confirmation
-- [ ] S4 uint64 bound (shared with Phase 1)
-- [ ] S5 Keys and phrases shown on a wipe-on-keypress screen; encrypted keystore export
-- [ ] S6 `.env` writer rejects newlines and quotes values
-- [ ] S7 Custom RPC chain ID verified when set and at startup
-- [ ] S8 Timeouts on all network calls; RPC fallback list
-- [ ] S9 Tests for all of the above
-- [ ] S10 Password strength hint (soft warning)
-- [ ] Secrets redacted in errors and the audit log
+- [x] S1 Data dir 0700, files 0600, atomic writes, loose permissions tightened on start
+- [x] S2 `FHEVM_WALLET_HOME`; Docker non-root and persists the data dir
+- [x] S3 Decrypted-balance check before sending; balance re-check after confirmation
+- [x] S4 uint64 bound (shared with Phase 1)
+- [x] S5 Keys and phrases shown on a wipe-on-keypress screen; encrypted keystore export
+- [x] S6 `.env` writer rejects newlines and quotes values
+- [x] S7 Custom RPC chain ID verified when set and at startup
+- [x] S8 Timeouts on all network calls; RPC fallback list
+- [x] S9 Tests for all of the above
+- [x] S10 Password strength hint (soft warning)
+- [x] Secrets redacted in errors and the audit log
+
+Notes on how these landed:
+
+- S6: rather than quoting, the writer only accepts values dotenv reads back verbatim (no
+  whitespace, quotes, backslash, `#` or line breaks), so no quoting or escaping is needed.
+  Hand-edited quoted values are still read correctly.
+- S7: "at startup" is the first RPC request of every process (the provider checks
+  `eth_chainId` before anything else), plus a fresh check right before signing a transfer.
+- S8: the fallback list is only used while no custom RPC is set; a custom URL is the user's
+  choice and is never silently replaced. Raw transactions are never resent to another node.
+  Relayer SDK calls take no AbortSignal, so their timeouts stop the wait, not the request.
+- Token names and symbols from contracts are sanitised before they are stored or shown.
 
 Acceptance: tests assert file modes; a wrong-chain RPC is refused; no test output or log
 contains a private key, phrase or API key.

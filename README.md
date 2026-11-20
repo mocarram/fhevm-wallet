@@ -97,7 +97,7 @@ fhew config --show
 # Set default network
 fhew config --network sepolia
 
-# Set RPC endpoints
+# Set RPC endpoints (https only; the wallet checks the chain ID before saving)
 fhew config --rpc-mainnet https://mainnet.infura.io/v3/YOUR_KEY
 fhew config --rpc-sepolia https://sepolia.infura.io/v3/YOUR_KEY
 
@@ -116,16 +116,23 @@ fhew send 0x... 100 -n sepolia
 
 ## Data Storage
 
-All data is stored in `~/.fhevm-wallet/`:
+All data is stored in `~/.fhevm-wallet/` (set `FHEVM_WALLET_HOME` to use another folder):
 
 ```
 ~/.fhevm-wallet/
 ├── wallets/           # Encrypted keystore files
+├── .env               # RPC URLs and API keys saved by `fhew config`
 ├── config.json        # CLI configuration
 ├── tokens.json        # Tracked tokens
 ├── addressbook.json   # Saved contacts
+├── transactions.json  # Local transaction history
+├── audit.log          # Wallet events (never amounts, keys or phrases)
 └── balance-cache.json # Cached balances
 ```
+
+The folder is readable only by you (`0700`, files `0600`), and files are replaced
+atomically so a crash cannot leave half a keystore behind. Data written by older versions
+is tightened automatically the next time the wallet starts.
 
 ## Documentation
 
@@ -138,6 +145,13 @@ All data is stored in `~/.fhevm-wallet/`:
 
 - Wallets are encrypted locally using standard Ethereum keystore format with scrypt
 - Your password never leaves your machine
+- Recovery phrases and private keys are shown on a separate screen that is wiped when you
+  press a key, so they do not stay in your terminal scrollback
+- Prefer `fhew wallet export <name> --keystore <file>` for backups: the file stays
+  encrypted with your password
+- Before sending, the wallet checks the RPC serves the right chain and that your decrypted
+  balance covers the amount (ERC-7984 transfers that exceed the balance move 0 instead of
+  failing); after sending it re-checks that the balance went down
 - **Write down your recovery phrase** - anyone with it can access your funds
 - Start with testnet (Sepolia) before using mainnet
 

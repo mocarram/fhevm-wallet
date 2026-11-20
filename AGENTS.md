@@ -40,7 +40,7 @@ src/
   cli/commands/interactive.ts   interactive menu (being replaced by src/tui, Phase 3)
   tui/                     [planned, Phase 3] router, screens, status bar, keymap
   core/
-    network/               RPC config, provider factory, chain checks
+    network/               RPC config, provider factory (timeouts, fallbacks), chain checks
     fhe/                   relayer SDK instance, encryption, decryption
     token/                 ERC-7984 calls (TokenService), registry, balance cache
     wallet/                keystore encryption and wallet loading
@@ -118,9 +118,18 @@ Every unit of work goes through this loop until it comes out clean:
 - User-facing text: plain English, active voice, says what happened and what to do next.
   Never show a raw ethers error to the user without a translation; keep the raw text one
   keypress away ("Show technical details").
-- Files are written with owner-only permissions via `src/storage/secureFs.ts` (Phase 2).
-  Do not call `fs.writeFileSync` on user data directly.
-- Network calls have timeouts.
+- Files are written with owner-only permissions via `src/storage/secureFs.ts`
+  (`writeSecureFile`, `appendSecureFile`, `ensureSecureDir`; `writeNewPrivateFile` for
+  exports to a user-chosen path). Do not call `fs.writeFileSync`, `mkdirSync` or
+  `appendFileSync` on user data directly.
+- Network calls have timeouts: JSON-RPC through `getProvider` (20 s per request, chain-ID
+  check, fallback endpoints), `fetch` with `AbortSignal.timeout`, relayer SDK calls via
+  `withTimeout` (`src/utils/timeout.ts`).
+- Text that comes from a contract (token name and symbol, revert reasons) is untrusted:
+  pass it through `sanitizeContractText` / `src/core/token/tokenText.ts` before storing
+  or printing it.
+- Show private keys and recovery phrases only through `showSecretScreen`
+  (`src/cli/utils/secretScreen.ts`), never with `console.log`.
 - Sign locally first (`signAndBroadcast` in `TokenService`) so the hash is known before
   anything leaves the machine. Once a transaction is signed and handed to the RPC, any
   failure goes through `sentButUnconfirmed` and is shown as `SENT_UNCONFIRMED` with the
@@ -129,7 +138,8 @@ Every unit of work goes through this loop until it comes out clean:
   `INSUFFICIENT_FUNDS` and `REPLACEMENT_UNDERPRICED`. `NONCE_EXPIRED` ("nonce too low")
   is *not* safe: an RPC gateway may have retried the broadcast on another backend after
   ours was already accepted. Mined reverts stay `TX_REVERTED`; a nonce taken by another
-  transaction is `TX_REPLACED`. Both keep the hash.
+  transaction is `TX_REPLACED`. Both keep the hash. The wait for a receipt is bounded
+  (`CONFIRMATION_TIMEOUT_MS`) and also ends in `SENT_UNCONFIRMED`.
 - Never write plaintext token amounts to the audit log.
 - Set `FHEW_DEBUG=1` to print redacted technical details under error messages.
 - No emoji in menus (they break column alignment in many terminals).
