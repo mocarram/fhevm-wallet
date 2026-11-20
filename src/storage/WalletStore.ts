@@ -2,7 +2,8 @@
  * Wallet storage (encrypted keystores)
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, unlinkSync } from 'fs';
+import { ensureSecureDir, writeSecureFile } from './secureFs.js';
 import { join } from 'path';
 import { DATA_DIR } from './paths.js';
 
@@ -18,9 +19,8 @@ export interface WalletMetadata {
  * Ensure wallets directory exists
  */
 function ensureWalletsDir(): void {
-  if (!existsSync(WALLETS_DIR)) {
-    mkdirSync(WALLETS_DIR, { recursive: true });
-  }
+  // Keystores are encrypted, but the folder still shouldn't be listable by other users.
+  ensureSecureDir(WALLETS_DIR);
 }
 
 /**
@@ -50,14 +50,14 @@ export function walletExists(name: string): boolean {
  */
 export function saveWalletKeystore(name: string, keystore: string, address: string): void {
   ensureWalletsDir();
-  writeFileSync(getWalletPath(name), keystore);
+  writeSecureFile(getWalletPath(name), keystore);
 
   const metadata: WalletMetadata = {
     name,
     address,
     createdAt: new Date().toISOString(),
   };
-  writeFileSync(getMetadataPath(name), JSON.stringify(metadata, null, 2));
+  writeSecureFile(getMetadataPath(name), JSON.stringify(metadata, null, 2));
 }
 
 /**

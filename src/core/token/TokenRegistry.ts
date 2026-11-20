@@ -2,7 +2,8 @@
  * Token registry for tracking user's tokens
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
+import { writeSecureFile } from '../../storage/secureFs.js';
 import { join } from 'path';
 import { z } from 'zod';
 import { NetworkName } from '../network/NetworkConfig.js';
@@ -51,7 +52,7 @@ function loadRegistry(): TokenRegistry {
  */
 function saveRegistry(registry: TokenRegistry): void {
   ensureDataDir();
-  writeFileSync(TOKENS_FILE, JSON.stringify(registry, null, 2));
+  writeSecureFile(TOKENS_FILE, JSON.stringify(registry, null, 2));
 }
 
 /**

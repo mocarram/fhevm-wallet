@@ -2,7 +2,8 @@
  * Address book storage for saving frequently used addresses
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
+import { writeSecureFile } from './secureFs.js';
 import { join } from 'path';
 import { z } from 'zod';
 import { DATA_DIR, ensureDataDir } from './paths.js';
@@ -45,7 +46,7 @@ function loadAddressBook(): AddressBookData {
  */
 function saveAddressBook(book: AddressBookData): void {
   ensureDataDir();
-  writeFileSync(ADDRESS_BOOK_FILE, JSON.stringify(book, null, 2));
+  writeSecureFile(ADDRESS_BOOK_FILE, JSON.stringify(book, null, 2));
 }
 
 /**

@@ -3,7 +3,8 @@
  * Uses encrypted handle comparison to detect stale cache entries
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
+import { writeSecureFile } from '../../storage/secureFs.js';
 import { join } from 'path';
 import { DATA_DIR, ensureDataDir } from '../../storage/paths.js';
 
@@ -35,7 +36,7 @@ function loadCache(): CacheData {
 
 function saveCache(cache: CacheData): void {
   ensureDataDir();
-  writeFileSync(CACHE_FILE, JSON.stringify(cache, null, 2));
+  writeSecureFile(CACHE_FILE, JSON.stringify(cache, null, 2));
 }
 
 function getCacheKey(walletAddress: string, tokenAddress: string, network: string): string {

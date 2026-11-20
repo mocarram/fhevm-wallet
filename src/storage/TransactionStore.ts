@@ -2,7 +2,8 @@
  * Transaction history storage with blockchain sync
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
+import { writeSecureFile } from './secureFs.js';
 import { join } from 'path';
 import { z } from 'zod';
 import { NetworkName } from '../core/network/NetworkConfig.js';
@@ -64,7 +65,7 @@ function loadStore(): TransactionStoreData {
  */
 function saveStore(store: TransactionStoreData): void {
   ensureDataDir();
-  writeFileSync(TRANSACTIONS_FILE, JSON.stringify(store, null, 2));
+  writeSecureFile(TRANSACTIONS_FILE, JSON.stringify(store, null, 2));
 }
 
 /**

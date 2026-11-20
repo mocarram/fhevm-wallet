@@ -2,7 +2,8 @@
  * Audit logging for wallet operations
  */
 
-import { appendFileSync, existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
+import { appendSecureFile } from './secureFs.js';
 import { join } from 'path';
 import { DATA_DIR, ensureDataDir } from './paths.js';
 
@@ -39,7 +40,7 @@ export function logEvent(event: AuditEvent, details: Record<string, string>): vo
   const detailsStr = formatDetails(details);
   const logLine = `[${timestamp}] ${event} ${detailsStr}\n`;
 
-  appendFileSync(AUDIT_LOG_FILE, logLine);
+  appendSecureFile(AUDIT_LOG_FILE, logLine);
 }
 
 /**

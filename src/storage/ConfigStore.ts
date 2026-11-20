@@ -2,7 +2,8 @@
  * Configuration storage
  */
 
-import { existsSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
+import { writeSecureFile } from './secureFs.js';
 import { join } from 'path';
 import { z } from 'zod';
 import { NetworkName } from '../core/network/NetworkConfig.js';
@@ -40,7 +41,7 @@ export function loadConfig(): Config {
  */
 export function saveConfig(config: Config): void {
   ensureDataDir();
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  writeSecureFile(CONFIG_FILE, JSON.stringify(config, null, 2));
 }
 
 /**
