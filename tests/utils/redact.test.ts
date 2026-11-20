@@ -21,6 +21,14 @@ describe('redactSecrets', () => {
     expect(redactSecrets('key is MYETHERSCANKEY here')).toBe('key is [redacted] here');
   });
 
+  it('masks bearer tokens in any letter case', () => {
+    for (const scheme of ['Bearer', 'bearer', 'BEARER']) {
+      expect(redactSecrets(`authorization: ${scheme} abcdefgh12345678`)).toBe(
+        `authorization: ${scheme} [redacted]`,
+      );
+    }
+  });
+
   it('masks labelled private keys but keeps transaction hashes', () => {
     const hex = 'ab'.repeat(32);
     expect(redactSecrets(`privateKey: 0x${hex}`)).toBe('privateKey: [redacted]');

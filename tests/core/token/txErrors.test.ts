@@ -3,6 +3,7 @@ import { ERC7984_INTERFACE } from '../../../src/core/token/TokenService.js';
 import {
   WalletTxError,
   formatTxError,
+  sentButUnconfirmed,
   translateTxError,
 } from '../../../src/core/token/txErrors.js';
 
@@ -77,6 +78,14 @@ describe('translateTxError', () => {
     expect(translateTxError(new TypeError('fetch failed')).code).toBe('RPC_UNAVAILABLE');
   });
 
+  it('maps TRANSACTION_REPLACED to TX_REPLACED instead of UNKNOWN', () => {
+    const err = translateTxError(
+      ethersError({ code: 'TRANSACTION_REPLACED', reason: 'repriced', hash: '0xaa' }),
+    );
+    expect(err.code).toBe('TX_REPLACED');
+    expect(err.txHash).toBe('0xaa');
+  });
+
   it('maps nonce problems to NONCE_CONFLICT', () => {
     expect(translateTxError(ethersError({ code: 'NONCE_EXPIRED' })).code).toBe('NONCE_CONFLICT');
   });
@@ -91,6 +100,87 @@ describe('translateTxError', () => {
     const original = new WalletTxError('UNKNOWN', 'x', 'y', 'z');
     expect(translateTxError(original)).toBe(original);
     expect(translateTxError('weird').code).toBe('UNKNOWN');
+  });
+});
+
+describe('sentButUnconfirmed', () => {
+  const HASH = '0x' + '11'.repeat(32);
+  const REPL = '0x' + '22'.repeat(32);
+  const LINK = `https://sepolia.etherscan.io/tx/${HASH}`;
+
+  it('treats "nonce too low" after broadcast as possibly sent (gateway retries)', () => {
+    const err = sentButUnconfirmed(
+      ethersError({ code: 'NONCE_EXPIRED' }, 'nonce too low'),
+      HASH,
+      LINK,
+    );
+    expect(err.code).toBe('SENT_UNCONFIRMED');
+    expect(err.txHash).toBe(HASH);
+    expect(err.message).toMatch(/may have been sent/);
+    expect(err.hint).toBe(`Do not send again yet. Check ${LINK} first.`);
+    expect(err.hint).not.toMatch(/try again/i);
+  });
+
+  it('only INSUFFICIENT_FUNDS and REPLACEMENT_UNDERPRICED count as definitely not sent', () => {
+    const funds = sentButUnconfirmed(ethersError({ code: 'INSUFFICIENT_FUNDS' }), HASH, LINK);
+    expect(funds.code).toBe('INSUFFICIENT_GAS_FUNDS');
+    expect(funds.txHash).toBeUndefined();
+    const under = sentButUnconfirmed(ethersError({ code: 'REPLACEMENT_UNDERPRICED' }), HASH, LINK);
+    expect(under.code).toBe('NONCE_CONFLICT');
+    expect(under.txHash).toBeUndefined();
+    // Uncoded text that merely mentions funds is not proof the node refused it.
+    expect(sentButUnconfirmed(new Error('insufficient funds?'), HASH, LINK).code).toBe(
+      'SENT_UNCONFIRMED',
+    );
+    for (const code of ['TIMEOUT', 'SERVER_ERROR', 'UNKNOWN_ERROR']) {
+      expect(sentButUnconfirmed(ethersError({ code }), HASH, LINK).code).toBe('SENT_UNCONFIRMED');
+    }
+  });
+
+  it('keeps a mined revert as TX_REVERTED with the hash', () => {
+    const err = sentButUnconfirmed(
+      ethersError({ code: 'CALL_EXCEPTION', action: 'sendTransaction', receipt: { hash: HASH } }),
+      HASH,
+      LINK,
+    );
+    expect(err).toMatchObject({ code: 'TX_REVERTED', txHash: HASH });
+    expect(err.hint).toContain(LINK);
+  });
+
+  it.each([
+    ['cancelled', /cancelled by another one/, /did not happen/],
+    ['replaced', /replaced by another one/, /did not happen/],
+    ['repriced', /different fee/, /most likely went through/],
+  ])('maps TRANSACTION_REPLACED (%s) to TX_REPLACED', (reason, title, cause) => {
+    const err = sentButUnconfirmed(
+      ethersError({
+        code: 'TRANSACTION_REPLACED',
+        reason,
+        hash: HASH,
+        replacement: { hash: REPL },
+        receipt: { hash: REPL },
+      }),
+      HASH,
+      LINK,
+    );
+    expect(err.code).toBe('TX_REPLACED');
+    expect(err.message).toMatch(title);
+    expect(err.likelyCause).toMatch(cause);
+    expect(err.txHash).toBe(HASH);
+    expect(err.replacementHash).toBe(REPL);
+    expect(err.hint).toContain(`https://sepolia.etherscan.io/tx/${REPL}`);
+    expect(formatTxError(err, false)).toContain(`Replaced by:  ${REPL}`);
+  });
+
+  it('TX_REPLACED without a replacement hash still links the original', () => {
+    const err = sentButUnconfirmed(
+      ethersError({ code: 'TRANSACTION_REPLACED', reason: 'replaced', hash: HASH }),
+      HASH,
+      LINK,
+    );
+    expect(err.code).toBe('TX_REPLACED');
+    expect(err.replacementHash).toBeUndefined();
+    expect(err.hint).toContain(LINK);
   });
 });
 

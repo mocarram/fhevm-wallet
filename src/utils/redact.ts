@@ -46,7 +46,7 @@ export function redactSecrets(text: string): string {
   out = out.replace(/(\/v[23]\/)[A-Za-z0-9_-]{16,}/g, `$1${REDACTED}`);
 
   // 3b. Bearer tokens and JSON "apiKey": "…" fields.
-  out = out.replace(/(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}/g, `$1${REDACTED}`);
+  out = out.replace(/(bearer\s+)[A-Za-z0-9._~+/=-]{8,}/gi, `$1${REDACTED}`);
   out = out.replace(/("api[_-]?key"\s*:\s*")[^"]+"/gi, `$1${REDACTED}"`);
 
   // 4. user:password@ in URLs.

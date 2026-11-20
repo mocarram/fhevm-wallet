@@ -1504,6 +1504,7 @@ async function handleSend(): Promise<void> {
     const txErr = translateTxError(err);
     // After broadcast the transfer may still confirm: never present that as a failure.
     if (txErr.code === 'SENT_UNCONFIRMED') encryptSpinner.warn('Sent, not confirmed yet');
+    else if (txErr.code === 'TX_REPLACED') encryptSpinner.warn('Transaction replaced');
     else
       encryptSpinner.fail(
         txErr.code === 'TX_REVERTED' ? 'Transaction reverted' : 'Transaction failed',

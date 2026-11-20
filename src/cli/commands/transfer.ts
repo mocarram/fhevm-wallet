@@ -346,6 +346,7 @@ export function registerTransferCommand(program: Command): void {
             const txErr = translateTxError(err);
             // After broadcast the transfer may still confirm: never present that as a failure.
             if (txErr.code === 'SENT_UNCONFIRMED') sendSpinner.warn('Sent, not confirmed yet');
+            else if (txErr.code === 'TX_REPLACED') sendSpinner.warn('Transaction replaced');
             else
               sendSpinner.fail(
                 txErr.code === 'TX_REVERTED' ? 'Transaction reverted' : 'Transaction failed',

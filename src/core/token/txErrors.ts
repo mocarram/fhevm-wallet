@@ -22,6 +22,7 @@ export type TxErrorCode =
   | 'AMOUNT_OUT_OF_RANGE'
   | 'TX_REVERTED'
   | 'SENT_UNCONFIRMED'
+  | 'TX_REPLACED'
   | 'UNKNOWN';
 
 /** A user-facing transaction error. `raw` is only shown when the user asks for details. */
@@ -38,6 +39,11 @@ export class WalletTxError extends Error {
    * to check the explorer instead of resending (which could send the money twice).
    */
   readonly txHash?: string;
+  /**
+   * Set for TX_REPLACED: the hash of the transaction that was mined in place of `txHash`
+   * (same nonce). The UI shows it so the user can look up what actually happened.
+   */
+  readonly replacementHash?: string;
 
   constructor(
     code: TxErrorCode,
@@ -46,6 +52,7 @@ export class WalletTxError extends Error {
     hint: string,
     raw = '',
     txHash?: string,
+    replacementHash?: string,
   ) {
     super(title);
     this.name = 'WalletTxError';
@@ -54,6 +61,7 @@ export class WalletTxError extends Error {
     this.hint = hint;
     this.raw = redactSecrets(raw);
     this.txHash = txHash;
+    this.replacementHash = replacementHash;
   }
 }
 
@@ -67,6 +75,9 @@ interface EthersLikeError {
   data?: string | null;
   revert?: { name?: string; args?: unknown[] } | null;
   receipt?: { hash?: string } | null;
+  /** TRANSACTION_REPLACED only: why ethers thinks the transaction was replaced. */
+  hash?: string;
+  replacement?: { hash?: string } | null;
 }
 
 /** Custom errors declared by OpenZeppelin's ERC7984, mapped to plain language. */
@@ -158,6 +169,54 @@ function decodeCustomError(data: string | null | undefined, iface?: Interface): 
 }
 
 /**
+ * Build the error for ethers' TRANSACTION_REPLACED, which wait() throws when another
+ * transaction with the same nonce was mined instead of ours. ethers classifies it:
+ * - "repriced":  same recipient, data and value, different fee. The same action most
+ *   likely happened, under a different hash.
+ * - "cancelled": a zero-value self-send took the nonce. This action did not happen.
+ * - "replaced":  some other transaction took the nonce. This action did not happen as sent.
+ * We never claim success here: the user checks the explorer, which is the source of truth.
+ */
+function replacedError(
+  e: EthersLikeError,
+  raw: string,
+  action: string,
+  txHash?: string,
+  explorerUrl?: string,
+): WalletTxError {
+  const original = txHash ?? e.hash;
+  const replacementHash = e.replacement?.hash ?? undefined;
+  // Point at the transaction that was actually mined when we know it. Explorer URLs end
+  // in /tx/<hash>, so swap the hash rather than needing the network here.
+  let link = explorerUrl;
+  if (link && original && replacementHash && link.endsWith(original)) {
+    link = link.slice(0, -original.length) + replacementHash;
+  }
+  const check = link ? `Check ${link}` : 'Check the transaction on the block explorer';
+  if (e.reason === 'repriced') {
+    return new WalletTxError(
+      'TX_REPLACED',
+      'The transaction was re-sent with a different fee.',
+      `Another transaction with the same nonce, recipient and data was mined instead, so the ${action} most likely went through under a different hash.`,
+      `Do not send again. ${check} to confirm it.`,
+      raw,
+      original,
+      replacementHash,
+    );
+  }
+  const how = e.reason === 'cancelled' ? 'cancelled' : 'replaced';
+  return new WalletTxError(
+    'TX_REPLACED',
+    `The transaction was ${how} by another one with the same nonce.`,
+    `A different transaction from this wallet was mined in its place, so this ${action} did not happen as sent.`,
+    `${check} to see what was mined before trying again.`,
+    raw,
+    original,
+    replacementHash,
+  );
+}
+
+/**
  * Convert any error thrown while preparing or sending a transaction into a WalletTxError.
  * Already-translated errors pass through unchanged.
  */
@@ -191,6 +250,11 @@ export function translateTxError(err: unknown, opts: TranslateOptions = {}): Wal
       raw,
       e.receipt.hash,
     );
+  }
+
+  // wait() saw another transaction with the same nonce mined instead of this one.
+  if (e.code === 'TRANSACTION_REPLACED') {
+    return replacedError(e, raw, action);
   }
 
   // A custom error from the token contract: decoded by ethers, or decoded here from data.
@@ -263,8 +327,20 @@ export function translateTxError(err: unknown, opts: TranslateOptions = {}): Wal
 }
 
 /**
- * Wrap an error that happened *after* a transaction was broadcast. The transaction may
- * still confirm, so the user must not be told to "try again".
+ * Node refusals (ethers error codes) that prove a broadcast transaction was NOT accepted,
+ * so a retry after fixing the cause is safe.
+ *
+ * NONCE_EXPIRED ("nonce too low") is deliberately not here. Public RPC gateways retry
+ * eth_sendRawTransaction across backends: backend A can accept and mine our transaction
+ * while backend B then answers "nonce too low" because of that very transaction. Treating
+ * that as "not sent" would tell the user to send again and pay twice.
+ */
+const DEFINITELY_NOT_SENT = new Set(['INSUFFICIENT_FUNDS', 'REPLACEMENT_UNDERPRICED']);
+
+/**
+ * Wrap an error that happened *after* a transaction was signed and handed to the network
+ * (broadcast or wait). The transaction may still confirm, so the user must not be told to
+ * "try again" unless the node's answer proves it was refused (see DEFINITELY_NOT_SENT).
  */
 export function sentButUnconfirmed(
   err: unknown,
@@ -272,6 +348,8 @@ export function sentButUnconfirmed(
   explorerUrl: string,
   opts: TranslateOptions = {},
 ): WalletTxError {
+  const e = (err ?? {}) as EthersLikeError;
+  const action = opts.action ?? 'send';
   const translated = translateTxError(err, opts);
   if (translated.code === 'TX_REVERTED') {
     // Mined and reverted: point straight at the explorer entry.
@@ -284,15 +362,24 @@ export function sentButUnconfirmed(
       txHash,
     );
   }
-  // The node refused the transaction outright, so it was definitely not sent and a
-  // retry (after fixing the cause) is safe.
-  if (translated.code === 'INSUFFICIENT_GAS_FUNDS' || translated.code === 'NONCE_CONFLICT') {
+  if (translated.code === 'TX_REPLACED') {
+    return replacedError(e, translated.raw, action, txHash, explorerUrl);
+  }
+  // Decide on the original ethers code, not the translated one: NONCE_EXPIRED and
+  // REPLACEMENT_UNDERPRICED both translate to NONCE_CONFLICT but mean different things here.
+  // Anything else, including an unclassified error that merely mentions "insufficient
+  // funds", errs on the side of "may have been sent".
+  if (e.code !== undefined && DEFINITELY_NOT_SENT.has(e.code)) {
     return translated;
   }
+  const cause =
+    e.code === 'NONCE_EXPIRED'
+      ? "The network said this wallet's nonce was already used. That can happen when this very transaction was already accepted, so it may confirm."
+      : 'The connection dropped, timed out or returned an unclear answer. The transaction may still confirm.';
   return new WalletTxError(
     'SENT_UNCONFIRMED',
-    'The transaction was sent, but its confirmation could not be checked.',
-    'The connection dropped or timed out while waiting. The transaction may still confirm.',
+    'The transaction may have been sent, but its confirmation could not be checked.',
+    cause,
     `Do not send again yet. Check ${explorerUrl} first.`,
     translated.raw,
     txHash,
@@ -303,6 +390,7 @@ export function sentButUnconfirmed(
 export function formatTxError(err: WalletTxError, includeRaw = wantsErrorDetails()): string {
   const lines = [err.message, '', `Likely cause: ${err.likelyCause}`, `What to try:  ${err.hint}`];
   if (err.txHash) lines.push(`Transaction:  ${err.txHash}`);
+  if (err.replacementHash) lines.push(`Replaced by:  ${err.replacementHash}`);
   if (includeRaw && err.raw) lines.push('', `Technical details: ${err.raw}`);
   else if (err.raw) lines.push('', 'Set FHEW_DEBUG=1 to see technical details.');
   return lines.join('\n');
