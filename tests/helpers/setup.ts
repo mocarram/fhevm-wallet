@@ -13,6 +13,8 @@ delete process.env.SEPOLIA_RPC_URL;
 delete process.env.ETHERSCAN_API_KEY;
 delete process.env.ZAMA_MAINNET_API_KEY;
 delete process.env.OVERRIDE_NETWORK;
+delete process.env.FHEVM_WALLET_HOME;
+delete process.env.FHEW_DEBUG;
 
 afterAll(() => {
   rmSync(TEST_HOME, { recursive: true, force: true });

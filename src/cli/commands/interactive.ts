@@ -400,7 +400,13 @@ async function handleSetEtherscanKey(): Promise<void> {
     },
   ]);
 
-  saveEnvVar('ETHERSCAN_API_KEY', apiKey.trim());
+  // The .env writer refuses values that could inject other settings; say so plainly.
+  try {
+    saveEnvVar('ETHERSCAN_API_KEY', apiKey.trim());
+  } catch (err) {
+    console.log(error(err instanceof Error ? err.message : 'Could not save the key'));
+    return;
+  }
 
   console.log();
   console.log(success('Etherscan API key saved'));
@@ -469,7 +475,13 @@ async function handleSetZamaApiKey(): Promise<void> {
     },
   ]);
 
-  saveEnvVar('ZAMA_MAINNET_API_KEY', apiKey.trim());
+  // The .env writer refuses values that could inject other settings; say so plainly.
+  try {
+    saveEnvVar('ZAMA_MAINNET_API_KEY', apiKey.trim());
+  } catch (err) {
+    console.log(error(err instanceof Error ? err.message : 'Could not save the key'));
+    return;
+  }
 
   console.log();
   console.log(success('Zama Mainnet API key saved'));

@@ -131,13 +131,23 @@ export function createProgram(): Command {
         }
 
         if (options.etherscanKey) {
-          saveEnvVar('ETHERSCAN_API_KEY', options.etherscanKey);
-          console.log(chalk.green('Etherscan API key saved'));
+          try {
+            saveEnvVar('ETHERSCAN_API_KEY', options.etherscanKey.trim());
+            console.log(chalk.green('Etherscan API key saved'));
+          } catch (err) {
+            console.log(chalk.red(err instanceof Error ? err.message : 'Could not save key'));
+            process.exitCode = 1;
+          }
         }
 
         if (options.zamaKey) {
-          saveEnvVar('ZAMA_MAINNET_API_KEY', options.zamaKey);
-          console.log(chalk.green('Zama Mainnet API key saved'));
+          try {
+            saveEnvVar('ZAMA_MAINNET_API_KEY', options.zamaKey.trim());
+            console.log(chalk.green('Zama Mainnet API key saved'));
+          } catch (err) {
+            console.log(chalk.red(err instanceof Error ? err.message : 'Could not save key'));
+            process.exitCode = 1;
+          }
         }
       },
     );
