@@ -368,7 +368,17 @@ export const sendReviewScreen: ScreenDef = {
     return {
       body,
       items: [
-        { label: isUnlocked(s) ? 'Confirm and send' : 'Confirm and sign', act: confirmSend },
+        // Until the checks pass there is nothing to confirm: the item says so.
+        !isUnlocked(s)
+          ? { label: 'Confirm and sign', act: confirmSend }
+          : isPrepared(s)
+            ? { label: 'Confirm and send', act: confirmSend }
+            : {
+                label: 'Checking…',
+                disabled: true,
+                note: 'fee and checks first',
+                act: confirmSend,
+              },
         { label: 'Change amount', act: (st) => back(st) },
         cancelItem,
       ],

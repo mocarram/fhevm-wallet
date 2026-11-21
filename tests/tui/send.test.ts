@@ -303,3 +303,22 @@ describe('exact amounts after Review', () => {
     expect(t).not.toMatch(/0\.00 cUSDC/);
   });
 });
+
+describe('Review while the checks run', () => {
+  it('shows "Checking…" until prepared, and clears the note once the checks pass', async () => {
+    const h = new Harness({ unlocked: true });
+    await h.keys('s', '{enter}', '{enter}');
+    h.press('25', '{enter}'); // checks queued, not yet run
+    expect(h.screen).toBe('send-review');
+    expect(h.text()).toMatch(/1 {2}Checking… +fee and checks first/);
+    expect(h.text()).not.toMatch(/Confirm and send/);
+    h.press('{enter}');
+    expect(h.screen).toBe('send-review');
+    expect(h.text()).toMatch(/Still checking the transfer/);
+    await h.settle();
+    expect(h.text()).toMatch(/1 {2}Confirm and send/);
+    expect(h.text()).not.toMatch(/Still checking/);
+    expect(h.text()).toMatch(/✔ Simulation passed/);
+    expect(h.s.countdown).toBeNull();
+  });
+});

@@ -227,6 +227,7 @@ export function reviewChecks(s: AppState): Effect[] {
           if (draftKey(st) !== key) return onReview(st) ? reviewChecks(st) : undefined;
           st.send.prepared = prepared;
           st.send.preparedFor = key;
+          if (st.flash === STILL_CHECKING) st.flash = null;
           st.eth = { wei: prepared.ethBalanceWei, at };
           st.balances[t.address.toLowerCase()] = {
             value: prepared.tokenBalance,
@@ -238,6 +239,7 @@ export function reviewChecks(s: AppState): Effect[] {
         const error = describeError(err, { action: 'send' });
         return (st) => {
           st.send.checking = false;
+          if (st.flash === STILL_CHECKING) st.flash = null;
           if (draftKey(st) !== key) return onReview(st) ? reviewChecks(st) : undefined;
           st.errorView = { error, afterBroadcast: false, showRaw: false };
           if (st.stack[st.stack.length - 1].id === 'send-review') return open(st, 'send-error');
@@ -246,6 +248,11 @@ export function reviewChecks(s: AppState): Effect[] {
     }),
   ];
 }
+
+/** The note for Enter on Review while the checks run; cleared when they finish. */
+export const STILL_CHECKING: Line[] = [
+  dimLine('  Still checking the transfer. Confirm once the fee and the checks show.'),
+];
 
 function onReview(s: AppState): boolean {
   return s.stack[s.stack.length - 1].id === 'send-review';
@@ -261,7 +268,8 @@ export function afterSignUnlock(s: AppState): Effect[] {
 export function confirmSend(s: AppState): Effect[] {
   if (!isUnlocked(s)) return open(s, 'send-sign');
   if (!isPrepared(s)) {
-    s.flash = [dimLine('  Still checking the transfer. One moment.')];
+    // Nothing is queued: the user confirms once the fee and the checks are on screen.
+    s.flash = STILL_CHECKING;
     return reviewChecks(s);
   }
   if (s.network === 'mainnet') {
