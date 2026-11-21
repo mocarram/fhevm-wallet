@@ -156,7 +156,8 @@ describe('describeError', () => {
       shortMessage: 'could not detect network',
     });
     const d = describeError(err, { action: 'decrypt' });
-    expect(d.title).toBe('Could not reach the network.');
+    expect(d.title).toMatch(/^Could not reach the network\./);
+    expect(d.title).not.toContain('abc');
     expect(d.code).toBe('RPC_UNAVAILABLE');
   });
 
@@ -170,6 +171,19 @@ describe('describeError', () => {
     expect(d.title).not.toContain('second line');
     expect(d.title).toContain('https://eth.example.com');
     expect(safeText('privateKey: 0x' + 'a'.repeat(64))).not.toMatch(/a{64}/);
+  });
+
+  it('masks pieces of the configured RPC URL through the shared CLI redaction', () => {
+    const before = process.env.SEPOLIA_RPC_URL;
+    process.env.SEPOLIA_RPC_URL = 'https://rpc.example.org/k/Zq8sTokenPiece77';
+    try {
+      const d = describeError(new Error('boom near Zq8sTokenPiece77 here'));
+      expect(d.title).not.toContain('Zq8sTokenPiece77');
+      expect(d.raw).not.toContain('Zq8sTokenPiece77');
+    } finally {
+      if (before === undefined) delete process.env.SEPOLIA_RPC_URL;
+      else process.env.SEPOLIA_RPC_URL = before;
+    }
   });
 
   it('falls back for non-errors and renders lines', () => {
