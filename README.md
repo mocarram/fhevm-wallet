@@ -54,7 +54,7 @@ Then, on any screen:
 | Ctrl+C | Back to Home; twice on Home quits |
 | : | Command bar: `send bob 25 cusdc`, `balances`, `doctor`, `lock`, `help`, … |
 | ? | Help for the current screen |
-| L | Lock now (the decrypted key is only ever held in memory) |
+| L (or l) | Lock now (the decrypted key is only ever held in memory) |
 
 Sends go Token → Recipient → Amount → Review → Sign. Amounts accept `25`, `1,250.50`,
 `1k`, `half` and `max` and show the exact value. A pasted address that looks like a saved
@@ -63,7 +63,8 @@ On Mainnet you retype the amount and a countdown always runs before broadcasting
 
 Try the UI without any network or funds against the offline simulation (a `MOCK` badge is
 shown). It needs a throwaway data folder, so simulated tokens and history stay out of your
-real one (it refuses to run on `~/.fhevm-wallet`):
+real one. It marks the folder with a `.fhew-mock` file, refuses any folder that already
+holds wallet data, and the real wallet then refuses the marked folder:
 
 ```bash
 FHEW_BACKEND=mock FHEVM_WALLET_HOME=$(mktemp -d) fhew
@@ -113,9 +114,19 @@ fhew balance --network mainnet
 # Send tokens (interactive prompts)
 fhew send
 
-# Send tokens with arguments
-fhew send 0x... 100 --token 0x...
+# Send tokens with arguments: contact or address, friendly amount, token symbol or address
+fhew send bob 25 cusdc
+fhew send 0x... 1,250.50 --token 0x...
+fhew send bob half cusdc
+
+# In scripts: the password from a pipe, no confirmation prompt (the checks still run)
+pass show my-wallet | fhew send bob 25 cusdc --password-stdin --yes
+pass show my-wallet | fhew balance --password-stdin
 ```
+
+A pasted address that looks like one of your contacts stops the send. Without a
+terminal, prompts are never shown: pass the values as arguments, `--password-stdin` and
+`--yes`. Exporting a raw private key is interactive only.
 
 ### Configuration
 

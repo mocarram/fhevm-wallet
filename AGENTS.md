@@ -72,8 +72,12 @@ default and must print a visible `MOCK` badge in the status bar. Knobs:
 `FHEW_MOCK_LATENCY_MS`, `FHEW_MOCK_CONFIRM_MS`, `FHEW_MOCK_ETH` and
 `FHEW_MOCK_FAIL=simulate|unconfirmed|reverted|replaced|rpc` (failures go through the real
 error translation). Keystores, contacts, tokens and settings always use the real storage,
-so the mock refuses to start unless `FHEVM_WALLET_HOME` is set to a folder other than
-`~/.fhevm-wallet` (use `FHEVM_WALLET_HOME=$(mktemp -d)`). The TUI shows
+so mock and real data never share a folder (`src/core/backend/mockGuard.ts`):
+`FHEW_BACKEND` and `FHEVM_WALLET_HOME` are taken from the launch environment, never a
+`.env`; the mock runs only in a folder marked `.fhew-mock`, which it creates only in a
+missing or empty folder other than `~/.fhevm-wallet`; every command refuses a marked
+folder without `FHEW_BACKEND=mock`; and under the mock only the TUI, `send`, `wallet` and
+help run (the rest would reach the real network). Use `FHEVM_WALLET_HOME=$(mktemp -d)`. The TUI shows
 "MOCK · simulated, no real funds" right after the brand in the status bar.
 
 ## Terminal UI (src/tui)
@@ -102,6 +106,10 @@ Rules: screens never do I/O in `view` (they render from `state.data`, a snapshot
 reloaded by effects); every user-visible error goes through `describeError`; secret text
 fields are listed in `SECRET_FIELDS` and cleared on Esc/Ctrl+C; no ora spinners or
 `console.log` while the TUI owns the screen.
+
+`fhew send bob 25 cusdc` uses the same core/send helpers and the Backend as the TUI, so
+the TUI's "Next time" hint is a working command (an e2e test runs it). Scripts use
+`--password-stdin` (send, balance) and `--yes`; prompts refuse without a terminal.
 
 Testing: `tests/tui/harness.ts` drives the real core with the MockBackend and no delays
 (press keys, `settle()` effects, `text()` the frame). `tests/e2e/tui.e2e.test.ts` runs the

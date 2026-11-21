@@ -39,7 +39,7 @@ This file is the text reference agents build against.
 | a | Save last new address as contact | Home, when offered |
 | : | Command bar | not in text fields |
 | ? | Help for this screen | not in text fields |
-| L | Lock now | not in text fields |
+| L or l | Lock now | not in text fields |
 | / | Filter list (planned, Phase 4) | long lists |
 | e | What happened to the last send | Home, after a failed send |
 | p | Paste an address | Send › Recipient |
@@ -56,7 +56,8 @@ Wallets, Tokens, Address book, Settings, Doctor, `0` Quit.
 Token → Recipient → Amount → Review → Sign, with a stepper line. Amount accepts
 `25`, `1,250.50`, `1k`, `half`, `max` and shows the exact value. Review shows the fee
 estimate and three checks (simulation, balance, ERC-7984). If unlocked, Sign is skipped.
-If locked, Sign asks for the password and then returns to Review, now with the fee
+With "Stay unlocked for: every action", the unlock lasts for this one send: it
+locks as soon as the send is broadcast or cancelled. If locked, Sign asks for the password and then returns to Review, now with the fee
 and the three checks (they need the decrypted key), so nothing is broadcast that the
 user has not seen checked. On Mainnet the amount is retyped before the countdown.
 Then a cancellable countdown (default 5 s; at least 5 s on Mainnet), broadcast, and
