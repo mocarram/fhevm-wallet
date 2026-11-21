@@ -3,8 +3,9 @@
  *
  * On a TTY the secret is drawn on the terminal's *alternate screen* (the buffer full-screen
  * apps like vim use). Leaving the alternate screen restores the previous contents, and
- * most terminals do not keep alternate-screen output in scrollback. The user presses any
- * key to wipe it.
+ * most terminals do not keep alternate-screen output in scrollback. The user presses Enter
+ * to wipe it (Ctrl+C also wipes); other keys are ignored, so a stray key press cannot
+ * wipe a recovery phrase before it was written down.
  *
  * When stdout is not a TTY (piped, CI) there is no alternate screen; the secret is printed
  * with a warning, because the user explicitly asked for it.
@@ -57,7 +58,7 @@ export async function showSecretScreen(
     [
       ...body,
       '  Write it down or store it in a password manager.',
-      '  Press any key to wipe this screen.',
+      '  Press Enter when you have it. The screen is then wiped.',
       '',
     ].join('\n'),
   );
@@ -83,12 +84,15 @@ export async function showSecretScreen(
   input.setRawMode(true);
   input.resume();
   const openedAt = Date.now();
-  let onData: () => void = () => {};
+  let onData: (chunk?: Buffer | string) => void = () => {};
   let onEnd: () => void = () => {};
   try {
     await new Promise<void>((resolve) => {
-      onData = () => {
-        if (Date.now() - openedAt >= ignoreInputMs) resolve();
+      onData = (chunk?: Buffer | string) => {
+        if (Date.now() - openedAt < ignoreInputMs) return;
+        const text = chunk === undefined ? '' : chunk.toString();
+        // Enter wipes; Ctrl+C and Ctrl+D (raw mode delivers them as bytes) too.
+        if (/[\r\n\x03\x04]/.test(text)) resolve();
       };
       // If stdin closes there is no key to wait for; wipe rather than hang.
       onEnd = () => resolve();

@@ -11,7 +11,7 @@ function capture(isTTY: boolean) {
 }
 
 describe('showSecretScreen', () => {
-  it('uses the alternate screen on a TTY and wipes it after a key press', async () => {
+  it('uses the alternate screen on a TTY and wipes it after Enter, not any key', async () => {
     const input = new PassThrough() as PassThrough & {
       isTTY?: boolean;
       setRawMode?: (b: boolean) => void;
@@ -24,9 +24,15 @@ describe('showSecretScreen', () => {
       output: out,
       ignoreInputMs: 0,
     });
+    let wiped = false;
+    void done.then(() => (wiped = true));
     setTimeout(() => input.write('x'), 10);
+    await new Promise((r) => setTimeout(r, 40));
+    expect(wiped).toBe(false); // a stray key does not wipe the phrase
+    input.write('\r');
     expect(await done).toBe(true);
     const t = text();
+    expect(t).toMatch(/Press Enter when you have it/);
     expect(t.startsWith('\x1b[?1049h')).toBe(true); // entered alternate screen first
     expect(t).toContain('0xSECRET');
     expect(t.endsWith('\x1b[2J\x1b[?1049l')).toBe(true); // cleared and left it last
@@ -73,7 +79,7 @@ describe('showSecretScreen input guard', () => {
     await new Promise((r) => setTimeout(r, 30));
     expect(wiped).toBe(false);
     await new Promise((r) => setTimeout(r, 100));
-    input.write('x');
+    input.write('\r');
     await done;
     expect(text().endsWith('\x1b[2J\x1b[?1049l')).toBe(true);
   });
@@ -101,7 +107,7 @@ describe('showSecretScreen and signals', () => {
     expect(input.setRawMode).toHaveBeenLastCalledWith(false);
     expect(text().endsWith('\x1b[2J\x1b[?1049l')).toBe(true);
     expect(fakeProc.exit).toHaveBeenCalledWith(143);
-    input.write('x'); // let the pending promise settle
+    input.write('\r'); // let the pending promise settle
   });
 
   it('removes its signal handlers once the screen is wiped', async () => {
@@ -120,7 +126,7 @@ describe('showSecretScreen and signals', () => {
       ignoreInputMs: 0,
       proc: fakeProc as never,
     });
-    setTimeout(() => input.write('x'), 10);
+    setTimeout(() => input.write('\r'), 10);
     await done;
     expect(fakeProc.listenerCount('SIGTERM')).toBe(0);
     expect(fakeProc.listenerCount('SIGINT')).toBe(0);

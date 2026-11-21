@@ -109,7 +109,10 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
       { keys: `${PASSWORD}\r` },
       { expect: 'Recovery phrase for alice', timeout: 30 },
       { sleep: 0.5 },
+      // Only Enter wipes the phrase: a stray key leaves it on screen.
       { keys: 'x' },
+      { expect: 'Press Enter when you have it' },
+      { keys: '\r' },
       { expect: 'Which network' },
       { keys: '1' },
       { expect: 'suggested' },

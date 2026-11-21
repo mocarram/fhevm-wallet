@@ -147,5 +147,8 @@ to send again until it is checked; they never offer "try again".
 
 ## Secrets
 
-Private keys and recovery phrases are shown on a screen that is cleared on the next key
-press, so they do not remain in scrollback.
+Private keys and recovery phrases are shown on a separate screen that is wiped when the
+user presses Enter (or Ctrl+C); other keys are ignored, so a stray key cannot wipe a new
+recovery phrase before it was written down. Nothing stays in scrollback. Wallets › Back up
+offers the private key, the recovery phrase (password first; wallets imported from a key
+have none) and an encrypted keystore file.

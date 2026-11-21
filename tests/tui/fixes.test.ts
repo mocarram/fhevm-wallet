@@ -273,3 +273,25 @@ describe('verifier findings', () => {
     expect(h.text()).not.toMatch(/✔ Saved/);
   });
 });
+
+describe('back up the recovery phrase', () => {
+  it('shows the phrase again on the private screen after the password', async () => {
+    const h = new Harness();
+    const created = await createWallet('alice', 'secret-pass');
+    h.s.wallet = { name: 'alice', address: created.address };
+    await h.keys('5'); // Wallets
+    const backup = h.text().match(/(\d) {2}Back up alice/);
+    expect(backup).not.toBeNull();
+    await h.keys(backup![1]);
+    expect(h.text()).toMatch(/3 {2}Show recovery phrase on a private screen/);
+    await h.keys('3', 'wrong', '{enter}');
+    expect(h.text()).toMatch(/did not unlock alice/);
+    expect(h.secrets).toHaveLength(0);
+    await h.keys('secret-pass', '{enter}');
+    expect(h.secrets).toHaveLength(1);
+    expect(h.secrets[0].title).toBe('Recovery phrase for alice');
+    expect(h.secrets[0].lines.join(' ')).toContain(created.mnemonic.split(' ')[0]);
+    expect(h.screen).toBe('wallets');
+    expect(h.s.inputs.password).toBeUndefined();
+  });
+});

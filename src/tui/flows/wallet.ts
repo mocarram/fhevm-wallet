@@ -17,6 +17,7 @@ import {
 } from '../../core/wallet/WalletManager.js';
 import { getDefaultWallet, setDefaultWallet, updateConfig } from '../../storage/ConfigStore.js';
 import { formatPhrase } from '../../cli/utils/secretScreen.js';
+import { logEvent } from '../../storage/AuditLog.js';
 import { effect, type Effect } from '../effects.js';
 import { frame, clearSecrets, goHome, lockWallet, type AppState } from '../state.js';
 import { line, seg } from '../text.js';
@@ -235,6 +236,60 @@ export function exportPrivateKey(s: AppState): Effect[] {
         delete st.inputs.password;
         popTo(st, 'wallets');
         st.flash = [line('  ', seg('✔ Screen wiped. The key is not in your scrollback.', 'green'))];
+      };
+    }),
+  ];
+}
+
+/**
+ * Ask for the password, then show the recovery phrase on the private screen (wiped on
+ * Enter). Wallets imported from a private key have no phrase; that is said, not shown.
+ */
+export function exportRecoveryPhrase(s: AppState): Effect[] {
+  const wallet = s.wallet;
+  const password = s.inputs.password ?? '';
+  if (!wallet) return [];
+  if (!password) {
+    s.fieldError = ['Type your wallet password.', 'The phrase is decrypted only to show it.'];
+    return [];
+  }
+  s.busy = 'Decrypting';
+  return [
+    effect('export-phrase', async (deps) => {
+      let phrase: string | undefined;
+      try {
+        const w = await loadWallet(wallet.name, password);
+        phrase = 'mnemonic' in w ? w.mnemonic?.phrase : undefined;
+      } catch {
+        return (st) => {
+          st.busy = null;
+          delete st.inputs.password;
+          st.fieldError = [
+            `That password did not unlock ${wallet.name}.`,
+            'Check it and try again.',
+          ];
+        };
+      }
+      if (!phrase) {
+        return (st) => {
+          st.busy = null;
+          delete st.inputs.password;
+          st.fieldError = [
+            `${wallet.name} has no recovery phrase: it was imported from a private key.`,
+            'Back it up with the private key or an encrypted keystore file instead.',
+          ];
+        };
+      }
+      logEvent('WALLET_EXPORTED', { name: wallet.name, format: 'phrase' });
+      await deps.showSecret(`Recovery phrase for ${wallet.name}`, formatPhrase(phrase));
+      phrase = '';
+      return (st) => {
+        st.busy = null;
+        delete st.inputs.password;
+        popTo(st, 'wallets');
+        st.flash = [
+          line('  ', seg('✔ Screen wiped. The phrase is not in your scrollback.', 'green')),
+        ];
       };
     }),
   ];

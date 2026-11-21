@@ -19,6 +19,7 @@ import {
   defaultKeystorePath,
   exportKeystore,
   exportPrivateKey,
+  exportRecoveryPhrase,
   finishNewWallet,
   removeCurrentWallet,
   switchWallet,
@@ -60,7 +61,11 @@ export const walletsScreen: ScreenDef = {
         { label: 'Switch wallet', act: (st) => open(st, 'wallet-switch') },
         { label: 'Create new wallet', act: (st) => startWizard(st, 'create') },
         { label: 'Import wallet', act: (st) => open(st, 'wallet-import-type', { flow: 'import' }) },
-        { label: `Export ${name}'s key`, act: (st) => open(st, 'export-confirm') },
+        {
+          label: `Back up ${name}`,
+          note: 'key, recovery phrase or keystore file',
+          act: (st) => open(st, 'export-confirm'),
+        },
         {
           label: `Remove ${name}`,
           act: (st) => {
@@ -283,15 +288,15 @@ export const walletImportSecretScreen: ScreenDef = {
 };
 
 export const exportConfirmScreen: ScreenDef = {
-  crumb: crumbFor('Export key'),
+  crumb: crumbFor('Back up'),
   view: (s) => ({
     body: [
       line(
         '  ',
         seg(`Your private key gives full control of ${s.wallet?.name ?? ''}.`, 'yellow bold'),
       ),
-      dimLine('  It opens on a separate screen and is wiped when you press a key,'),
-      dimLine('  so it does not stay in your terminal scrollback.'),
+      dimLine('  Key and phrase open on a separate screen that is wiped when you press Enter,'),
+      dimLine('  so they do not stay in your terminal scrollback.'),
       BLANK,
       dimLine('  Safer option: export an encrypted keystore file instead.'),
     ],
@@ -310,6 +315,13 @@ export const exportConfirmScreen: ScreenDef = {
           return open(st, 'export-keystore');
         },
       },
+      {
+        label: 'Show recovery phrase on a private screen',
+        act: (st) => {
+          delete st.inputs.password;
+          return open(st, 'export-password', { what: 'phrase' });
+        },
+      },
       backItem('Cancel'),
     ],
     hint: 'enter select · esc back',
@@ -319,7 +331,7 @@ export const exportConfirmScreen: ScreenDef = {
 const EXPORT_PW = { field: 'password', secret: true, placeholder: 'your wallet password' };
 
 export const exportPasswordScreen: ScreenDef = {
-  crumb: crumbFor('Export key'),
+  crumb: crumbFor('Back up'),
   view: (s) => ({
     body: [
       line('  Password for ', seg(s.wallet?.name ?? '', 'bold')),
@@ -327,7 +339,12 @@ export const exportPasswordScreen: ScreenDef = {
       inputLine(s, EXPORT_PW),
     ],
     input: EXPORT_PW,
-    items: [{ label: 'Show key', act: exportPrivateKey }, backItem()],
+    items: [
+      top(s).params.what === 'phrase'
+        ? { label: 'Show recovery phrase', act: exportRecoveryPhrase }
+        : { label: 'Show key', act: exportPrivateKey },
+      backItem(),
+    ],
     hint: 'type password · enter show · esc back',
   }),
 };
