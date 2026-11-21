@@ -33,6 +33,7 @@ export function runCliAsync(
   home: string,
   env: Record<string, string> = {},
   killAfterMs = 60_000,
+  cwd?: string,
 ) {
   return new Promise<{ code: number | null; stdout: string; stderr: string; ms: number }>(
     (resolve) => {
@@ -40,6 +41,7 @@ export function runCliAsync(
       const child = spawn(process.execPath, [CLI, ...args], {
         env: { PATH: process.env.PATH ?? '', HOME: home, NO_COLOR: '1', ...env },
         stdio: ['ignore', 'pipe', 'pipe'],
+        cwd,
       });
       let stdout = '';
       let stderr = '';

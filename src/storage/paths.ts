@@ -12,6 +12,7 @@ import {
   tightenPermissions,
   writeSecureFile,
 } from './secureFs.js';
+import { validateRpcUrl } from '../utils/validation.js';
 
 /**
  * Root data directory.
@@ -98,8 +99,28 @@ export const CWD_ENV_ALLOWED_KEYS = [
 
 /** What `loadEnv` took from ./.env, so startup can say so (RPC URLs change behaviour). */
 export interface LoadEnvResult {
+  /** Keys taken from ./.env and in effect. */
   fromCwd: string[];
+  /** Keys in ./.env that are not on the allow-list. */
   ignoredFromCwd: string[];
+  /** Allow-listed RPC URLs in ./.env that failed validation, with the reason. */
+  rejectedFromCwd: { key: string; reason: string }[];
+}
+
+/** Keys whose value in process.env came from ./.env (set by `loadEnv`). */
+const keysFromCwd = new Set<string>();
+
+/** Where a setting's value in effect comes from, for `fhew config --show`. */
+export type SettingSource = 'settings' | 'cwd' | 'environment';
+
+/**
+ * Where the value of `key` in process.env comes from: the data dir's .env ("settings",
+ * which overrides everything), ./.env, or the process environment. Null when unset.
+ */
+export function settingSource(key: string): SettingSource | null {
+  if (getEnvVar(key) !== undefined) return 'settings';
+  if (!process.env[key]) return null;
+  return keysFromCwd.has(key) ? 'cwd' : 'environment';
 }
 
 /**
@@ -108,7 +129,7 @@ export interface LoadEnvResult {
  * in the current directory (never overriding the environment).
  */
 export function loadEnv(cwdEnvPath = resolve('.env')): LoadEnvResult {
-  const result: LoadEnvResult = { fromCwd: [], ignoredFromCwd: [] };
+  const result: LoadEnvResult = { fromCwd: [], ignoredFromCwd: [], rejectedFromCwd: [] };
   if (existsSync(cwdEnvPath) && resolve(cwdEnvPath) !== ENV_FILE_PATH) {
     let parsed: Record<string, string> = {};
     try {
@@ -119,10 +140,18 @@ export function loadEnv(cwdEnvPath = resolve('.env')): LoadEnvResult {
     for (const [key, value] of Object.entries(parsed)) {
       if (!(CWD_ENV_ALLOWED_KEYS as readonly string[]).includes(key)) {
         result.ignoredFromCwd.push(key);
-      } else if (process.env[key] === undefined && value !== '') {
-        process.env[key] = value;
-        result.fromCwd.push(key);
+        continue;
       }
+      if (process.env[key] !== undefined || value === '') continue;
+      // A folder's .env must not point the wallet at, say, a plain-http remote RPC.
+      const problem = key.endsWith('_RPC_URL') ? validateRpcUrl(value) : null;
+      if (problem) {
+        result.rejectedFromCwd.push({ key, reason: problem });
+        continue;
+      }
+      process.env[key] = value;
+      keysFromCwd.add(key);
+      result.fromCwd.push(key);
     }
   }
 
@@ -132,7 +161,11 @@ export function loadEnv(cwdEnvPath = resolve('.env')): LoadEnvResult {
   accessSync(DATA_DIR, fsConstants.R_OK | fsConstants.W_OK | fsConstants.X_OK);
   if (existsSync(ENV_FILE_PATH)) {
     // quiet: dotenv 17+ otherwise prints a promotional line to stdout.
-    dotenvConfig({ path: ENV_FILE_PATH, override: true, quiet: true });
+    const loaded = dotenvConfig({ path: ENV_FILE_PATH, override: true, quiet: true });
+    // The saved settings win over ./.env: don't claim ./.env is in use for those keys.
+    const saved = Object.keys(loaded.parsed ?? {});
+    result.fromCwd = result.fromCwd.filter((k) => !saved.includes(k));
+    saved.forEach((k) => keysFromCwd.delete(k));
   }
   return result;
 }

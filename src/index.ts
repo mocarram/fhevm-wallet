@@ -16,6 +16,9 @@ try {
   if (env.fromCwd.length > 0) {
     process.stderr.write(`Using ${env.fromCwd.join(', ')} from ./.env in this folder.\n`);
   }
+  for (const { key, reason } of env.rejectedFromCwd) {
+    process.stderr.write(`Ignored ${key} in ./.env: ${reason}\n`);
+  }
   if (env.ignoredFromCwd.length > 0) {
     process.stderr.write(
       `Ignored ${env.ignoredFromCwd.join(', ')} in ./.env: only RPC URLs and API keys are read from there.\n`,

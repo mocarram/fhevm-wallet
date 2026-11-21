@@ -14,7 +14,7 @@ import { registerInteractiveCommand } from './commands/interactive.js';
 import { updateConfig, loadConfig } from '../storage/ConfigStore.js';
 import { isValidNetwork } from '../utils/validation.js';
 import { NetworkName, DEFAULT_RPC_URLS } from '../core/network/NetworkConfig.js';
-import { saveEnvVar, getEnvVar } from '../storage/paths.js';
+import { saveEnvVar, settingSource, SettingSource } from '../storage/paths.js';
 import { setCustomRpc } from '../core/network/rpcSettings.js';
 import { clearProviderCache } from '../core/network/ProviderFactory.js';
 import { describeError } from './utils/userError.js';
@@ -29,6 +29,13 @@ function packageVersion(): string {
   const require = createRequire(import.meta.url);
   return (require('../../package.json') as { version: string }).version;
 }
+
+/** How `config --show` names where a setting comes from. */
+const SOURCE_LABELS: Record<SettingSource, string> = {
+  settings: 'from settings',
+  cwd: 'from ./.env',
+  environment: 'from the environment',
+};
 
 export function createProgram(): Command {
   const program = new Command();
@@ -94,30 +101,34 @@ export function createProgram(): Command {
 
         if (options.show || !hasSetOption) {
           const config = loadConfig();
-          const mainnetRpc = getEnvVar('MAINNET_RPC_URL');
-          const sepoliaRpc = getEnvVar('SEPOLIA_RPC_URL');
-          const etherscanKey = getEnvVar('ETHERSCAN_API_KEY');
-          const zamaKey = getEnvVar('ZAMA_MAINNET_API_KEY');
+          // Show what is in effect (saved settings, ./.env or the environment), masked,
+          // and where it comes from: a ./.env in this folder can change the RPC.
+          const rpcLine = (key: string, fallback: string) => {
+            const value = process.env[key];
+            const source = settingSource(key);
+            return value && source
+              ? `${maskUrl(value)}${chalk.cyan(` (custom, ${SOURCE_LABELS[source]})`)}`
+              : `${fallback}${chalk.dim(' (default)')}`;
+          };
+          const keyLine = (key: string) => {
+            const value = process.env[key];
+            const source = settingSource(key);
+            return value && source
+              ? `••••${value.slice(-4)}${chalk.dim(` (${SOURCE_LABELS[source]})`)}`
+              : chalk.dim('(not set)');
+          };
 
           console.log('Current configuration:');
           console.log(`  Default network: ${config.defaultNetwork}`);
           console.log(`  Default wallet:  ${config.defaultWallet || '(none)'}`);
           console.log();
           console.log('RPC Endpoints:');
-          console.log(
-            `  Mainnet: ${mainnetRpc ? maskUrl(mainnetRpc) : DEFAULT_RPC_URLS.mainnet}${mainnetRpc ? chalk.cyan(' (custom)') : chalk.dim(' (default)')}`,
-          );
-          console.log(
-            `  Sepolia: ${sepoliaRpc ? maskUrl(sepoliaRpc) : DEFAULT_RPC_URLS.sepolia}${sepoliaRpc ? chalk.cyan(' (custom)') : chalk.dim(' (default)')}`,
-          );
+          console.log(`  Mainnet: ${rpcLine('MAINNET_RPC_URL', DEFAULT_RPC_URLS.mainnet)}`);
+          console.log(`  Sepolia: ${rpcLine('SEPOLIA_RPC_URL', DEFAULT_RPC_URLS.sepolia)}`);
           console.log();
           console.log('API Keys:');
-          console.log(
-            `  Etherscan: ${etherscanKey ? '••••' + etherscanKey.slice(-4) : chalk.dim('(not set)')}`,
-          );
-          console.log(
-            `  Zama:      ${zamaKey ? '••••' + zamaKey.slice(-4) : chalk.dim('(not set)')}`,
-          );
+          console.log(`  Etherscan: ${keyLine('ETHERSCAN_API_KEY')}`);
+          console.log(`  Zama:      ${keyLine('ZAMA_MAINNET_API_KEY')}`);
           return;
         }
 

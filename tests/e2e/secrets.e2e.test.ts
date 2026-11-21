@@ -60,6 +60,29 @@ describe('secrets never reach the terminal', () => {
     }
   });
 
+  it('`fhew config --show` shows the RPC URL in effect and where it comes from', async () => {
+    const t = tempHome();
+    try {
+      const project = join(t.home, 'project');
+      mkdirSync(project);
+      writeFileSync(
+        join(project, '.env'),
+        `SEPOLIA_RPC_URL=https://rpc.cwd.example/v3/${KEY}\nMAINNET_RPC_URL=http://remote.example/${KEY}\n`,
+      );
+      const res = await runCliAsync(['config', '--show'], t.home, {}, 30_000, project);
+      expect(res.code).toBe(0);
+      expect(res.stdout).toMatch(
+        /Sepolia: https:\/\/rpc\.cwd\.example\/… \(custom, from \.\/\.env\)/,
+      );
+      // Plain http to a remote host is refused, so mainnet stays on the default.
+      expect(res.stderr).toMatch(/Ignored MAINNET_RPC_URL in \.\/\.env: .*https/);
+      expect(res.stdout).toMatch(/Mainnet: .* \(default\)/);
+      expect(res.stdout + res.stderr).not.toContain(KEY);
+    } finally {
+      t.cleanup();
+    }
+  });
+
   it('API keys saved with `fhew config` are never echoed back in full', async () => {
     const t = tempHome();
     try {

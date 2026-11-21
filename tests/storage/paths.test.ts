@@ -6,6 +6,7 @@ import {
   loadEnv,
   removeEnvVar,
   saveEnvVar,
+  settingSource,
 } from '../../src/storage/paths.js';
 import { wipeTestDataDir } from '../helpers/dataDir.js';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
@@ -80,6 +81,43 @@ describe('env file CRUD', () => {
       expect(loadEnv(join(dir, '.env')).fromCwd).toEqual([]);
       expect(process.env.ETHERSCAN_API_KEY).toBe('from-shell');
     } finally {
+      delete process.env.ETHERSCAN_API_KEY;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('ignores a plain-http remote RPC URL in ./.env and says why', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cwd-env-'));
+    writeFileSync(join(dir, '.env'), 'SEPOLIA_RPC_URL=http://rpc.evil.example/key\n');
+    delete process.env.SEPOLIA_RPC_URL;
+    try {
+      const res = loadEnv(join(dir, '.env'));
+      expect(process.env.SEPOLIA_RPC_URL).toBeUndefined();
+      expect(res.fromCwd).toEqual([]);
+      expect(res.rejectedFromCwd).toEqual([
+        { key: 'SEPOLIA_RPC_URL', reason: expect.stringMatching(/https/) },
+      ]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('settingSource tells saved settings, ./.env and the environment apart', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cwd-env-'));
+    writeFileSync(join(dir, '.env'), 'SEPOLIA_RPC_URL=https://cwd.example\n');
+    delete process.env.SEPOLIA_RPC_URL;
+    process.env.ETHERSCAN_API_KEY = 'from-shell';
+    try {
+      loadEnv(join(dir, '.env'));
+      expect(settingSource('SEPOLIA_RPC_URL')).toBe('cwd');
+      expect(settingSource('ETHERSCAN_API_KEY')).toBe('environment');
+      expect(settingSource('ZAMA_MAINNET_API_KEY')).toBeNull();
+      saveEnvVar('SEPOLIA_RPC_URL', 'https://saved.example');
+      expect(settingSource('SEPOLIA_RPC_URL')).toBe('settings');
+      // Saved settings win, so ./.env is no longer reported as in use for that key.
+      expect(loadEnv(join(dir, '.env')).fromCwd).toEqual([]);
+    } finally {
+      delete process.env.SEPOLIA_RPC_URL;
       delete process.env.ETHERSCAN_API_KEY;
       rmSync(dir, { recursive: true, force: true });
     }

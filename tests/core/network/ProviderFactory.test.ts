@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
 import { BrowserProvider, FetchRequest, Network } from 'ethers';
@@ -275,5 +275,26 @@ describe('FailoverJsonRpcProvider', () => {
     process.env.SEPOLIA_RPC_URL = 'https://my.node';
     expect(getRpcUrls('sepolia')).toEqual(['https://my.node']);
     delete process.env.SEPOLIA_RPC_URL;
+  });
+
+  it('getRpcUrls ignores a custom URL that fails validation, with one notice', async () => {
+    const { getRpcUrls, DEFAULT_RPC_URLS } =
+      await import('../../../src/core/network/NetworkConfig.js');
+    const writes: string[] = [];
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      writes.push(String(chunk));
+      return true;
+    });
+    try {
+      process.env.SEPOLIA_RPC_URL = 'http://remote.example/v2/KEY';
+      expect(getRpcUrls('sepolia')[0]).toBe(DEFAULT_RPC_URLS.sepolia);
+      getRpcUrls('sepolia');
+      expect(writes).toHaveLength(1);
+      expect(writes[0]).toMatch(/Ignoring SEPOLIA_RPC_URL: .*https/);
+      expect(writes[0]).not.toContain('KEY');
+    } finally {
+      spy.mockRestore();
+      delete process.env.SEPOLIA_RPC_URL;
+    }
   });
 });

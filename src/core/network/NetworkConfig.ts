@@ -2,6 +2,8 @@
  * Network configuration for supported chains
  */
 
+import { validateRpcUrl } from '../../utils/validation.js';
+
 export interface NetworkConfig {
   name: string;
   chainId: bigint;
@@ -66,23 +68,33 @@ export function getNetworkConfig(network: NetworkName): NetworkConfig {
   };
 }
 
-/**
- * Get RPC URL from environment or use defaults
- */
+/** Get the RPC URL tried first for `network`. */
 function getRpcUrl(network: NetworkName): string {
-  if (network === 'mainnet') {
-    return process.env.MAINNET_RPC_URL || DEFAULT_RPC_URLS.mainnet;
-  }
-  return process.env.SEPOLIA_RPC_URL || DEFAULT_RPC_URLS.sepolia;
+  return getRpcUrls(network)[0];
 }
+
+/** Custom URLs already reported as invalid, so the notice is printed once per process. */
+const reportedInvalid = new Set<string>();
 
 /**
  * Every RPC URL to try for `network`, in order: just the custom URL when one is set,
  * otherwise the default followed by the public fallbacks.
+ *
+ * A custom URL from the environment or ./.env is checked like one typed into `fhew config`
+ * (https, or plain http only to localhost). An invalid one is ignored with a notice on
+ * stderr: a key sent over plain http to a remote host could be read in transit.
  */
 export function getRpcUrls(network: NetworkName): string[] {
-  const custom = network === 'mainnet' ? process.env.MAINNET_RPC_URL : process.env.SEPOLIA_RPC_URL;
-  if (custom) return [custom];
+  const key = network === 'mainnet' ? 'MAINNET_RPC_URL' : 'SEPOLIA_RPC_URL';
+  const custom = process.env[key]?.trim();
+  if (custom) {
+    const problem = validateRpcUrl(custom);
+    if (!problem) return [custom];
+    if (!reportedInvalid.has(custom)) {
+      reportedInvalid.add(custom);
+      process.stderr.write(`Ignoring ${key}: ${problem} Using the default endpoints.\n`);
+    }
+  }
   return [DEFAULT_RPC_URLS[network], ...FALLBACK_RPC_URLS[network]];
 }
 
