@@ -45,6 +45,12 @@ const NetworkPrefsSchema = z.object({
   lastToken: AddressSchema.optional().catch(undefined),
   lastRecipient: AddressSchema.optional().catch(undefined),
   lastSend: LastSendSchema.optional().catch(undefined),
+  /**
+   * Expiries of operator grants made from this computer, "token:holder:operator"
+   * (lowercase) → Unix seconds. ERC-7984 has no getter for the expiry, so this is how
+   * the operator lists can say "until …" for grants they know about.
+   */
+  operatorUntil: z.record(z.string(), z.number().int().min(0)).optional().catch(undefined),
 });
 
 const UiPrefsSchema = z.object({
@@ -89,4 +95,34 @@ export function loadUiPrefs(): UiPrefs {
 export function saveUiPrefs(prefs: UiPrefs): void {
   ensureDataDir();
   writeSecureFile(PREFS_FILE, JSON.stringify(UiPrefsSchema.parse(prefs), null, 2));
+}
+
+const operatorKey = (token: string, holder: string, operator: string) =>
+  `${token}:${holder}:${operator}`.toLowerCase();
+
+/** Remember the expiry of a grant made here (0 = revoked: forgotten). */
+export function rememberOperatorUntil(
+  network: 'sepolia' | 'mainnet',
+  token: string,
+  holder: string,
+  operator: string,
+  until: number,
+): void {
+  const prefs = loadUiPrefs();
+  const map = { ...(prefs.networks[network].operatorUntil ?? {}) };
+  const key = operatorKey(token, holder, operator);
+  if (until > 0) map[key] = until;
+  else delete map[key];
+  prefs.networks[network].operatorUntil = map;
+  saveUiPrefs(prefs);
+}
+
+/** The expiry of a grant made here, or undefined when not known. */
+export function knownOperatorUntil(
+  network: 'sepolia' | 'mainnet',
+  token: string,
+  holder: string,
+  operator: string,
+): number | undefined {
+  return loadUiPrefs().networks[network].operatorUntil?.[operatorKey(token, holder, operator)];
 }

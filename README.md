@@ -158,9 +158,9 @@ fhew history --decrypt
 pass show my-wallet | fhew history --decrypt --password-stdin
 
 # Operators: an operator can move ALL of your tokens until it expires
-fhew operator list                       # contacts and recent addresses
+fhew operator list                       # contacts and recent addresses; "until …" for grants made here
 fhew operator set 0xExchange… --for 1d   # 1h, 1d, 7d, 2w, a date, or forever (typed confirmation)
-fhew operator revoke 0xExchange…
+fhew operator revoke 0xExchange…         # refused (nothing sent) if it is not an operator
 
 # Make one transfer amount public on-chain (request, then publish with the KMS proof)
 fhew disclose <txHash>
@@ -217,7 +217,7 @@ Every result names its wallet the same way, `"wallet": {"name": "alice", "addres
 the amount is known. Error codes include `INVALID_AMOUNT`, `INVALID_ADDRESS`,
 `INVALID_NETWORK`, `TOKEN_NOT_FOUND`, `CONTACT_NOT_FOUND`, `CONFLICTING_TOKENS`,
 `WALLET_NOT_FOUND`, `NO_WALLET`, `WRONG_PASSWORD`, `PASSWORD_STDIN_REQUIRED`,
-`PROMPT_NOT_ALLOWED`, `LOOKALIKE_ADDRESS`, `INSUFFICIENT_BALANCE` and the transaction
+`PROMPT_NOT_ALLOWED`, `LOOKALIKE_ADDRESS`, `INSUFFICIENT_BALANCE`, `NOT_AN_OPERATOR` and the transaction
 codes (`INSUFFICIENT_GAS_FUNDS`, `INSUFFICIENT_TOKEN_BALANCE`, `SENT_UNCONFIRMED`, `TX_REVERTED`, `TX_REPLACED`, `RPC_ERROR`, …). Changed
 after 2.0.0: `receive` and `balance` give `wallet` as that object (they had `wallet` as a name and
 a separate `address`), `send` gives `wallet` instead of `from`, and `history` and `token

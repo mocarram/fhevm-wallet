@@ -804,8 +804,10 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     expect(list.json.operators).toEqual([
       { address: set.json.operator.address, contact: 'bob', isOperator: false },
     ]);
+    // A new process: the mock forgot the grant, so the revoke is refused, unsent.
     const rev = doc(['operator', 'revoke', 'bob', '--password-stdin', '--yes']);
-    expect(rev.json).toMatchObject({ status: 'confirmed', action: 'revoke', until: 0 });
+    expect(rev.res.status).toBe(1);
+    expect(rev.json.error.code).toBe('NOT_AN_OPERATOR');
     const bad = doc(['operator', 'set', 'bob', '--for', 'soon', '--password-stdin', '--yes']);
     expect(bad.res.status).toBe(1);
     expect(bad.json.error.code).toBe('INVALID_EXPIRY');
@@ -827,16 +829,11 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
       {},
       ['operator', 'set', 'bob', '--for', '1d'],
     );
+    // The mock keeps grants in memory, so in this new process bob is no operator: the
+    // revoke is checked first and refused before the password, nothing is sent.
     runTui(
       home,
-      [
-        { expect: 'password', timeout: 20 },
-        { keys: `${PASSWORD}\r` },
-        { expect: 'Revoke this operator?', timeout: 30 },
-        { keys: 'y\r' },
-        { expect: 'can no longer move your cUSDC', timeout: 30 },
-        { exit: 0, timeout: 20 },
-      ],
+      [{ expect: 'bob', timeout: 20 }, { expect: 'is not an operator for cUSDC' }, { exit: 1 }],
       {},
       ['operator', 'revoke', 'bob'],
     );

@@ -102,6 +102,8 @@ export interface OperatorRow {
   address: string;
   label: string;
   isOperator: boolean;
+  /** Expiry (Unix seconds) of a grant made from this computer; undefined = unknown. */
+  until?: number;
 }
 
 /** A transaction error shown on the error screen. */

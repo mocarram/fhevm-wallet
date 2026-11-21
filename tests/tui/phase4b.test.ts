@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { addTokenWithInfo } from '../../src/core/token/TokenRegistry.js';
 import { loadSnapshot } from '../../src/tui/snapshot.js';
 import { wipeTestDataDir } from '../helpers/dataDir.js';
-import { BOB, BOB_LOOKALIKE, Harness } from './harness.js';
+import { BOB, BOB_LOOKALIKE, Harness, STRANGER } from './harness.js';
 
 beforeEach(() => wipeTestDataDir());
 
@@ -126,12 +126,26 @@ describe('operators', () => {
 
     await h.keys('6', '4');
     expect(h.text()).toMatch(/bob.*\boperator\b/);
+    // ERC-7984 has no expiry getter: the grant made here is remembered and shown.
+    expect(h.text()).toMatch(/bob.*operator until \w{3} \d+ \d{4}/);
     await h.keys('2'); // Revoke
     await h.keys('1'); // bob
     expect(h.text()).toMatch(/Stop bob from moving your cUSDC/);
     await h.keys('1');
     await h.advance(3_000);
     expect(h.text()).toMatch(/Revoked: bob can no longer move your cUSDC/);
+  });
+
+  it('refuses to revoke an address that is not an operator (nothing is sent)', async () => {
+    const h = new Harness({ unlocked: true });
+    await h.keys('6', '4', '2');
+    expect(h.screen).toBe('operator-revoke');
+    const another = h.text().match(/(\d) {2}Another address/)![1];
+    await h.keys(another, STRANGER, '{enter}');
+    expect(h.screen).toBe('operator-addr');
+    expect(h.text()).toMatch(/is not an operator for cUSDC/);
+    expect(h.text()).toMatch(/Nothing was signed or sent/);
+    expect(h.s.txAction).toBeNull();
   });
 
   it('never grants "forever" without the typed word', async () => {

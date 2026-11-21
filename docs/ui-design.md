@@ -127,7 +127,11 @@ expiry (1 hour, 1 day, 7 days, custom date or duration, `No expiry…` which ask
 `forever`) → Review. A pasted look-alike of a contact stops first, like Send (`Grant to
 bob instead` / `I checked it`); a first-time address is noted on the expiry step and on
 Review. Custom dates are capped at a year, like durations; longer means `forever`.
-Revoke: pick an operator or paste an address → Review.
+Revoke: pick an operator or paste an address → Review; an address that is not an
+operator is refused on the address step ("not an operator … nothing was signed or
+sent"). ERC-7984 has no getter for an operator's expiry, so grants made from this
+computer are remembered (`ui-prefs.json`) and listed as `operator until …`; others show
+`expiry unknown`.
 
 ## Review for operator changes and disclosures
 

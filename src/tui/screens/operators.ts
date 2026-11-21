@@ -3,7 +3,7 @@
  * (simulation + fee), an explicit Confirm and the send countdown (screens/tx.ts).
  */
 
-import { EXPIRY_CHOICES } from '../../core/send/operatorExpiry.js';
+import { describeExpiry, EXPIRY_CHOICES } from '../../core/send/operatorExpiry.js';
 import {
   chooseExpiry,
   confirmForever,
@@ -58,6 +58,11 @@ export const operatorsScreen: ScreenDef = {
           ' ',
           seg(pad(r.address, 44), 'dim'),
           r.isOperator ? seg('operator', 'yellow bold') : seg('not an operator', 'dim'),
+          r.isOperator
+            ? r.until !== undefined
+              ? seg(` ${describeExpiry(r.until)}`, 'yellow')
+              : seg(' · expiry unknown', 'dim')
+            : seg(''),
         ),
       );
     }

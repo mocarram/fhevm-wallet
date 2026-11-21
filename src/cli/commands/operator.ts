@@ -9,6 +9,7 @@
  * `--yes` and `--password-stdin`, and "forever" is refused (it needs a typed word).
  */
 
+import { knownOperatorUntil, rememberOperatorUntil } from '../../storage/UiPrefsStore.js';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { createBackend } from '../../core/backend/select.js';
@@ -159,6 +160,10 @@ async function list(addresses: string[], options: OperatorOptions): Promise<void
         address: a,
         contact: contacts.find((c) => c.address.toLowerCase() === a.toLowerCase())?.name ?? null,
         isOperator: Boolean(status[a.toLowerCase()]),
+        // Unix seconds, when the grant was made from this computer; else null (unknown).
+        until: status[a.toLowerCase()]
+          ? (knownOperatorUntil(network, token.address, wallet.address, a) ?? null)
+          : null,
       })),
     });
     return;
@@ -173,8 +178,13 @@ async function list(addresses: string[], options: OperatorOptions): Promise<void
   for (const a of check) {
     const name = contacts.find((c) => c.address.toLowerCase() === a.toLowerCase())?.name ?? '';
     const yes = status[a.toLowerCase()];
+    const until = yes ? knownOperatorUntil(network, token.address, wallet.address, a) : undefined;
+    const expiry =
+      until === undefined
+        ? chalk.dim(yes ? ' expiry unknown (granted elsewhere)' : '')
+        : ` ${describeExpiry(until)}`;
     console.log(
-      `  ${name.padEnd(14)} ${a}  ${yes ? chalk.yellow('operator') : chalk.dim('not an operator')}`,
+      `  ${name.padEnd(14)} ${a}  ${yes ? chalk.yellow('operator') : chalk.dim('not an operator')}${expiry}`,
     );
   }
 }
@@ -252,6 +262,27 @@ async function change(operatorText: string, options: OperatorOptions, mode: 'set
 
   // Operator changes are plain contract calls: no relayer (and no mainnet API key) needed.
   const backend = createBackend();
+  if (mode === 'revoke') {
+    // Revoking an address that is not an operator would only cost a fee: check first.
+    let isOp: boolean | null = null;
+    try {
+      const status = await backend.operatorStatus(
+        token.address,
+        walletRef.address,
+        [r.address],
+        network,
+      );
+      isOp = Boolean(status[r.address.toLowerCase()]);
+    } catch {
+      // Could not check: the simulation below still runs before anything is signed.
+    }
+    if (isOp === false) {
+      return fail(
+        `${who} is not an operator for ${token.symbol}. Nothing to revoke; nothing was signed or sent.`,
+        'NOT_AN_OPERATOR',
+      );
+    }
+  }
   const wallet = await unlockWallet(walletRef.name, network, options.passwordStdin);
   if (!wallet) return;
   const prepared = await prepareWithSpinner('Simulating the operator change...', () =>
@@ -287,7 +318,15 @@ async function change(operatorText: string, options: OperatorOptions, mode: 'set
       blockNumber: sent.blockNumber,
       explorerUrl: sent.explorerUrl,
     });
-  } else if (sent) {
+  }
+  if (sent) {
+    try {
+      rememberOperatorUntil(network, token.address, walletRef.address, r.address, until);
+    } catch {
+      // only used to show the expiry later
+    }
+  }
+  if (sent && !options.json) {
     console.log(
       mode === 'set'
         ? chalk.green(`${who} is now an operator for ${token.symbol} ${describeExpiry(until)}.`)

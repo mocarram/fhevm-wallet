@@ -7,6 +7,7 @@
  * never as "try again".
  */
 
+import { rememberOperatorUntil } from '../../storage/UiPrefsStore.js';
 import type { DiscloseStage, PreparedDisclose } from '../../core/backend/types.js';
 import { describeExpiry, operatorWarning } from '../../core/send/operatorExpiry.js';
 import { shortAddress } from '../../core/send/recipient.js';
@@ -209,6 +210,7 @@ export function broadcastTx(s: AppState): Effect[] {
   const id = s.nextPendingId++;
   s.pending.push({ id, amountText: a.short, toLabel: '', label: a.short });
   const network = s.network;
+  const holder = s.wallet.address;
   const t = tokenOf(s, a.token);
   const lockAfter = s.data.prefs.unlockMinutes === 0;
   goHome(s, [dimLine('  Sending. Keep working; the status bar shows when it confirms.')]);
@@ -225,6 +227,12 @@ export function broadcastTx(s: AppState): Effect[] {
         });
         let doneText: string;
         if (a.kind === 'operator') {
+          try {
+            // ERC-7984 has no expiry getter: remember it to show "until …" later.
+            rememberOperatorUntil(network, a.token, holder, a.operator!, a.until!);
+          } catch {
+            // only used for display
+          }
           doneText =
             a.until === 0
               ? `✔ Revoked: ${a.short.replace(/^revoke: /, '')} can no longer move your ${t?.symbol ?? 'tokens'}`
@@ -262,7 +270,10 @@ export function broadcastTx(s: AppState): Effect[] {
             const row = st.operators.rows.find(
               (r) => r.address.toLowerCase() === a.operator!.toLowerCase(),
             );
-            if (row) row.isOperator = a.until !== 0;
+            if (row) {
+              row.isOperator = a.until !== 0;
+              row.until = a.until !== 0 ? a.until : undefined;
+            }
           }
           if (st.history) st.history.rows = historyRows(st);
           return [refreshEth(st)];
