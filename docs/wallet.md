@@ -20,13 +20,35 @@ Wallets are stored locally using the standard Ethereum keystore format with scry
 | **Import mnemonic**    | Restore from 12-word recovery phrase      |
 | **Import private key** | Import existing wallet directly           |
 
-![Wallet Creation](images/wallet-create.png)
+The first start of `fhew` (or Wallets › Create new wallet / Import wallet) walks through
+it (text capture, offline mock backend):
+
+```text
+ fhEVM Wallet  MOCK · simulated, no real funds  Setup            Sepolia  no wallet yet
+
+  ● Wallet ─ ○ Network ─ ○ Token ─ ○ Gas
+
+  Welcome to fhEVM Wallet.
+
+  Confidential tokens keep balances and amounts encrypted on-chain.
+  Only you, and whoever you send to, can decrypt them.
+
+  Setup takes about two minutes. You can leave and come back.
+
+ ❯ 1  Create a new wallet
+   2  Import a wallet I already have
+  ─────────────
+   0  Quit                             q
+
+ ↑↓ move · enter select · ? help · 0 quit
+```
 
 ### Default Wallet
 
 Set a default wallet to skip selection prompts:
 - Via CLI: `fhevm-wallet wallet create my-wallet --set-default`
-- Via config: `fhevm-wallet config` in interactive mode
+- In the terminal UI: Wallets › Switch wallet (the wallet you switch to becomes the default)
+- Via CLI for an existing wallet: `fhevm-wallet wallet set-default my-wallet`
 
 ## Token Management
 
@@ -113,13 +135,30 @@ To avoid unnecessary decryption, the wallet uses **smart caching**:
 
 ### When Decryption Happens
 
-- When you explicitly view your balance (via `balance` command or interactive menu)
+- When you explicitly view your balance (the `balance` command, or Balances in the terminal UI)
 - When you select "Force decrypt" to bypass cache
 - When the encrypted handle on-chain changes (indicating balance changed)
 
 The wallet compares encrypted **handles** (cheap RPC call) rather than decrypting every time. If the handle hasn't changed, your balance hasn't changed.
 
-![View Balance](images/view-balance.png)
+Balances in the terminal UI after unlocking (text capture, offline mock backend):
+
+```text
+ fhEVM Wallet  MOCK  Balances                   Sepolia  alice unlocked 15m  0.4210 ETH
+
+  Token      Balance             Contract
+  ─────────────────────────────────────────────────
+  ETH        0.4210              native · pays gas
+  cUSDC      1,250.00            0xE76c…5B86
+
+  ✔ 1 token(s) decrypted · just now
+
+ ❯ 1  Refresh
+   2  Send from this wallet
+   3  Back
+
+ ↑↓ move · enter select · esc back
+```
 
 ### Cache Storage
 
@@ -154,7 +193,28 @@ Transaction history is synced from Etherscan API which fetches:
 
 The wallet merges local and synced transactions, preserving known amounts when available.
 
-![Transaction History](images/transaction-history.png)
+History in the terminal UI, newest first, amounts decrypted (text capture, offline mock
+backend):
+
+```text
+ fhEVM Wallet  MOCK  History                    Sepolia  alice unlocked 15m  0.4207 ETH
+
+  ✔ Decrypted 1 amount(s).
+
+  When          Type       Amount              Token    With
+  ───────────────────────────────────────────────────────────────
+  Nov 21 18:21  sent       -25.00              cUSDC    bob
+  Nov 18 09:40  received   +25.00              cUSDC    0x38B3…23a6
+  Nov 15 11:03  eth in     +0.5                ETH      0x4fE1…01dc
+
+ ❯ 1  Decrypt amounts
+   2  Show latest in explorer
+   3  Refresh
+   4  Disclose an amount
+   5  Back
+
+ ↑↓ move · enter select · / filter · pgup/pgdn scroll · esc back
+```
 
 ## Data Directory
 

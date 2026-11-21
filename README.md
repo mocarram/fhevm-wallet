@@ -19,7 +19,58 @@ A CLI wallet for managing encrypted ERC-7984 tokens using Zama's Fully Homomorph
 - **Address Book** - Save frequently used addresses with friendly names
 - **Multi-Network Support** - Works on Ethereum Sepolia testnet and Mainnet
 
-![fhEVM Wallet CLI](docs/images/main-menu.png)
+Home right after a send, and the Review step before it (text captures of the terminal UI
+with the offline mock backend, `FHEW_BACKEND=mock`):
+
+```text
+ fhEVM Wallet  MOCK  Home                       Sepolia  alice unlocked 15m  0.4207 ETH
+
+  ✔ Sent 25.00 cUSDC to bob
+    tx 0xe170…7e19 · fee up to 0.0003 ETH · your cUSDC balance moved as expected
+    Next time: fhew send bob 25 cusdc -n sepolia
+
+  cUSDC 1,225.00   · decrypted just now
+
+      ↻ 25.00 cUSDC → bob  repeat last send   .
+ ❯ 1  Balances              b
+   2  Send                  s
+   3  Receive               r
+   4  History               h
+  ─────────────
+   5  Wallets
+   6  Tokens
+   7  Address book
+   8  Settings
+   9  Doctor               check your setup   d
+  ─────────────
+   0  Quit                  q
+
+ ↑↓ move · enter select · : command · ? help · L lock · 0 quit
+```
+
+```text
+ fhEVM Wallet  MOCK  Review                     Sepolia  alice unlocked 15m  0.4210 ETH
+
+  ✔ Token ─ ✔ Recipient ─ ✔ Amount ─ ● Review ─ ○ Sign
+
+  From      alice        0x0481911Ea44577a5290903Ea126f40689120604e
+  To        bob          0x91Be4C2a6d0f83B1e7c5a9d2f4E8b0C6D3d207AF
+  Amount    25.00 cUSDC   encrypted on-chain
+            = 25 cUSDC · 25000000 base units
+  Network   Sepolia testnet
+  Fee       ≈ 0.0003 ETH   you have 0.4210 ETH
+
+  ✔ Simulation passed   ✔ Balance covers amount   ✔ ERC-7984
+
+  ! First time sending to bob. Check the address with them.
+  After you confirm, a 5 s countdown lets you stop it with Esc.
+
+ ❯ 1  Confirm and send
+   2  Change amount
+   3  Cancel
+
+ ↑↓ move · enter select · esc back to amount
+```
 
 ## Installation
 
@@ -62,10 +113,17 @@ Then, on any screen:
 | : | Command bar: `send bob 25 cusdc`, `balances`, `doctor`, `lock`, `help`, … |
 | ? | Help for the current screen |
 | L (or l) | Lock now (the decrypted key is only ever held in memory) |
+| / | Filter a long list (tokens, contacts, history, Send's token and recipient) |
+| PgUp PgDn, Home End | Scroll a long list; the menu and notes stay on screen |
+
+Pasting is safe: a paste is one event that goes into the text field (it never runs menu
+shortcuts or presses Enter), and a pasted address on Send › Recipient opens the address
+step filled in, with the usual checksum, look-alike and first-time checks.
 
 Sends go Token → Recipient → Amount → Review → Sign. Amounts accept `25`, `1,250.50`,
 `1k`, `half` and `max` and show the exact value. A pasted address that looks like a saved
-contact stops the send; a first-time address is flagged; after the send you can save it.
+contact stops the send; the first send to any address (saved contacts included) is
+flagged; after the send you can save a new address.
 On Mainnet you retype the amount and a countdown always runs before broadcasting.
 
 Try the UI without any network or funds against the offline simulation (a `MOCK` badge is
@@ -268,7 +326,11 @@ All data is stored in `~/.fhevm-wallet/` (set `FHEVM_WALLET_HOME` to use another
 ├── transactions.json  # Local transaction history
 ├── audit.log          # Wallet events (never amounts, keys or phrases)
 ├── balance-cache.json # Cached balances
-└── amount-cache.json  # Decrypted transfer amounts, by ciphertext handle
+├── amount-cache.json  # Decrypted transfer amounts, by ciphertext handle
+├── ui-prefs.json      # Terminal UI settings, last token/recipient/send, operator expiries
+├── token-lists.json   # Downloaded token lists for "token find" (cache)
+├── scan-state.json    # How far "token find" has scanned your history
+└── .fhew-mock         # Only in a folder used with FHEW_BACKEND=mock
 ```
 
 The folder is readable only by you (`0700`, files `0600`), and files are replaced
