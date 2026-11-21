@@ -7,7 +7,7 @@
  * pending" before the confirmation arrives).
  */
 
-import type { Backend } from '../core/backend/types.js';
+import type { Backend, UnlockedSigner } from '../core/backend/types.js';
 import type { AppState } from './state.js';
 
 /** A state change produced by an effect. May return follow-up effects. */
@@ -27,6 +27,12 @@ export interface Deps {
   copyToClipboard: (text: string) => boolean;
   /** Current time in ms. */
   now: () => number;
+  /**
+   * The key if the wallet is unlocked *now* (null once it locked). A long effect that
+   * signs later (an unwrap's step 2) asks again right before, instead of keeping the
+   * key it started with: a lock must stop it.
+   */
+  unlockedSigner: () => UnlockedSigner | null;
 }
 
 /** One unit of I/O. `kind` names it for tests and debugging. */

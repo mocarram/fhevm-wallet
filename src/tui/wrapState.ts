@@ -15,9 +15,14 @@ export interface WrapView {
   state: Record<string, WrapState & { at: number }>;
   /** An unwrap being checked by "Finish unwrap" (its id). */
   finishing?: string;
+  /**
+   * Unwraps whose step 2 runs in the background after an Unwrap's confirm (ids): Home's
+   * "Finish unwrap" must not start a second finalize for them meanwhile.
+   */
+  background: string[];
 }
 
-/** The empty view at start and after a network or wallet switch. */
+/** The empty view at start. */
 export function emptyWrapView(): WrapView {
-  return { loading: false, state: {} };
+  return { loading: false, state: {}, background: [] };
 }

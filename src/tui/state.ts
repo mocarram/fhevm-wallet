@@ -436,3 +436,8 @@ export function sendInProgress(s: AppState): boolean {
 export function isUnlocked(s: AppState): boolean {
   return s.signer !== null && s.unlockedUntil !== null && s.unlockedUntil > s.now;
 }
+
+/** The key while the wallet is unlocked at `now` (for `Deps.unlockedSigner`), else null. */
+export function currentSigner(s: AppState, now: number): UnlockedSigner | null {
+  return s.signer !== null && s.unlockedUntil !== null && s.unlockedUntil > now ? s.signer : null;
+}

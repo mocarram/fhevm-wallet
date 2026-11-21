@@ -12,7 +12,7 @@ import { handleKey, handlePaste, render, tick } from '../../src/tui/app.js';
 import type { Deps, Effect, Updater } from '../../src/tui/effects.js';
 import { normalizeKey } from '../../src/tui/keys.js';
 import { loadSnapshot } from '../../src/tui/snapshot.js';
-import { initialState, type AppState } from '../../src/tui/state.js';
+import { currentSigner, initialState, type AppState } from '../../src/tui/state.js';
 import { plain } from '../../src/tui/text.js';
 
 export const BOB = '0x91Be4C2a6d0f83B1e7c5a9d2f4E8b0C6D3d207AF';
@@ -72,6 +72,7 @@ export class Harness {
       },
       copyToClipboard: () => true,
       now: () => this.now,
+      unlockedSigner: () => currentSigner(this.s, this.now),
     };
   }
 

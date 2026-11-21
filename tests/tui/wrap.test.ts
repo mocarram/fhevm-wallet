@@ -2,10 +2,12 @@
  * Wrap / Unwrap in the TUI, driven through the real core with the MockBackend
  * (mock cUSDC wraps a 6-decimal USDC at rate 1; cDAI an 18-decimal DAI at rate 1e12).
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { addTokenWithInfo } from '../../src/core/token/TokenRegistry.js';
 import { listUnwraps } from '../../src/storage/UnwrapStore.js';
 import { loadSnapshot } from '../../src/tui/snapshot.js';
+import { finishPending } from '../../src/tui/flows/wrap.js';
+import { lockWallet } from '../../src/tui/state.js';
 import { wipeTestDataDir } from '../helpers/dataDir.js';
 import { Harness } from './harness.js';
 
@@ -146,5 +148,94 @@ describe('a wrap that ends unconfirmed', () => {
     expect(h.s.lastSendError?.error.txHash).toMatch(/^0x/);
     expect(h.text()).toMatch(/Do not send it again until you have checked it/);
     expect(h.s.recheckAt).toBeGreaterThan(h.now);
+  });
+});
+
+describe('step 2 in the background and the lock (S3, N4)', () => {
+  /** Start an unwrap of 10 cUSDC up to the confirm. */
+  async function unwrapReview(h: Harness) {
+    await h.keys('b');
+    await h.keys('w', '{tab}', '10', '{enter}');
+    expect(h.screen).toBe('tx-review');
+  }
+
+  it('a lock during the background finish stops it: nothing signed, Home offers Finish unwrap', async () => {
+    const h = new Harness({ unlocked: true });
+    await unwrapReview(h);
+    const real = h.backend.prepareFinalizeUnwrap.bind(h.backend);
+    let sent = false;
+    vi.spyOn(h.backend, 'prepareFinalizeUnwrap').mockImplementation(async (...a) => {
+      const p = await real(...a);
+      lockWallet(h.s); // the user locks while the decryption and simulation run
+      const send = p.send;
+      return {
+        ...p,
+        send: (hooks) => {
+          sent = true;
+          return send(hooks);
+        },
+      };
+    });
+    await confirm(h);
+    expect(sent).toBe(false);
+    expect(listUnwraps({ open: true })[0]).toMatchObject({ state: 'requested' });
+    expect(listUnwraps()[0].finalizeTxHash).toBeUndefined();
+    const t = h.text();
+    expect(t).toMatch(/Step 1 done: 10\.00 cUSDC → USDC\. Step 2 not sent yet/);
+    expect(t).toMatch(/The wallet locked: unlock, then Home › Finish unwrap sends step 2/);
+    await h.settle();
+    expect(h.text()).toMatch(/Finish unwrap: 10\.00 cUSDC → USDC/);
+  });
+
+  it('"every action" mode: the Review says so, step 2 waits for Home after unlocking', async () => {
+    const h = new Harness({ unlocked: true });
+    await h.keys('b');
+    await h.keys('w', '{tab}', '10');
+    h.s.data.prefs.unlockMinutes = 0;
+    await h.keys('{enter}');
+    expect(h.screen).toBe('tx-review');
+    expect(h.text()).toMatch(/locks after every action: after step 1, unlock and use/);
+    const spy = vi.spyOn(h.backend, 'prepareFinalizeUnwrap');
+    await confirm(h);
+    expect(spy).not.toHaveBeenCalled();
+    expect(h.text()).toMatch(/locks after every action: unlock, then Home › Finish unwrap/);
+    expect(listUnwraps({ open: true })[0].state).toBe('requested');
+  });
+
+  it('Home cannot start a second finish while the background one runs', async () => {
+    const h = new Harness({ unlocked: true });
+    await unwrapReview(h);
+    const real = h.backend.prepareFinalizeUnwrap.bind(h.backend);
+    let during: { fx: number; flash: string; value?: string } | undefined;
+    vi.spyOn(h.backend, 'prepareFinalizeUnwrap').mockImplementation(async (...a) => {
+      h.s.data = loadSnapshot('sepolia', h.signer.address);
+      const id = h.s.data.unwraps[0].id;
+      const fx = finishPending(h.s, id);
+      during = {
+        fx: fx.length,
+        flash: (h.s.flash ?? []).map((l) => l.map((x) => x.t).join('')).join('\n'),
+        value: h.text().match(/Finish unwrap: .*/)?.[0],
+      };
+      return real(...a);
+    });
+    await confirm(h);
+    expect(during?.fx).toBe(0);
+    expect(during?.flash).toMatch(/being sent in the background/);
+    expect(h.s.wrap.background).toEqual([]);
+    expect(listUnwraps()[0]).toMatchObject({ state: 'finished' });
+  });
+
+  it('wrap and unwrap success notices link the transaction on the explorer', async () => {
+    const h = new Harness({ unlocked: true });
+    await unwrapReview(h);
+    await confirm(h);
+    const e = listUnwraps()[0];
+    expect(h.text(200)).toContain(h.backend.explorerTxUrl(e.finalizeTxHash!, 'sepolia'));
+    const notice = h.s.notice!.flat();
+    expect(notice.some((x) => x.href?.includes(e.finalizeTxHash!))).toBe(true);
+    await h.keys('b', 'w', '{ctrl-u}', '5{enter}');
+    await confirm(h);
+    expect(h.text()).toMatch(/✔ Wrapped 5\.00 USDC/);
+    expect(h.s.notice!.flat().some((x) => x.href?.includes('/tx/0x'))).toBe(true);
   });
 });

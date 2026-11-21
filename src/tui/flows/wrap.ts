@@ -168,12 +168,23 @@ export function commandWrap(
   return [...fx, ...openWrap(s, cmd.mode, r.token.address, cmd.amount)];
 }
 
-/** Notice lines for one finished or waiting unwrap. */
-function finishNotice(entry: UnwrapEntry, text: string, style: string, extra: Line[] = []): Line[] {
+/**
+ * Notice lines for one finished or waiting unwrap, with an explorer link (OSC 8 where the
+ * terminal has colour) to its latest transaction: step 2 once sent, else the request.
+ */
+function finishNotice(
+  deps: Deps,
+  entry: UnwrapEntry,
+  text: string,
+  style: string,
+  extra: Line[] = [],
+): Line[] {
+  const tx = entry.finalizeTxHash ?? entry.requestTxHash;
   return [
     line('  ', seg(text, style)),
     ...extra,
     dimLine(`    request ${shortHash(entry.requestTxHash)}`),
+    line('    ', link(deps.backend.explorerTxUrl(tx, entry.network), 'dim')),
   ];
 }
 
@@ -186,14 +197,39 @@ function unclearNotice(deps: Deps, entry: UnwrapEntry, label: string, reason: st
 }
 
 /**
+ * The key for step 2 if the wallet is still unlocked, as the wallet that sent step 1.
+ * Asked right before each use: a lock (by the user, the timer or "every action" mode)
+ * stops the background finish instead of signing with a key the user put away.
+ */
+function signerFor(deps: Deps, wallet: string): UnlockedSigner | null {
+  const signer = deps.unlockedSigner();
+  return signer && signer.address.toLowerCase() === wallet.toLowerCase() ? signer : null;
+}
+
+/** Step 1 is done, the wallet locked before step 2: Home › Finish unwrap sends it. */
+function lockedNotice(deps: Deps, entry: UnwrapEntry, label: string, everyAction: boolean): Line[] {
+  return finishNotice(deps, entry, `! Step 1 done: ${label}. Step 2 not sent yet.`, 'yellow bold', [
+    line(
+      seg(
+        everyAction
+          ? '    The wallet locks after every action: unlock, then Home › Finish unwrap sends step 2.'
+          : '    The wallet locked: unlock, then Home › Finish unwrap sends step 2.',
+        'yellow',
+      ),
+    ),
+  ]);
+}
+
+/**
  * Try step 2 of an unwrap in the background: reconcile, wait for the public decryption
- * (a few tries), then send it. Never throws: the notice says where it stands.
+ * (a few tries), then send it, only while the wallet that sent step 1 stays unlocked.
+ * Never throws: the notice says where it stands.
  */
 async function finishInBackground(
   deps: Deps,
-  signer: UnlockedSigner,
   start: UnwrapEntry,
   tries: number,
+  everyAction: boolean,
 ): Promise<Line[]> {
   let entry = start;
   const label = `${amt(BigInt(entry.amount), entry.decimals, entry.symbol)} → ${entry.underlying.symbol}`;
@@ -202,12 +238,17 @@ async function finishInBackground(
       const r = await reconcileUnwrap(deps.backend, entry);
       entry = r.entry;
       if (r.next.kind === 'done')
-        return finishNotice(entry, `✔ Unwrap finished: ${label}`, 'green bold');
+        return finishNotice(deps, entry, `✔ Unwrap finished: ${label}`, 'green bold');
       if (r.next.kind === 'unclear') return unclearNotice(deps, entry, label, r.next.reason);
       if (r.next.kind !== 'finalize') break;
+      const signer = signerFor(deps, entry.wallet);
+      if (!signer) return lockedNotice(deps, entry, label, everyAction);
       const prepared = await prepareFinish(deps.backend, signer, entry);
+      // The decryption and simulation take a while: the user may have locked meanwhile.
+      if (!signerFor(deps, entry.wallet)) return lockedNotice(deps, entry, label, everyAction);
       const done = await sendFinish(prepared, entry);
       return finishNotice(
+        deps,
         done.entry,
         `✔ Unwrapped ${amt(prepared.value, entry.decimals, entry.symbol)}: ${amt(prepared.receive, entry.underlying.decimals, entry.underlying.symbol)} arrived`,
         'green bold',
@@ -220,11 +261,12 @@ async function finishInBackground(
         continue;
       }
       if (e.code === 'UNWRAP_ALREADY_FINISHED') {
-        return finishNotice(entry, `✔ Unwrap finished: ${label}`, 'green bold');
+        return finishNotice(deps, entry, `✔ Unwrap finished: ${label}`, 'green bold');
       }
       const shown = describeError(e, { action: 'send' });
       return finishNotice(
-        entry,
+        deps,
+        { ...entry, finalizeTxHash: e.txHash ?? entry.finalizeTxHash },
         e.code === 'PUBLIC_DECRYPT_PENDING'
           ? `! Step 1 done: ${label}. Not decryptable yet.`
           : `! Step 1 done: ${label}. Step 2: ${shown.title}`,
@@ -239,7 +281,7 @@ async function finishInBackground(
       );
     }
   }
-  return finishNotice(entry, `! Step 1 done: ${label}`, 'yellow bold', [
+  return finishNotice(deps, entry, `! Step 1 done: ${label}`, 'yellow bold', [
     dimLine('    Home › Finish unwrap sends step 2 when it is ready.'),
   ]);
 }
@@ -332,7 +374,7 @@ export function startWrap(s: AppState, info: WrapperInfo, plan: WrapPlan): Effec
           { network, wallet: wrapWallet, info, amount: plan.wrapped },
           hooks,
         ),
-      done: async (_deps, result) => {
+      done: async (deps, result) => {
         const r = result as Awaited<ReturnType<PreparedWrap['send']>>;
         const notice: Line[] = [
           line(
@@ -370,6 +412,8 @@ export function startWrap(s: AppState, info: WrapperInfo, plan: WrapPlan): Effec
           dimLine(
             `    tx ${shortHash(r.txHash)}${r.approveTxHash ? ` · approval ${shortHash(r.approveTxHash)}` : ''}`,
           ),
+          // OSC 8 link where the terminal has colour (text.ts), the plain URL otherwise.
+          line('    ', link(deps.backend.explorerTxUrl(r.txHash, network), 'dim')),
         );
         return {
           notice,
@@ -407,7 +451,10 @@ export function startWrap(s: AppState, info: WrapperInfo, plan: WrapPlan): Effec
 export function startUnwrap(s: AppState, info: WrapperInfo, plan: UnwrapPlan): Effect[] {
   const u = info.underlying;
   const network = s.network;
-  let usedSigner: UnlockedSigner | null = null;
+  // Only the address: step 2 asks for the key again when it is due (signerFor).
+  let requester = '';
+  // "Every action" mode locks as step 1 goes out, so step 2 waits for the next unlock.
+  const everyAction = s.data.prefs.unlockMinutes === 0;
   const action: TxAction = {
     kind: 'unwrap',
     token: info.address,
@@ -415,7 +462,9 @@ export function startUnwrap(s: AppState, info: WrapperInfo, plan: UnwrapPlan): E
     short: `unwrap ${formatAmount(plan.amount, info.decimals)} ${info.symbol}`,
     warning: [
       'The unwrapped amount becomes public on-chain.',
-      'This one confirmation covers both steps.',
+      everyAction
+        ? 'The wallet locks after every action: after step 1, unlock and use Home › Finish unwrap for step 2.'
+        : 'This one confirmation covers both steps while the wallet stays unlocked.',
     ],
     then: 'balances',
     details: (prepared) => {
@@ -462,32 +511,52 @@ export function startUnwrap(s: AppState, info: WrapperInfo, plan: UnwrapPlan): E
         const earlier = unconfirmedRequest(net, signer.address, info.address);
         if (earlier) throw unconfirmedRequestError(earlier);
         assertUnwrapStoreWritable();
-        usedSigner = signer;
+        requester = signer.address;
         const session = sessionOf(deps, signer, net) ?? undefined;
         return deps.backend.prepareUnwrap(signer, info, plan.amount, net, { session });
       },
       send: async (prepared, hooks) => {
         const { result, entry } = await sendUnwrapRequest(
           prepared as PreparedUnwrap,
-          { network, wallet: usedSigner!.address, info, amount: plan.amount },
+          { network, wallet: requester, info, amount: plan.amount },
           hooks,
         );
         return { ...result, entry } as typeof result;
       },
       done: async (deps, result) => {
         const entry = (result as { entry?: UnwrapEntry }).entry;
-        // The key stays in this closure for step 2 only: the user confirmed both steps.
-        const notice =
-          entry && usedSigner
-            ? await finishInBackground(deps, usedSigner, entry, FINISH_TRIES)
-            : [
-                line(
-                  '  ',
-                  seg('! Step 1 confirmed. Home › Finish unwrap sends step 2.', 'yellow bold'),
-                ),
-              ];
-        usedSigner = null;
-        return { notice, update: (st) => [reload(st), ...loadWrapData(st), ...decryptAll(st)] };
+        const explorer = line(
+          '    ',
+          link(deps.backend.explorerTxUrl(result.txHash, network), 'dim'),
+        );
+        if (!entry) {
+          return {
+            notice: [
+              line(
+                '  ',
+                seg('! Step 1 confirmed. Home › Finish unwrap sends step 2.', 'yellow bold'),
+              ),
+              explorer,
+            ],
+            update: (st) => [reload(st), ...loadWrapData(st), ...decryptAll(st)],
+          };
+        }
+        // Home's Finish unwrap must not start a second finalize while this one runs.
+        deps.dispatch((st) => {
+          st.wrap.background.push(entry.id);
+        });
+        let notice: Line[];
+        try {
+          notice = await finishInBackground(deps, entry, FINISH_TRIES, everyAction);
+        } finally {
+          deps.dispatch((st) => {
+            st.wrap.background = st.wrap.background.filter((x) => x !== entry.id);
+          });
+        }
+        return {
+          notice,
+          update: (st) => [reload(st), ...loadWrapData(st), ...decryptAll(st)],
+        };
       },
     },
   };
@@ -507,6 +576,12 @@ function begin(s: AppState, action: TxAction): Effect[] {
 export function finishPending(s: AppState, id: string): Effect[] {
   const entry = s.data.unwraps.find((e) => e.id === id);
   if (!entry || s.wrap.finishing) return [];
+  if (s.wrap.background.includes(id)) {
+    s.flash = [
+      dimLine('  Step 2 of this unwrap is being sent in the background. Wait for its notice.'),
+    ];
+    return [];
+  }
   s.wrap.finishing = id;
   s.busy = 'Checking the unwrap on-chain';
   const label = `${amt(BigInt(entry.amount), entry.decimals, entry.symbol)} → ${entry.underlying.symbol}`;
@@ -599,11 +674,12 @@ function startFinish(s: AppState, entry: UnwrapEntry): Effect[] {
         const r = await sendFinish(prepared as PreparedFinalize, entry, hooks);
         return { txHash: r.txHash, blockNumber: r.blockNumber };
       },
-      done: async (_deps, result, prepared) => {
+      done: async (deps, result, prepared) => {
         const p = prepared as PreparedFinalize;
         return {
           notice: finishNotice(
-            entry,
+            deps,
+            { ...entry, finalizeTxHash: result.txHash || entry.finalizeTxHash },
             p.value === 0n
               ? `! ${label}: the request burnt 0, so nothing arrives.`
               : `✔ Unwrapped ${amt(p.value, entry.decimals, entry.symbol)}: ${amt(p.receive, u.decimals, u.symbol)} arrived`,
@@ -623,7 +699,12 @@ export function pendingUnwrapItems(s: AppState): Item[] {
     label: `Finish unwrap: ${amt(BigInt(e.amount), e.decimals, e.symbol)} → ${e.underlying.symbol}`,
     key: i === 0 ? 'u' : undefined,
     nonum: true,
-    value: s.wrap.finishing === e.id ? 'checking…' : describeUnwrapState(e),
+    value:
+      s.wrap.finishing === e.id
+        ? 'checking…'
+        : s.wrap.background.includes(e.id)
+          ? 'finishing in the background…'
+          : describeUnwrapState(e),
     valueStyle: 'yellow',
     act: (st: AppState) => finishPending(st, e.id),
   }));

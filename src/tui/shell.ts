@@ -26,7 +26,7 @@ import { handleKey, handlePaste, isAnimating, render, tick } from './app.js';
 import type { Deps, Effect, Updater } from './effects.js';
 import { describeError, errorLines } from './errors.js';
 import { coalesceBurst, InputParser, isBurst, type InputEvent } from './input.js';
-import { lockWallet, type AppState } from './state.js';
+import { currentSigner, lockWallet, type AppState } from './state.js';
 import { toAnsi } from './text.js';
 import { setSdkConsoleTuiActive } from '../core/fhe/sdkConsole.js';
 import {
@@ -180,6 +180,7 @@ export function runShell(opts: ShellOptions): Promise<ShellResult> {
     const deps: Deps = {
       backend,
       dispatch: (update) => apply(update),
+      unlockedSigner: () => currentSigner(state, Date.now()),
       showSecret: async (title, lines) => {
         // Hand the terminal to the wipe-on-keypress secret screen, then take it back.
         suspended = true;
