@@ -35,7 +35,9 @@ npm run verify         # everything above, in order; must pass before any merge
 
 ```
 src/
-  index.ts                 entry; loads env, starts commander
+  index.ts                 tiny entry: `--version` fast path, private compile cache
+                           (compileCache.ts), then imports main.ts
+  main.ts                  start-up: data-folder checks, loads env, starts commander
   cli/                     commander subcommands (non-interactive: fhew send, fhew balance …)
   cli/commands/interactive.ts   thin launcher for the TUI (`fhew`, `fhew interactive`)
   tui/                     interactive terminal UI (see "Terminal UI" below)
@@ -165,6 +167,10 @@ Every unit of work goes through this loop until it comes out clean:
 - User-facing text: plain English, active voice, says what happened and what to do next.
   Never show a raw ethers error to the user without a translation; keep the raw text one
   keypress away ("Show technical details").
+- Start-up cost matters (`fhew --version` ~35 ms, a command ~280 ms): keep heavy imports
+  off the start-up path. The relayer SDK is loaded on first use (`loadRelayerSdk` in
+  `src/core/fhe/FheService.ts`; constants from it live in `relayerConfig.ts`). Node's
+  compile cache is kept outside the data dir in a 0700 folder (`src/compileCache.ts`).
 - Files are written with owner-only permissions via `src/storage/secureFs.ts`
   (`writeSecureFile`, `appendSecureFile`, `ensureSecureDir`; `writeNewPrivateFile` for
   exports to a user-chosen path). Do not call `fs.writeFileSync`, `mkdirSync` or
