@@ -49,8 +49,9 @@ export const operatorsScreen: ScreenDef = {
     if (o?.loading) body.push(line('  ', seg(`${spinner(s.now)} Checking…`, 'cyan')));
     else if (o?.error) body.push(line('  ', seg(o.error, 'yellow')));
     else if (!o?.rows.length) body.push(dimLine('  No contacts or recent addresses to check.'));
+    const list: Line[] = [];
     for (const r of o?.rows ?? []) {
-      body.push(
+      list.push(
         line(
           '  ',
           pad(r.label, 16),
@@ -60,7 +61,7 @@ export const operatorsScreen: ScreenDef = {
         ),
       );
     }
-    body.push(BLANK, dimLine('  Checked: your contacts and addresses in recent history.'));
+    const after = [BLANK, dimLine('  Checked: your contacts and addresses in recent history.')];
     const items: MenuEntry[] = [
       {
         label: 'Grant an operator',
@@ -82,6 +83,8 @@ export const operatorsScreen: ScreenDef = {
     items.push(SEP, backItem());
     return {
       body,
+      list,
+      after,
       items,
       hint: '↑↓ move · enter select · esc back',
       onPaste: pasteAddressInto('operatorAddr', 'operator-addr', { mode: 'grant' }),

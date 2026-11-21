@@ -29,6 +29,10 @@ export interface Frame {
   id: string;
   cur: number;
   params: Record<string, string>;
+  /** First row of the screen's scrolling list in view (PgUp/PgDn). */
+  scroll?: number;
+  /** Rows the list window showed in the last frame: one PgUp/PgDn step. */
+  page?: number;
 }
 
 /** A recipient chosen in the send wizard. */
@@ -201,6 +205,8 @@ export interface AppState {
   setup: boolean;
   /** Set by the quit action; the shell restores the terminal and exits. */
   quit: boolean;
+  /** Size of the last frame drawn (screens that adapt to it read this). */
+  size: { cols: number; rows: number };
 }
 
 /** A display row of the History screen. */
@@ -266,6 +272,7 @@ export function initialState(opts: {
     tokenCheck: null,
     find: null,
     quit: false,
+    size: { cols: 80, rows: 24 },
   };
 }
 

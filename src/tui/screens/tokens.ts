@@ -33,17 +33,18 @@ export const tokensScreen: ScreenDef = {
     const shown = s.data.tokens.filter((t) =>
       matchesFilter(`${t.symbol} ${t.name} ${t.address}`, q),
     );
+    const list = shown.map((t) =>
+      line(
+        '  ',
+        seg(pad(t.symbol, 8), 'bold'),
+        ' ',
+        pad(t.name, 24),
+        ' ',
+        seg(shortAddress(t.address), 'dim'),
+      ),
+    );
     const body = shown.length
-      ? shown.map((t) =>
-          line(
-            '  ',
-            seg(pad(t.symbol, 8), 'bold'),
-            ' ',
-            pad(t.name, 24),
-            ' ',
-            seg(shortAddress(t.address), 'dim'),
-          ),
-        )
+      ? []
       : [
           dimLine(
             q
@@ -53,6 +54,7 @@ export const tokensScreen: ScreenDef = {
         ];
     return {
       body,
+      list,
       filter: TOKENS_FILTER,
       items: [
         {
@@ -193,6 +195,8 @@ export const tokenFindScreen: ScreenDef = {
     }
 
     const r = f.result;
+    const list: Line[] = [];
+    const after: Line[] = [];
     if (f.error || !r) {
       body.push(line('  ', seg(`✗ ${f.error ?? 'Nothing to show.'}`, 'red')));
     } else {
@@ -224,15 +228,15 @@ export const tokenFindScreen: ScreenDef = {
       if (r.listError) body.push(line('  ', seg(`! Your token list: ${r.listError}`, 'yellow')));
       body.push(BLANK);
       const options = findOptions(s);
-      if (options.length) body.push(...renderMultiSelect(top(s), filtered(s, options)));
+      if (options.length) list.push(...renderMultiSelect(top(s), filtered(s, options)));
       else body.push(dimLine('  No new tokens to add.'));
       const notOffered = r.candidates.filter(
         (c) => c.status === 'not-erc7984' || c.status === 'unchecked',
       );
       if (notOffered.length) {
-        body.push(BLANK);
+        after.push(BLANK);
         for (const c of notOffered) {
-          body.push(
+          after.push(
             dimLine(
               `  ${pad(c.symbol, 8)} ${shortAddress(c.address)}  ${c.status === 'unchecked' ? "couldn't check it" : 'not ERC-7984, not offered'}`,
             ),
@@ -240,9 +244,9 @@ export const tokenFindScreen: ScreenDef = {
         }
       }
       const tracked = r.candidates.filter((c) => c.status === 'tracked').length;
-      if (tracked) body.push(dimLine(`  ${tracked} already tracked.`));
+      if (tracked) after.push(dimLine(`  ${tracked} already tracked.`));
       if (r.candidates.some((c) => c.status === 'unverified')) {
-        body.push(
+        after.push(
           BLANK,
           dimLine('  Unverified: sent to you, but on no known list. Anyone can send you a token;'),
           dimLine('  only add ones you recognise.'),
@@ -251,6 +255,9 @@ export const tokenFindScreen: ScreenDef = {
     }
     return {
       body,
+      list,
+      listCursor: top(s).cur,
+      after,
       items: [],
       multiSelect: filtered(s, findOptions(s)).length,
       hint: 'space select · a all · enter add · r scan again · / filter · esc back',
@@ -300,10 +307,10 @@ export const tokenRemoveScreen: ScreenDef = {
       body: [
         dimLine('  Pick the tokens to stop tracking. Your balances on-chain are not affected.'),
         BLANK,
-        ...(options.length
-          ? renderMultiSelect(top(s), options)
-          : [dimLine('  No tokens tracked.')]),
+        ...(options.length ? [] : [dimLine('  No tokens tracked.')]),
       ],
+      list: options.length ? renderMultiSelect(top(s), options) : [],
+      listCursor: top(s).cur,
       items: [],
       multiSelect: options.length,
       hint: 'space select · a all · enter remove · esc back',

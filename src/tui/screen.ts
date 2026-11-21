@@ -67,6 +67,16 @@ export interface ScreenView {
    * frame cursor then indexes that list, not `items`, and is only clamped to its length.
    */
   multiSelect?: number;
+  /**
+   * A long list (tokens, contacts, history rows…) drawn after `body` in a window that
+   * scrolls with PgUp/PgDn (Home/End jump), while the body above, `after` and the menu
+   * stay on screen. Rows are cut to the width, never wrapped.
+   */
+  list?: Line[];
+  /** Row of `list` that must stay visible (a multi-select cursor); the window follows it. */
+  listCursor?: number;
+  /** Lines after the list (status, notes), kept on screen like the menu. */
+  after?: Line[];
   /** Full-screen view without a menu (countdown). */
   bare?: boolean;
   /**

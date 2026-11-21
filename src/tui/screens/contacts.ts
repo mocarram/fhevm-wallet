@@ -18,15 +18,18 @@ export const contactsScreen: ScreenDef = {
   crumb: ['Address book'],
   view: (s) => ({
     filter: CONTACTS_FILTER,
-    body: (() => {
+    ...(() => {
       const q = s.inputs[CONTACTS_FILTER];
       const shown = s.data.contacts.filter((c) => matchesFilter(`${c.name} ${c.address}`, q));
       if (shown.length) {
-        return shown.map((c) =>
-          line('  ', seg(pad(c.name, 14), 'bold'), ' ', seg(c.address, 'dim')),
-        );
+        return {
+          body: [],
+          list: shown.map((c) =>
+            line('  ', seg(pad(c.name, 14), 'bold'), ' ', seg(c.address, 'dim')),
+          ),
+        };
       }
-      return [dimLine(q ? '  No contact matches the filter.' : '  No contacts yet.')];
+      return { body: [dimLine(q ? '  No contact matches the filter.' : '  No contacts yet.')] };
     })(),
     items: [
       {

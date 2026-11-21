@@ -25,8 +25,11 @@ export const historyScreen: ScreenDef = {
       dimLine('  When          Type       Amount              Token    With'),
       dimLine('  ───────────────────────────────────────────────────────────────'),
     ];
+    // Newest first (pending sends, then by block); the rows scroll with PgUp/PgDn while
+    // the header, the notes and the menu stay on screen.
+    const list: Line[] = [];
     for (const p of s.pending) {
-      body.push(
+      list.push(
         line(
           '  ',
           pad('now', 12),
@@ -48,7 +51,7 @@ export const historyScreen: ScreenDef = {
       ),
     );
     for (const r of rows) {
-      body.push(
+      list.push(
         line(
           '  ',
           pad(r.when, 12),
@@ -69,14 +72,14 @@ export const historyScreen: ScreenDef = {
     }
     if (!rows.length && !s.pending.length && !s.history?.loading)
       body.push(dimLine('  No transfers yet.'));
-    body.push(BLANK);
+    const after: Line[] = [BLANK];
     if (s.history?.loading)
-      body.push(line('  ', seg(`${spinner(s.now)} Syncing with the network…`, 'cyan')));
-    else if (s.history?.error) body.push(line('  ', seg(s.history.error, 'yellow')));
+      after.push(line('  ', seg(`${spinner(s.now)} Syncing with the network…`, 'cyan')));
+    else if (s.history?.error) after.push(line('  ', seg(s.history.error, 'yellow')));
     if (s.history?.decrypting)
-      body.push(line('  ', seg(`${spinner(s.now)} Decrypting amounts…`, 'cyan')));
+      after.push(line('  ', seg(`${spinner(s.now)} Decrypting amounts…`, 'cyan')));
     else if (hasEncryptedRows(s))
-      body.push(
+      after.push(
         dimLine(
           isUnlocked(s)
             ? '  "encrypted": this wallet is not allowed to decrypt that amount.'
@@ -100,6 +103,8 @@ export const historyScreen: ScreenDef = {
       : [];
     return {
       body,
+      list,
+      after,
       filter: HISTORY_FILTER,
       items: [
         ...decryptItem,
@@ -116,8 +121,11 @@ export const historyScreen: ScreenDef = {
         ...discloseItem,
         backItem(),
       ],
-      hint: '↑↓ move · enter select · esc back',
-      help: [['enter', 'Decrypt amounts, open the latest transfer, refresh, disclose or go back']],
+      hint: '↑↓ move · enter select · / filter · pgup/pgdn scroll · esc back',
+      help: [
+        ['enter', 'Decrypt amounts, open the latest transfer, refresh, disclose or go back'],
+        ['/', 'Filter by type, token, address, amount or hash'],
+      ],
     };
   },
 };

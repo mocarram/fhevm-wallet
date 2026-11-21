@@ -10,23 +10,28 @@ import { age, formatEth, isLowGas, sendsLeft, spinner } from '../format.js';
 import { open } from '../nav.js';
 import type { MenuEntry, ScreenDef } from '../screen.js';
 import { isUnlocked, type AppState } from '../state.js';
-import { dimLine, line, seg, type Line } from '../text.js';
+import { dimLine, line, lineWidth, seg, type Line } from '../text.js';
 import { lastSendSummary, repeatLastSend, startSend } from '../flows/send.js';
 import { shortAddress } from '../../core/send/recipient.js';
 import { SEP } from './common.js';
 
-/** The balances line on Home. */
-export function balancesLine(s: AppState): Line {
-  const out: Line = [seg('  ')];
+/** Most rows of balances on Home; the rest are counted ("+12 more") and on Balances. */
+const HOME_BALANCE_ROWS = 2;
+
+/**
+ * The balances strip on Home: each token's cached or decrypted value with its age, on
+ * at most two rows of `cols` columns. Entries are never split across rows; tokens that
+ * do not fit are counted in "+N more · b Balances" so the menu stays on screen.
+ */
+export function balancesLines(s: AppState, cols = s.size.cols): Line[] {
   if (s.data.tokens.length === 0) {
-    return [seg('  No tokens tracked yet. Add one in Tokens.', 'dim')];
+    return [[seg('  No tokens tracked yet. Add one in Tokens.', 'dim')]];
   }
   let oldest: number | undefined;
   let anySession = false;
   let anyMissing = false;
-  s.data.tokens.forEach((t, i) => {
-    if (i) out.push(seg('   ', 'dim'));
-    out.push(seg(`${t.symbol} `, 'dim'));
+  const entries: Line[] = s.data.tokens.map((t) => {
+    const out: Line = [seg(`${t.symbol} `, 'dim')];
     const b = s.balances[t.address.toLowerCase()];
     const refreshing = Boolean(s.refreshing[t.address.toLowerCase()]);
     if (b) {
@@ -41,6 +46,7 @@ export function balancesLine(s: AppState): Line {
       out.push(seg('locked', 'dim'));
       anyMissing = true;
     }
+    return out;
   });
   let tail: string;
   const shownAge = oldest !== undefined || anySession ? age(oldest, s.now) : '';
@@ -49,8 +55,43 @@ export function balancesLine(s: AppState): Line {
   else if (shownAge) tail = `cached ${shownAge} · unlock to refresh`;
   else if (anyMissing) tail = 'unlock to decrypt';
   else tail = '';
-  if (tail) out.push(seg(`   · ${tail}`, 'dim'));
-  return out;
+  const tailSeg = tail ? seg(`   · ${tail}`, 'dim') : seg('');
+
+  const gap = '   ';
+  const room = Math.max(20, cols - 2);
+  const rows: Line[] = [];
+  let row: Line = [];
+  let used = 0;
+  let i = 0;
+  for (; i < entries.length; i++) {
+    const w = lineWidth(entries[i]) + (row.length ? gap.length : 0);
+    if (row.length && used + w > room) {
+      if (rows.length + 1 >= HOME_BALANCE_ROWS) break;
+      rows.push(row);
+      row = [];
+      used = 0;
+      i--;
+      continue;
+    }
+    if (row.length) row.push(seg(gap, 'dim'));
+    row.push(...entries[i]);
+    used += w;
+  }
+  if (i < entries.length) {
+    // Make room on the last row for the count of the tokens left out.
+    const more = (n: number) => `${gap}+${n} more · b Balances`;
+    while (row.length > 2 && used + more(entries.length - i).length > room) {
+      i--;
+      used -= lineWidth(entries[i]) + gap.length;
+      row = row.slice(0, row.length - entries[i].length - 1);
+    }
+    row.push(seg(more(entries.length - i), 'dim'));
+    used += more(entries.length - i).length;
+  }
+  if (used + lineWidth([tailSeg]) <= room) row.push(tailSeg);
+  rows.push(row);
+  if (tail && !row.includes(tailSeg)) rows.push([seg(`· ${tail}`, 'dim')]);
+  return rows.map((r) => [seg('  '), ...r]);
 }
 
 export const homeScreen: ScreenDef = {
@@ -74,7 +115,7 @@ export const homeScreen: ScreenDef = {
         line(''),
       );
     }
-    body.push(balancesLine(s));
+    body.push(...balancesLines(s));
 
     const items: MenuEntry[] = [];
     if (s.lastSendError) {

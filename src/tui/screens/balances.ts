@@ -36,6 +36,7 @@ export const balancesScreen: ScreenDef = {
         seg('native · pays gas', 'dim'),
       ),
     ];
+    const list: Line[] = [];
     for (const t of s.data.tokens) {
       const b = s.balances[t.address.toLowerCase()];
       const shown = b
@@ -43,7 +44,7 @@ export const balancesScreen: ScreenDef = {
         : s.decrypting
           ? 'decrypting…'
           : 'locked';
-      body.push(
+      list.push(
         line(
           '  ',
           seg(pad(t.symbol, 9), 'bold'),
@@ -55,15 +56,16 @@ export const balancesScreen: ScreenDef = {
       );
     }
     if (s.data.tokens.length === 0) body.push(dimLine('  No tokens tracked. Add one in Tokens.'));
-    body.push(BLANK);
+    // Notes after the token rows stay on screen while a long list scrolls.
+    const after: Line[] = [BLANK];
     const sessionAges = Object.values(s.balances).filter((b) => b.source === 'session');
     if (isUnlocked(s) && sessionAges.length) {
       const newest = Math.max(...sessionAges.map((b) => b.at ?? 0));
-      body.push(dimLine(`  ✔ ${sessionAges.length} token(s) decrypted · ${age(newest, s.now)}`));
+      after.push(dimLine(`  ✔ ${sessionAges.length} token(s) decrypted · ${age(newest, s.now)}`));
     } else if (!isUnlocked(s)) {
       const cached = Object.values(s.balances).filter((b) => b.source === 'cache');
       const oldest = cached.length ? Math.min(...cached.map((b) => b.at ?? 0)) : undefined;
-      body.push(
+      after.push(
         line(
           seg(
             cached.length
@@ -92,6 +94,8 @@ export const balancesScreen: ScreenDef = {
         ];
     return {
       body,
+      list,
+      after,
       items,
       hint: '↑↓ move · enter select · esc back',
       help: [['enter', 'Refresh, or unlock to decrypt']],

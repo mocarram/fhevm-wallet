@@ -6,6 +6,7 @@
 
 import { formatBalance, formatExactAmount, hasAmbiguousComma } from '../../core/send/amount.js';
 import { formatTokenAmount } from '../../utils/formatting.js';
+import { matchesFilter } from '../components/list.js';
 import { shortAddress, splitForComparison } from '../../core/send/recipient.js';
 import {
   afterSignUnlock,
@@ -43,6 +44,9 @@ import {
   stepper,
 } from './common.js';
 
+const SEND_TOKEN_FILTER = 'filter.sendToken';
+const SEND_TO_FILTER = 'filter.sendTo';
+
 const cancelItem: Item = {
   label: 'Cancel',
   act: (s) => goHome(s, [dimLine('  Send cancelled. Nothing was signed.')]),
@@ -56,7 +60,11 @@ export const sendTokenScreen: ScreenDef = {
   crumb: ['Send', 'Token'],
   view: (s) => {
     const last = sticky(s).lastToken?.toLowerCase();
-    const items: MenuEntry[] = s.data.tokens.map((t) => {
+    const q = s.inputs[SEND_TOKEN_FILTER];
+    const shown = s.data.tokens.filter((t) =>
+      matchesFilter(`${t.symbol} ${t.name} ${t.address}`, q),
+    );
+    const items: MenuEntry[] = shown.map((t) => {
       const b = knownBalance(s, t.address);
       const bal = b ? formatBalance(b.value, t.decimals) : 'locked';
       return {
@@ -68,9 +76,13 @@ export const sendTokenScreen: ScreenDef = {
     });
     items.push(SEP, cancelItem);
     return {
-      body: [stepper(0, SEND_STEPS)],
+      body: [
+        stepper(0, SEND_STEPS),
+        ...(q && !shown.length ? [BLANK, dimLine('  No token matches the filter.')] : []),
+      ],
       items,
-      hint: '↑↓ move · enter next · esc back',
+      filter: SEND_TOKEN_FILTER,
+      hint: `↑↓ move · enter next${s.data.tokens.length > 9 ? ' · / filter' : ''} · esc back`,
       help: [['enter', 'Send this token']],
     };
   },
@@ -80,7 +92,9 @@ export const sendToScreen: ScreenDef = {
   crumb: ['Send', 'Recipient'],
   view: (s) => {
     const last = sticky(s).lastRecipient?.toLowerCase();
-    const items: MenuEntry[] = s.data.contacts.map((c) => ({
+    const q = s.inputs[SEND_TO_FILTER];
+    const shown = s.data.contacts.filter((c) => matchesFilter(`${c.name} ${c.address}`, q));
+    const items: MenuEntry[] = shown.map((c) => ({
       label: `${pad(c.name, 14)} ${shortAddress(c.address)}`,
       value: c.address.toLowerCase() === last ? 'last used' : '',
       valueStyle: 'dim',
@@ -95,13 +109,20 @@ export const sendToScreen: ScreenDef = {
     items.push(SEP, backItem());
     const t = draftToken(s);
     return {
-      body: [stepper(1, SEND_STEPS), BLANK, line('  Send ', seg(t?.symbol ?? '', 'bold'), ' to:')],
+      body: [
+        stepper(1, SEND_STEPS),
+        BLANK,
+        line('  Send ', seg(t?.symbol ?? '', 'bold'), ' to:'),
+        ...(q && !shown.length ? [dimLine('  No contact matches the filter.')] : []),
+      ],
       items,
-      hint: '↑↓ move · enter next · p paste · esc back (keeps your token)',
+      filter: SEND_TO_FILTER,
+      hint: `↑↓ move · enter next · p paste${s.data.contacts.length > 9 ? ' · / filter' : ''} · esc back (keeps your token)`,
       onPaste: pasteAddressInto('paste', 'send-paste'),
       help: [
         ['enter', 'Send to this contact'],
         ['p', 'Paste an address instead'],
+        ['/', 'Filter the contacts by name or address'],
       ],
     };
   },

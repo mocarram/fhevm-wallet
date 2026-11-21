@@ -32,7 +32,7 @@ export function shortWhen(iso: string): string {
 }
 
 /** How many transfers History shows. */
-export const HISTORY_LIMIT = 50;
+export const HISTORY_LIMIT = 200;
 
 /** One display row for a stored transaction. */
 export function toHistoryRow(

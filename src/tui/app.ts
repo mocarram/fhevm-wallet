@@ -21,10 +21,19 @@ import { lockNow } from './flows/data.js';
 import { findBusy } from './flows/find.js';
 import { spinner } from './format.js';
 import { openFromRoot } from './nav.js';
-import { indexForDigit, isItem, type ScreenView } from './screen.js';
+import { indexForDigit, isItem, selectable, type ScreenView } from './screen.js';
 import { SCREENS } from './screens/registry.js';
 import { BLANK } from './screens/common.js';
-import { back, goHome, inSetup, lockWallet, sendInProgress, top, type AppState } from './state.js';
+import {
+  back,
+  goHome,
+  inSetup,
+  lockWallet,
+  sendInProgress,
+  top,
+  type AppState,
+  type Frame,
+} from './state.js';
 import { statusBar } from './statusBar.js';
 import { clipLine, dimLine, line, pad, seg, wrapLine, type Line } from './text.js';
 import { isPrintable, type Key } from './keys.js';
@@ -61,6 +70,7 @@ export const GLOBAL_HELP: Array<[string, string]> = [
   ['L', 'Lock now'],
   ['?', 'This help'],
   ['/', 'Filter the list (on long lists)'],
+  ['pgup pgdn', 'Scroll a long list (home / end: top / bottom)'],
 ];
 
 function flashLine(text: string, style = 'dim'): Line[] {
@@ -110,6 +120,32 @@ function runCommand(s: AppState, text: string): Effect[] {
         return [];
       }
       return commandSend(s, cmd);
+  }
+}
+
+const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
+
+/**
+ * PgUp/PgDn (one window) and Home/End (all the way): scroll the screen's list, move a
+ * multi-select cursor, or move the cursor through a long menu.
+ */
+function pageKey(view: ScreenView, f: Frame, key: Key): void {
+  const dir = key === 'pageup' || key === 'home' ? -1 : 1;
+  const far = key === 'home' || key === 'end';
+  const page = Math.max(1, f.page ?? 10);
+  if (view.multiSelect !== undefined) {
+    if (view.multiSelect)
+      f.cur = clamp(f.cur + dir * (far ? view.multiSelect : page), 0, view.multiSelect - 1);
+  } else if (view.list?.length) {
+    f.scroll = clamp(
+      (f.scroll ?? 0) + dir * (far ? view.list.length : page),
+      0,
+      view.list.length - 1,
+    );
+  } else {
+    const sel = selectable(view.items);
+    const at = sel.indexOf(f.cur);
+    if (sel.length) f.cur = sel[clamp(at + dir * (far ? sel.length : 10), 0, sel.length - 1)];
   }
 }
 
@@ -219,6 +255,7 @@ function handleKeyInner(s: AppState, key: Key, opts: KeyOptions): Effect[] {
       s.inputs[field] = current + key;
     }
     f.cur = 0;
+    f.scroll = 0;
     return [];
   }
   if (key === '/' && view.filter && !view.input) {
@@ -256,6 +293,11 @@ function handleKeyInner(s: AppState, key: Key, opts: KeyOptions): Effect[] {
 
   if (key === 'escape') {
     back(s);
+    return [];
+  }
+
+  if (key === 'pageup' || key === 'pagedown' || key === 'home' || key === 'end') {
+    pageKey(view, f, key);
     return [];
   }
 
@@ -444,32 +486,84 @@ function helpLines(view: ScreenView, cols: number): Line[] {
   return out;
 }
 
+/** Most rows a list window keeps even on a short terminal. */
+const MIN_LIST_ROWS = 3;
+
+/**
+ * The visible part of a scrolling list: `height` rows from `start`, the last row being
+ * a "rows a-b of n" note when the list does not fit. `cursor` (a multi-select row) is
+ * kept in view. Updates the frame's scroll and page so PgUp/PgDn step a full window.
+ */
+function listWindow(f: Frame, rows: Line[], height: number, cursor?: number): Line[] {
+  if (rows.length <= height) {
+    f.scroll = 0;
+    f.page = rows.length;
+    return rows;
+  }
+  const shown = Math.max(1, height - 1);
+  let start = Math.max(0, Math.min(f.scroll ?? 0, rows.length - shown));
+  if (cursor !== undefined && cursor >= 0) {
+    if (cursor < start) start = cursor;
+    else if (cursor >= start + shown) start = cursor - shown + 1;
+  }
+  f.scroll = start;
+  f.page = shown;
+  const end = Math.min(rows.length, start + shown);
+  const more: string[] = [];
+  if (start > 0) more.push('pgup');
+  if (end < rows.length) more.push('pgdn');
+  return [
+    ...rows.slice(start, end),
+    dimLine(`  rows ${start + 1}-${end} of ${rows.length} · ${more.join('/')} scroll`),
+  ];
+}
+
+/**
+ * The part of a menu that fits in `height` rows around the cursor, with "↑ n more" /
+ * "↓ n more" in place of the cut ends.
+ */
+function menuWindow(lines: Line[], cursorLine: number, height: number): Line[] {
+  if (lines.length <= height) return lines;
+  const h = Math.max(3, height);
+  const at = Math.max(0, cursorLine);
+  // Centre the cursor, so it never lands on a "more" row.
+  const start = Math.max(0, Math.min(at - Math.floor(h / 2), lines.length - h));
+  const end = Math.min(lines.length, start + h);
+  const out = lines.slice(start, end);
+  if (start > 0) out[0] = dimLine(`   ↑ ${start + 1} more`);
+  if (end < lines.length) out[out.length - 1] = dimLine(`   ↓ ${lines.length - end + 1} more`);
+  return out;
+}
+
 /** Render the whole screen to `size.rows` lines of at most `size.cols` columns. */
 export function render(s: AppState, size: Size): Line[] {
   const cols = size.cols > 0 ? size.cols : FALLBACK_SIZE.cols;
   const rows = size.rows > 0 ? size.rows : FALLBACK_SIZE.rows;
+  s.size = { cols, rows };
   const view = currentView(s);
   const f = top(s);
   f.cur = viewCursor(view, f.cur);
 
   const head: Line[] = [statusBar(s, cols), BLANK];
-  const content: Line[] = [];
-  let cursorAt = -1;
-  // Menu rows are cut, not wrapped (a wrapped item would look like two items).
-  let menuStart = Number.MAX_SAFE_INTEGER;
+  // Above the list: notices, the flash, the filter line and the body (wrapped).
+  const above: Line[] = [];
+  // Below the list: the screen's notes, field errors and the busy spinner (wrapped).
+  const below: Line[] = [];
+  let listRows: Line[] = [];
+  let menu: { lines: Line[]; cursorLine: number } = { lines: [], cursorLine: -1 };
 
   if (s.help) {
-    content.push(...helpLines(view, cols));
+    above.push(...helpLines(view, cols));
   } else {
     if (s.notice && f.id === 'home' && s.stack.length === 1) {
-      content.push(...s.notice, BLANK);
+      above.push(...s.notice, BLANK);
     } else if (s.notice) {
-      content.push([...s.notice[0], seg('   · details on Home', 'dim')], BLANK);
+      above.push([...s.notice[0], seg('   · details on Home', 'dim')], BLANK);
     }
-    if (s.flash) content.push(...s.flash, BLANK);
+    if (s.flash) above.push(...s.flash, BLANK);
     if (view.filter && (s.filtering === view.filter || s.inputs[view.filter])) {
       const typing = s.filtering === view.filter;
-      content.push(
+      above.push(
         line(
           seg('  / ', 'cyan bold'),
           seg(s.inputs[view.filter] ?? '', 'bold'),
@@ -479,17 +573,17 @@ export function render(s: AppState, size: Size): Line[] {
         BLANK,
       );
     }
-    content.push(...view.body);
+    above.push(...view.body);
+    listRows = view.list ?? [];
+    below.push(...(view.after ?? []));
     if (s.fieldError) {
-      content.push(BLANK, line('  ', seg(s.fieldError[0], 'red')), dimLine(`  ${s.fieldError[1]}`));
+      below.push(BLANK, line('  ', seg(s.fieldError[0], 'red')), dimLine(`  ${s.fieldError[1]}`));
     }
-    if (s.busy) content.push(BLANK, line('  ', seg(`${spinner(s.now)} ${s.busy}…`, 'cyan')));
+    if (s.busy) below.push(BLANK, line('  ', seg(`${spinner(s.now)} ${s.busy}…`, 'cyan')));
     if (view.items.length) {
-      if (view.body.length || s.fieldError || s.busy) content.push(BLANK);
-      const menu = renderMenu(view.items, f.cur, cols);
-      menuStart = content.length;
-      if (menu.cursorLine >= 0) cursorAt = content.length + menu.cursorLine;
-      content.push(...menu.lines);
+      if (view.body.length || listRows.length || below.length) below.push(BLANK);
+      // Menu rows are cut, not wrapped (a wrapped item would look like two items).
+      menu = renderMenu(view.items, f.cur, cols);
     }
   }
 
@@ -501,22 +595,33 @@ export function render(s: AppState, size: Size): Line[] {
         ]
       : [BLANK, dimLine(` ${s.help ? 'any key closes help' : view.hint}`)];
 
-  // Wrap long lines (links, hints) rather than cutting them, keeping track of the cursor.
-  const wrapped: Line[] = [];
-  let cursorRow = -1;
-  content.forEach((l, i) => {
-    if (i === cursorAt) cursorRow = wrapped.length;
-    if (i >= menuStart) wrapped.push(l);
-    else wrapped.push(...wrapLine(l, cols));
-  });
-
-  // Fit the middle part; when it is too long, keep the cursor's line in view.
+  // Wrap long lines (links, hints) rather than cutting them.
+  const wrapAll = (ls: Line[]) => ls.flatMap((l) => wrapLine(l, cols));
+  const top0 = wrapAll(above);
+  const bottom = wrapAll(below);
   const room = Math.max(0, rows - head.length - foot.length);
-  let middle = wrapped;
-  if (wrapped.length > room) {
+
+  // Fit the middle part. A long list shrinks to a scrolling window first, then a long
+  // menu to a window around the cursor; the body, the notes and the filter line stay.
+  let middle: Line[];
+  const fixed = top0.length + bottom.length;
+  const listRoom = room - fixed - menu.lines.length;
+  if (listRows.length && fixed + MIN_LIST_ROWS <= room) {
+    const height = Math.max(MIN_LIST_ROWS, Math.min(listRows.length, listRoom));
+    const shown = listWindow(f, listRows, height, view.listCursor);
+    const menuRoom = room - fixed - shown.length;
+    middle = [...top0, ...shown, ...bottom, ...menuWindow(menu.lines, menu.cursorLine, menuRoom)];
+  } else if (!listRows.length && menu.lines.length && fixed + 3 <= room) {
+    middle = [...top0, ...bottom, ...menuWindow(menu.lines, menu.cursorLine, room - fixed)];
+  } else {
+    // Even the fixed part does not fit: keep the cursor's line in view, as before.
+    const all = [...top0, ...listRows, ...bottom, ...menu.lines];
+    const cursorRow =
+      menu.cursorLine >= 0 ? top0.length + listRows.length + bottom.length + menu.cursorLine : -1;
     const start = cursorRow >= room ? cursorRow - room + 1 : 0;
-    middle = wrapped.slice(start, start + room);
+    middle = all.slice(start, start + room);
   }
+  middle = middle.slice(0, room);
   while (middle.length < room) middle = [...middle, BLANK];
 
   const all = [...head, ...middle, ...foot].slice(0, rows);

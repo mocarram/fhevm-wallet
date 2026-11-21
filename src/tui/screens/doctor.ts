@@ -30,13 +30,15 @@ export const doctorScreen: ScreenDef = {
   crumb: ['Doctor'],
   onEnter: runDoctor,
   view: (s) => {
-    const body = s.doctor
-      ? doctorLines(s.doctor)
-      : [line('  ', seg(`${spinner(s.now)} Checking…`, 'cyan'))];
+    const body = s.doctor ? [] : [line('  ', seg(`${spinner(s.now)} Checking…`, 'cyan'))];
+    const after: Line[] = [];
     if (s.backendKind === 'mock')
-      body.push(line(''), dimLine('  Offline mock backend: network results are simulated.'));
+      after.push(line(''), dimLine('  Offline mock backend: network results are simulated.'));
     return {
       body,
+      // One row per check: with many tokens this scrolls (PgUp/PgDn).
+      list: s.doctor ? doctorLines(s.doctor) : [],
+      after,
       items: [
         { label: 'Run again', act: runDoctor },
         { label: 'Go to Tokens', act: (st) => open(st, 'tokens') },

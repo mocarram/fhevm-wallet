@@ -7,6 +7,11 @@ This file is the text reference agents build against.
 
 ## Layout of every screen
 
+Long lists (tokens, contacts, balances, history, doctor rows, multi-selects) scroll in a
+window between the screen's header and its notes and menu, which stay on screen; the last
+row of the window says `rows 21-40 of 200 · pgup/pgdn scroll`. A menu longer than the
+screen shows a window around the cursor with `↑ n more` / `↓ n more`.
+
 ```
  fhEVM Wallet  Home › Send › Review          [Sepolia] alice 0x3f9A…C21d unlocked 15m 0.4210 ETH
                                               ^ red MAINNET badge on mainnet; yellow ETH when low;
@@ -26,25 +31,26 @@ This file is the text reference agents build against.
 
 ## Keymap
 
-| Key       | Action                                                           | Where                                           |
-| --------- | ---------------------------------------------------------------- | ----------------------------------------------- |
-| ↑ ↓ / k j | Move                                                             | lists                                           |
-| Enter     | Select / next step                                               | everywhere                                      |
-| Esc       | Back one screen or step, keeping input; stops the send countdown | not Home                                        |
-| Ctrl+C    | Cancel to Home; twice on Home quits                              | everywhere                                      |
-| 1-9       | Jump to numbered item (numbers are stable)                       | menus                                           |
-| 0 / q     | Quit                                                             | Home                                            |
-| b s r h d | Balances, Send, Receive, History, Doctor                         | Home                                            |
-| .         | Repeat last send                                                 | Home                                            |
-| a         | Save last new address as contact                                 | Home, when offered                              |
-| :         | Command bar                                                      | not in text fields                              |
-| ?         | Help for this screen                                             | not in text fields                              |
-| L or l    | Lock now                                                         | not in text fields                              |
-| /         | Filter the list (Enter keeps, Esc clears)                        | Tokens, Address book, History, Find tokens      |
-| e         | What happened to the last send                                   | Home, after a failed send                       |
-| p         | Paste an address                                                 | Send › Recipient                                |
-| Space / a | Select one / all                                                 | multi-select lists (Remove tokens, Find tokens) |
-| r         | Scan again                                                       | Find tokens                                     |
+| Key       | Action                                                                                  | Where                                                                  |
+| --------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| ↑ ↓ / k j | Move                                                                                    | lists                                                                  |
+| Enter     | Select / next step                                                                      | everywhere                                                             |
+| Esc       | Back one screen or step, keeping input; stops the send countdown                        | not Home                                                               |
+| Ctrl+C    | Cancel to Home; twice on Home quits                                                     | everywhere                                                             |
+| 1-9       | Jump to numbered item (numbers are stable)                                              | menus                                                                  |
+| 0 / q     | Quit                                                                                    | Home                                                                   |
+| b s r h d | Balances, Send, Receive, History, Doctor                                                | Home                                                                   |
+| .         | Repeat last send                                                                        | Home                                                                   |
+| a         | Save last new address as contact                                                        | Home, when offered                                                     |
+| :         | Command bar                                                                             | not in text fields                                                     |
+| ?         | Help for this screen                                                                    | not in text fields                                                     |
+| L or l    | Lock now                                                                                | not in text fields                                                     |
+| /         | Filter the list (Enter keeps, Esc clears)                                               | Tokens, Address book, History, Find tokens, Send › Token and Recipient |
+| PgUp PgDn | Scroll a long list one window (Home / End: top / bottom); in a long menu, move 10 items | lists                                                                  |
+| e         | What happened to the last send                                                          | Home, after a failed send                                              |
+| p         | Paste an address                                                                        | Send › Recipient                                                       |
+| Space / a | Select one / all                                                                        | multi-select lists (Remove tokens, Find tokens)                        |
+| r         | Scan again                                                                              | Find tokens                                                            |
 
 Input details: Esc acts at once (an escape sequence split across reads gets 25 ms to
 complete), and a key typed right after Esc is not lost: Esc+s (or Alt+s) is Esc, then s.
@@ -57,7 +63,8 @@ a 0 or q inside a burst of keys only arms Quit ("Press 0 again to quit").
 
 ## Home
 
-Low-gas nudge (when ETH covers < 5 sends), cached balances with age, then:
+Low-gas nudge (when ETH covers < 5 sends), cached balances with age (at most two rows;
+entries never split, the rest counted as `+N more · b Balances`), then:
 (after unlock and after each confirmed send the balances re-decrypt in the background:
 each value stays on screen with a spinner beside it and the line ends `2m ago ·
 updating…`; one EIP-712 signature covers every tracked token for the unlocked session)
@@ -105,6 +112,7 @@ gas, each tracked token's ERC-7984 check) with ✔ ! ✗ marks, the same as `fhe
 
 ## History
 
+Newest first (pending sends at the top, then by block), the latest 200 transfers.
 Rows show decrypted amounts once the wallet is unlocked (`Decrypt amounts` unlocks first).
 Amounts this wallet may not decrypt stay `encrypted`, without an error. Decrypted amounts
 are cached by handle, so they show on later visits while locked. `Disclose an amount`
