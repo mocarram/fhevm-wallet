@@ -276,6 +276,39 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     expect(byContact.status).toBe(0);
   });
 
+  it('fhew send --json: precise error codes, the amount checked before the unlock', () => {
+    const home = freshHome();
+    const send = (args: string[], input = `${PASSWORD}\n`) => {
+      const res = spawnSync(process.execPath, [CLI, 'send', ...args, '--json'], {
+        env: {
+          PATH: process.env.PATH ?? '',
+          HOME: home,
+          FHEVM_WALLET_HOME: join(home, 'wallet-data'),
+          FHEW_BACKEND: 'mock',
+          FHEW_MOCK_LATENCY_MS: '20',
+        },
+        input,
+        encoding: 'utf-8',
+        timeout: 60_000,
+      });
+      expect(res.status, args.join(' ')).toBe(1);
+      return JSON.parse(res.stdout).error as { code: string; message: string };
+    };
+    const y = ['--yes', '--password-stdin'];
+    expect(send(['bob', 'lots', 'cusdc', ...y]).code).toBe('INVALID_AMOUNT');
+    // Checked before the slow unlock: a wrong password is not even read.
+    expect(send(['bob', 'lots', 'cusdc', ...y], 'wrong\n').code).toBe('INVALID_AMOUNT');
+    expect(send(['bob', '1', 'nope', ...y]).code).toBe('TOKEN_NOT_FOUND');
+    expect(send(['nobody', '1', 'cusdc', ...y]).code).toBe('CONTACT_NOT_FOUND');
+    expect(send(['0x1234', '1', 'cusdc', ...y]).code).toBe('INVALID_ADDRESS');
+    expect(send(['bob', '1', 'cusdc', '-n', 'moon', ...y]).code).toBe('INVALID_NETWORK');
+    // -t naming another (untracked) token than the argument: refused, not ignored.
+    expect(send(['bob', '1', 'cusdc', '-t', BOB, ...y]).code).toBe('TOKEN_NOT_FOUND');
+    const wrong = send(['bob', '1', 'cusdc', ...y], 'not the password\n');
+    expect(wrong.code).toBe('WRONG_PASSWORD');
+    expect(wrong.message).toBe('That password did not unlock alice. Check it and try again.');
+  });
+
   it('fhew send on Mainnet: no unconfirmed send unless -n mainnet and --mainnet', () => {
     const home = freshHome();
     // Track the mock's Mainnet cUSDC (same derivation as MockBackend's mockAddress).

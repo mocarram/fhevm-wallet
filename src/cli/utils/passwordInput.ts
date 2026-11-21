@@ -34,3 +34,27 @@ export async function walletPassword(passwordStdin?: boolean): Promise<string> {
 /** Help text for --password-stdin. */
 export const PASSWORD_STDIN_HELP =
   'Read the wallet password from stdin (e.g. `pass show w | fhew …`) instead of asking';
+
+/** True when decrypting a keystore failed because of the password (not a broken file). */
+export function isWrongPassword(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /(?:in)?correct password|invalid password/i.test(message);
+}
+
+/** The wrong-password sentence, the same wording as the terminal UI. */
+export function wrongPasswordMessage(walletName: string): string {
+  return `That password did not unlock ${walletName}. Check it and try again.`;
+}
+
+/**
+ * Without a terminal and without --password-stdin there is nobody to ask: the sentence
+ * that names the option (null when the password can be asked or read).
+ */
+export function passwordStdinNeeded(
+  passwordStdin: boolean | undefined,
+  command = '',
+  stdin: { isTTY?: boolean } = process.stdin,
+): string | null {
+  if (passwordStdin || stdin.isTTY) return null;
+  return `No terminal to ask for the wallet password. Pipe it in and add --password-stdin, e.g. \`pass show my-wallet | fhew ${command ? `${command} ` : ''}… --password-stdin\`.`;
+}

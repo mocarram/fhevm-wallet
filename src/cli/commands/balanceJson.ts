@@ -3,7 +3,7 @@
  * Kept apart from the interactive table so neither path has to know about the other.
  */
 
-import { walletPassword } from '../utils/passwordInput.js';
+import { isWrongPassword, walletPassword, wrongPasswordMessage } from '../utils/passwordInput.js';
 import { loadWallet, hasWallet } from '../../core/wallet/index.js';
 import { listTokens, getToken, type TokenEntry } from '../../core/token/TokenRegistry.js';
 import { decryptBalancesWithSession } from '../../core/token/TokenService.js';
@@ -83,7 +83,10 @@ export async function balanceJson(options: BalanceJsonOptions): Promise<void> {
     try {
       wallet = await loadWallet(walletName, password, network);
     } catch (err) {
-      return failJson(err, 'Invalid password');
+      if (isWrongPassword(err)) {
+        return printJsonError('WRONG_PASSWORD', wrongPasswordMessage(walletName));
+      }
+      return failJson(err, 'Could not decrypt the wallet');
     }
 
     const ethWei = await getProvider(network).getBalance(wallet.address);

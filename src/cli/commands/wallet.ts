@@ -36,6 +36,7 @@ import {
   passwordStrengthHint,
 } from '../../utils/validation.js';
 import { describeError } from '../utils/userError.js';
+import { isWrongPassword, wrongPasswordMessage } from '../utils/passwordInput.js';
 
 /** Validation for a new wallet's name: allowed characters and not already taken. */
 function validateNewWalletName(input: string): string | true {
@@ -389,7 +390,13 @@ export function registerWalletCommands(program: Command): void {
       } catch (err) {
         spinner.fail('Failed to decrypt wallet');
         process.exitCode = 1;
-        console.log(error(describeError(err, 'Invalid password')));
+        console.log(
+          error(
+            isWrongPassword(err)
+              ? wrongPasswordMessage(name)
+              : describeError(err, 'Could not decrypt the wallet'),
+          ),
+        );
       }
     });
 }

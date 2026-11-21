@@ -3,7 +3,12 @@
  */
 
 import { Command } from 'commander';
-import { PASSWORD_STDIN_HELP, walletPassword } from '../utils/passwordInput.js';
+import {
+  isWrongPassword,
+  PASSWORD_STDIN_HELP,
+  walletPassword,
+  wrongPasswordMessage,
+} from '../utils/passwordInput.js';
 import { prompts } from '../utils/prompts.js';
 import ora from 'ora';
 import chalk from 'chalk';
@@ -110,7 +115,13 @@ export function registerBalanceCommand(program: Command): void {
           } catch (err) {
             loadSpinner.fail('Failed to decrypt wallet');
             process.exitCode = 1;
-            console.log(error(describeError(err, 'Invalid password')));
+            console.log(
+              error(
+                isWrongPassword(err)
+                  ? wrongPasswordMessage(selectedWallet)
+                  : describeError(err, 'Could not decrypt the wallet'),
+              ),
+            );
             return;
           }
 

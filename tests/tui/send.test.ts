@@ -334,3 +334,13 @@ describe('first-time note', () => {
     expect(h.text()).not.toMatch(/First time/);
   });
 });
+
+it('max of a zero balance says there is nothing to send', async () => {
+  const h = new Harness({ unlocked: true });
+  await h.keys('s', '{enter}', '{enter}');
+  const t = h.s.data.tokens[0];
+  h.s.balances[t.address.toLowerCase()] = { value: 0n, at: h.now, source: 'session' };
+  await h.keys('max', '{enter}');
+  expect(h.screen).toBe('send-amount');
+  expect(h.text()).toMatch(/You have 0 cUSDC on sepolia\./);
+});

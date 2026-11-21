@@ -176,7 +176,27 @@ export function parseDraftAmount(s: AppState) {
   const t = draftToken(s);
   if (!t) return null;
   const bal = knownBalance(s, t.address);
-  return parseFriendlyAmount(s.inputs.amount ?? '', { decimals: t.decimals, balance: bal?.value });
+  return parseAmountFor(s, s.inputs.amount ?? '', t, bal?.value);
+}
+
+/**
+ * parseFriendlyAmount, except that half or max of a zero balance says so ("You have 0
+ * cUSDC on sepolia") instead of "Enter an amount greater than 0".
+ */
+function parseAmountFor(
+  s: AppState,
+  text: string,
+  t: { decimals: number; symbol: string },
+  balance: bigint | undefined,
+): ReturnType<typeof parseFriendlyAmount> {
+  if (balance === 0n && /^(half|max|all)$/i.test(text.trim())) {
+    return {
+      ok: false,
+      error: `You have 0 ${t.symbol} on ${s.network}.`,
+      hint: 'There is nothing to send until some arrives (Receive shows your address).',
+    };
+  }
+  return parseFriendlyAmount(text, { decimals: t.decimals, balance });
 }
 
 /** Amount step: accept the amount and continue to Review. */
@@ -615,7 +635,7 @@ export function commandSend(
   if (!rr.ok) return fail(`  ${rr.error}`);
 
   const bal = knownBalance(s, t.address);
-  const ar = parseFriendlyAmount(args.amount, { decimals: t.decimals, balance: bal?.value });
+  const ar = parseAmountFor(s, args.amount, t, bal?.value);
   if (!ar.ok) return fail(`  ${ar.error} ${ar.hint}`);
 
   if (!rr.contact) return prefilledFromAddress(s, t, rr.address, ar.value, args.amount, 'command');

@@ -107,13 +107,24 @@ describe('--json output', () => {
     expect(process.exitCode).toBe(1);
   });
 
-  it('send --json names a bad recipient INVALID_ADDRESS', async () => {
+  it('send --json: INVALID_ADDRESS, CONTACT_NOT_FOUND, CONFLICTING_TOKENS', async () => {
     addTokenWithInfo({ address: TOKEN, name: 'Tok', symbol: 'TOK', decimals: 6 }, 'sepolia');
     const args = ['send', '-n', 'sepolia', '--yes', '--password-stdin', '--json'];
     const bad = JSON.parse(await stdoutOf(...args.slice(0, 1), '0x1234', '1', ...args.slice(1)));
     expect(bad.error.code).toBe('INVALID_ADDRESS');
     const unknown = JSON.parse(await stdoutOf('send', 'nobody', '1', ...args.slice(1)));
-    expect(unknown.error.code).toBe('INVALID_ADDRESS');
+    expect(unknown.error.code).toBe('CONTACT_NOT_FOUND');
+    addTokenWithInfo({ address: ADDRESS, name: 'Other', symbol: 'OTH', decimals: 6 }, 'sepolia');
+    addAddress('bob', '0x91Be4C2a6d0f83B1e7c5a9d2f4E8b0C6D3d207AF');
+    const two = JSON.parse(
+      await stdoutOf('send', 'bob', '1', 'TOK', '-t', 'OTH', ...args.slice(1)),
+    );
+    expect(two.error.code).toBe('CONFLICTING_TOKENS');
+    expect(two.error.message).toMatch(/Two tokens given: TOK \(argument\) and OTH \(-t\)/);
+    const same = JSON.parse(
+      await stdoutOf('send', 'bob', 'x', 'TOK', '-t', 'TOK', ...args.slice(1)),
+    );
+    expect(same.error.code).toBe('INVALID_AMOUNT');
   });
 
   it('balance needs --password-stdin with --json; history validates the address', async () => {

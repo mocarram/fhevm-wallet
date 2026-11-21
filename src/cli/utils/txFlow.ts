@@ -22,7 +22,12 @@ import { error, formatNetworkName, warning } from '../../utils/formatting.js';
 import { isValidNetwork } from '../../utils/validation.js';
 import { MAINNET_GUARD_CODE, mainnetGuardProblem } from './mainnetGuard.js';
 import { jsonErrorOf, printJson } from './json.js';
-import { walletPassword } from './passwordInput.js';
+import {
+  isWrongPassword,
+  passwordStdinNeeded,
+  walletPassword,
+  wrongPasswordMessage,
+} from './passwordInput.js';
 import { prompts } from './prompts.js';
 import { describeError } from './userError.js';
 
@@ -160,6 +165,11 @@ export async function unlockWallet(
   network: NetworkName,
   passwordStdin?: boolean,
 ): Promise<UnlockedSigner | null> {
+  const noPassword = passwordStdinNeeded(passwordStdin);
+  if (noPassword) {
+    fail(noPassword, 'PASSWORD_STDIN_REQUIRED');
+    return null;
+  }
   const password = await walletPassword(passwordStdin);
   const spin = ora('Decrypting wallet...').start();
   try {
@@ -168,8 +178,10 @@ export async function unlockWallet(
     return w;
   } catch (err) {
     spin.fail('Failed to decrypt wallet');
-    if (jsonMode) fail(jsonErrorOf(err, 'Invalid password').message, 'WALLET_UNLOCK_FAILED');
-    else fail(describeError(err, 'Invalid password'));
+    if (isWrongPassword(err)) fail(wrongPasswordMessage(name), 'WRONG_PASSWORD');
+    else if (jsonMode)
+      fail(jsonErrorOf(err, 'Could not decrypt the wallet').message, 'WALLET_UNLOCK_FAILED');
+    else fail(describeError(err, 'Could not decrypt the wallet'));
     return null;
   }
 }

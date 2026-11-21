@@ -15,7 +15,13 @@
 import { Command } from 'commander';
 import { formatEther } from 'ethers';
 import ora from 'ora';
-import { PASSWORD_STDIN_HELP, walletPassword } from '../utils/passwordInput.js';
+import {
+  isWrongPassword,
+  PASSWORD_STDIN_HELP,
+  passwordStdinNeeded,
+  walletPassword,
+  wrongPasswordMessage,
+} from '../utils/passwordInput.js';
 import { prompts } from '../utils/prompts.js';
 import { describeBalanceCheck } from '../utils/transferReport.js';
 import { describeError } from '../utils/userError.js';
@@ -84,6 +90,11 @@ function fail(message: string, code = 'SEND_FAILED', extra: Record<string, strin
   else console.log(error(message));
 }
 
+/** The user left a prompt empty: say so (exit code stays 0, nothing happened). */
+function cancelled(): void {
+  if (!jsonMode) console.log('Cancelled. Nothing was sent.');
+}
+
 /** Route console.log to stderr, so with --json stdout holds only the JSON document. */
 function progressToStderr(): () => void {
   const original = console.log;
@@ -138,7 +149,7 @@ async function send(
   let network: NetworkName = getDefaultNetwork();
   if (options.network) {
     if (!isValidNetwork(options.network)) {
-      return fail('Invalid network. Use "sepolia" or "mainnet"');
+      return fail('Invalid network. Use "sepolia" or "mainnet"', 'INVALID_NETWORK');
     }
     network = options.network;
   }
@@ -172,23 +183,41 @@ async function send(
 
   const tokens = listTokens(network);
   if (tokens.length === 0) {
-    return fail(`No tokens tracked on ${network}. Add one with: fhevm-wallet token add <address>`);
+    return fail(
+      `No tokens tracked on ${network}. Add one with: fhevm-wallet token add <address>`,
+      'TOKEN_NOT_FOUND',
+    );
   }
 
   // Token: positional, -t (symbol or address), the only one, or a choice.
   let token: TokenEntry;
   const tokenText = tokenArg ?? options.token;
   if (tokenText) {
-    if (tokenText.toLowerCase().startsWith('0x') && !isValidAddress(tokenText)) {
-      return fail('Invalid token address');
-    }
-    const r = resolveToken(tokenText, tokens);
-    if (!r.ok) {
-      return fail(
-        isValidAddress(tokenText)
-          ? `Token ${tokenText} not tracked. Add it with: fhevm-wallet token add ${tokenText}`
+    const pick = (text: string) => {
+      if (text.toLowerCase().startsWith('0x') && !isValidAddress(text)) {
+        return { error: 'Invalid token address', code: 'INVALID_ADDRESS' };
+      }
+      const r = resolveToken(text, tokens);
+      if (r.ok) return { token: r.token };
+      return {
+        error: isValidAddress(text)
+          ? `Token ${text} not tracked. Add it with: fhevm-wallet token add ${text}`
           : r.error,
-      );
+        code: 'TOKEN_NOT_FOUND',
+      };
+    };
+    const r = pick(tokenText);
+    if (!r.token) return fail(r.error!, r.code);
+    // Both a token argument and -t: they must name the same token (-t was ignored).
+    if (tokenArg && options.token) {
+      const other = pick(options.token);
+      if (!other.token) return fail(other.error!, other.code);
+      if (other.token.address.toLowerCase() !== r.token.address.toLowerCase()) {
+        return fail(
+          `Two tokens given: ${r.token.symbol} (argument) and ${other.token.symbol} (-t). Give only one.`,
+          'CONFLICTING_TOKENS',
+        );
+      }
     }
     token = r.token;
   } else if (tokens.length === 1) {
@@ -215,13 +244,14 @@ async function send(
     console.log(`Using contact: ${contact.name} (${formatAddress(contact.address)})`);
   } else if (!recipientText) {
     recipientText = await askRecipient(contacts);
-    if (!recipientText) return;
+    if (!recipientText) return cancelled();
   }
   const rr = resolveRecipient(recipientText, contacts);
   if (!rr.ok) {
+    const isAddress = recipientText.toLowerCase().startsWith('0x');
     return fail(
-      recipientText.toLowerCase().startsWith('0x') ? 'Invalid recipient address' : rr.error,
-      'INVALID_ADDRESS',
+      isAddress ? 'Invalid recipient address' : rr.error,
+      isAddress ? 'INVALID_ADDRESS' : 'CONTACT_NOT_FOUND',
     );
   }
   const recipient = rr.address;
@@ -267,7 +297,13 @@ async function send(
     amount = await prompts.input({
       message: `Amount of ${token.symbol} (25, 1k, half, max; empty to cancel):`,
     });
-    if (!amount) return;
+    if (!amount) return cancelled();
+  }
+  // Check the amount before the (slow) password unlock; half and max need the balance.
+  const relative = /^(half|max|all)$/i.test(amount.trim());
+  if (!relative) {
+    const early = parseFriendlyAmount(amount, { decimals: token.decimals });
+    if (!early.ok) return fail(`${early.error} ${early.hint}`, 'INVALID_AMOUNT');
   }
 
   // Wallet and password.
@@ -287,8 +323,10 @@ async function send(
     if (name === '__cancel__') return;
     walletName = name;
   }
-  if (!hasWallet(walletName)) return fail(`Wallet "${walletName}" not found`);
+  if (!hasWallet(walletName)) return fail(`Wallet "${walletName}" not found`, 'WALLET_NOT_FOUND');
 
+  const noPassword = passwordStdinNeeded(options.passwordStdin, 'send');
+  if (noPassword) return fail(noPassword, 'PASSWORD_STDIN_REQUIRED');
   const password = await walletPassword(options.passwordStdin);
   const loadSpinner = ora('Decrypting wallet...').start();
   let wallet: UnlockedSigner;
@@ -297,12 +335,13 @@ async function send(
     loadSpinner.succeed('Wallet loaded');
   } catch (err) {
     loadSpinner.fail('Failed to decrypt wallet');
-    return fail(describeError(err, 'Invalid password'));
+    if (isWrongPassword(err)) return fail(wrongPasswordMessage(walletName), 'WRONG_PASSWORD');
+    return fail(describeError(err, 'Could not decrypt the wallet'), 'WALLET_UNLOCK_FAILED');
   }
 
   // Friendly amount; half and max need the decrypted balance.
   let balance: bigint | undefined;
-  if (/^(half|max|all)$/i.test(amount.trim())) {
+  if (relative) {
     const s = ora(`Decrypting your ${token.symbol} balance...`).start();
     try {
       balance = await backend.decryptBalance(token.address, wallet, network);
@@ -312,8 +351,14 @@ async function send(
       return fail(describeError(err, 'Could not decrypt the balance'));
     }
   }
+  if (relative && balance === 0n) {
+    return fail(
+      `You have 0 ${token.symbol} on ${network}, so there is nothing to send. Nothing was signed.`,
+      'INSUFFICIENT_BALANCE',
+    );
+  }
   const parsed = parseFriendlyAmount(amount, { decimals: token.decimals, balance });
-  if (!parsed.ok) return fail(`${parsed.error} ${parsed.hint}`);
+  if (!parsed.ok) return fail(`${parsed.error} ${parsed.hint}`, 'INVALID_AMOUNT');
   const value = parsed.value;
 
   // Encrypt and simulate before asking for confirmation, so a doomed send is caught
