@@ -4,7 +4,9 @@
  *
  * - A chunk refused as too large shrinks to the limit the endpoint names ("maximum
  *   allowed is 50 blocks") or, when it names none, to half.
- * - A rate limit waits and retries the same chunk a few times, then stops.
+ * - A rate limit waits and retries the same chunk a few times, then stops; after one,
+ *   every later chunk of the run waits a little first.
+ * - After a run of successes the chunk grows again (see `ChunkState`).
  * - Any other error stops the walk; what was completed is reported (`scannedTo`) so the
  *   caller can save it and resume later.
  * - A request budget stops a walk that would otherwise send thousands of requests
@@ -19,17 +21,37 @@ export const DEFAULT_CHUNK = 10_000;
 /** Waits before retrying a rate-limited chunk; one entry per retry. */
 export const RATE_LIMIT_BACKOFF_MS = [1_000, 2_000, 4_000] as const;
 
+/** Pause between chunks once an endpoint has rate-limited us, and its ceiling. */
+const MIN_PAUSE_MS = 250;
+const MAX_PAUSE_MS = 2_000;
+
+/** Successful chunks in a row before trying a chunk twice as large, at first. */
+const GROW_AFTER = 4;
+
 /**
  * Chunk size learned during one run. Shared between the walks of a run (each token, each
  * direction) so the second walk does not rediscover a 50-block cap.
+ *
+ * The size also grows again (doubling, up to `max`) after a run of successes: with
+ * fallback endpoints a cap may have come from a fallback that answered only once, while
+ * the preferred endpoint takes far larger ranges. Each failed growth doubles the number
+ * of successes needed before the next try, so a real cap costs only a few requests.
  */
 export interface ChunkState {
   size: number;
+  max: number;
+  streak: number;
+  growAfter: number;
+  /** True right after a growth, until the next chunk is answered. */
+  grew: boolean;
+  /** Wait before each chunk (ms); set after a rate limit. */
+  pauseMs: number;
 }
 
 /** A fresh chunk state. */
 export function newChunkState(size = DEFAULT_CHUNK): ChunkState {
-  return { size: Math.max(1, Math.floor(size)) };
+  const start = Math.max(1, Math.floor(size));
+  return { size: start, max: start, streak: 0, growAfter: GROW_AFTER, grew: false, pauseMs: 0 };
 }
 
 /** Requests left for this run; shared between walks. */
@@ -74,11 +96,12 @@ export async function walkBlockRange(opts: WalkOptions): Promise<WalkResult> {
   let next = Math.max(0, opts.from);
   let scannedTo = next - 1;
   let rateRetries = 0;
+  const chunk = opts.chunk;
   while (next <= opts.to) {
     if (opts.signal?.aborted) return { scannedTo, stopped: 'cancelled' };
     if (opts.budget && opts.budget.left < cost) return { scannedTo, stopped: 'budget' };
-    const size = opts.chunk.size;
-    const end = Math.min(next + size - 1, opts.to);
+    if (chunk.pauseMs > 0) await sleep(chunk.pauseMs);
+    const end = Math.min(next + chunk.size - 1, opts.to);
     if (opts.budget) opts.budget.left -= cost;
     try {
       await opts.fetchChunk(next, end);
@@ -91,10 +114,15 @@ export async function walkBlockRange(opts: WalkOptions): Promise<WalkResult> {
         // (an off-by-one in how the endpoint counts) fall back to halving.
         const smaller = named !== null && named < span ? named : Math.floor(span / 2);
         if (smaller >= 1) {
-          opts.chunk.size = smaller;
+          if (chunk.grew) chunk.growAfter = Math.min(chunk.growAfter * 2, 256);
+          chunk.size = smaller;
+          chunk.streak = 0;
+          chunk.grew = false;
           continue;
         }
       } else if (isRateLimited(err) && rateRetries < RATE_LIMIT_BACKOFF_MS.length) {
+        // Slow down for the rest of the run, not just this chunk.
+        chunk.pauseMs = Math.min(Math.max(chunk.pauseMs * 2, MIN_PAUSE_MS), MAX_PAUSE_MS);
         await sleep(RATE_LIMIT_BACKOFF_MS[rateRetries++]);
         continue;
       }
@@ -103,6 +131,12 @@ export async function walkBlockRange(opts: WalkOptions): Promise<WalkResult> {
     rateRetries = 0;
     scannedTo = end;
     next = end + 1;
+    chunk.grew = false;
+    if (++chunk.streak >= chunk.growAfter && chunk.size < chunk.max) {
+      chunk.size = Math.min(chunk.size * 2, chunk.max);
+      chunk.streak = 0;
+      chunk.grew = true;
+    }
   }
   return { scannedTo };
 }

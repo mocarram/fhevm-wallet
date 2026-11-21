@@ -287,8 +287,8 @@ export class RealBackend implements Backend {
   ): Promise<HistorySyncResult> {
     // Etherscan is much faster when a key is set; otherwise scan RPC logs.
     const method = process.env.ETHERSCAN_API_KEY ? 'etherscan' : 'rpc';
-    const newCount = await syncTransactions(address, network, tokens, method);
-    return { newCount, method };
+    const r = await syncTransactions(address, network, tokens, method);
+    return { newCount: r.added, method, ...(r.notice ? { notice: r.notice } : {}) };
   }
 
   async checkRpc(network: NetworkName): Promise<RpcCheck> {

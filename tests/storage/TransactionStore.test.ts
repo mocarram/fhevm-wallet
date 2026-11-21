@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   clearTransactions,
   getEncryptedTransactions,
-  getLastSyncedBlock,
+  getSyncCursor,
+  saveSyncCursor,
   getTransactionByHash,
   listTransactions,
   recordLocalTransaction,
-  updateSyncState,
   updateTransactionAmount,
   upsertTransaction,
   upsertTransactions,
@@ -22,15 +22,21 @@ beforeEach(() => {
 });
 
 describe('TransactionStore sync state', () => {
-  it('returns 0 when no sync state exists', () => {
-    expect(getLastSyncedBlock(WALLET, 'sepolia')).toBe(0);
+  it('returns null when no cursor exists', () => {
+    expect(getSyncCursor(WALLET, 'sepolia', TOKEN)).toBeNull();
   });
 
-  it('persists per-network sync state independently', () => {
-    updateSyncState(WALLET, 'sepolia', 100);
-    updateSyncState(WALLET, 'mainnet', 50);
-    expect(getLastSyncedBlock(WALLET, 'sepolia')).toBe(100);
-    expect(getLastSyncedBlock(WALLET, 'mainnet')).toBe(50);
+  it('keeps one cursor per network and source (token or eth)', () => {
+    saveSyncCursor(WALLET, 'sepolia', TOKEN, { firstBlock: 10, lastBlock: 100 });
+    saveSyncCursor(WALLET, 'mainnet', TOKEN, { firstBlock: 5, lastBlock: 50 });
+    saveSyncCursor(WALLET, 'sepolia', 'eth', { firstBlock: 1, lastBlock: 7 });
+    expect(getSyncCursor(WALLET, 'sepolia', TOKEN.toUpperCase().replace('0X', '0x'))).toEqual({
+      firstBlock: 10,
+      lastBlock: 100,
+    });
+    expect(getSyncCursor(WALLET, 'mainnet', TOKEN)?.lastBlock).toBe(50);
+    expect(getSyncCursor(WALLET, 'sepolia', 'eth')?.lastBlock).toBe(7);
+    expect(getSyncCursor(WALLET, 'sepolia', COUNTERPARTY)).toBeNull();
   });
 });
 
@@ -52,6 +58,26 @@ describe('TransactionStore CRUD', () => {
     upsertTransaction(baseTx);
     upsertTransaction({ ...baseTx, amount: null });
     expect(getTransactionByHash('0xabc')?.amount).toBe('100');
+  });
+
+  it('keeps transfers of one transaction apart by log index (M9)', () => {
+    const synced = { ...baseTx, amount: null, amountHandle: '0x01' };
+    expect(
+      upsertTransactions([
+        { ...synced, logIndex: 1 },
+        { ...synced, logIndex: 4, amountHandle: '0x04' },
+      ]),
+    ).toBe(2);
+    expect(listTransactions({ walletAddress: WALLET, network: 'sepolia' })).toHaveLength(2);
+    expect(upsertTransactions([{ ...synced, logIndex: 4, amountHandle: '0x04' }])).toBe(0);
+  });
+
+  it('a synced transfer merges into the send recorded locally before it', () => {
+    recordLocalTransaction({ ...baseTx, amount: '5' });
+    upsertTransactions([{ ...baseTx, amount: null, amountHandle: '0x01', logIndex: 2 }]);
+    const rows = listTransactions({ walletAddress: WALLET, network: 'sepolia' });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ amount: '5', amountHandle: '0x01', logIndex: 2 });
   });
 
   it('upsertTransactions batch dedupes by hash', () => {

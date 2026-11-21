@@ -88,7 +88,9 @@ describe('scanIncoming', () => {
     const sleep = async (ms: number) => void waits.push(ms);
     const r = await scanIncoming(src, WALLET, { fromBlock: 0, sleep });
     expect(r.error).toBeDefined();
-    expect(waits).toEqual([1_000, 2_000, 4_000]);
+    // The back-off waits, plus a short pause before each later chunk once throttled.
+    expect(waits).toEqual(expect.arrayContaining([1_000, 2_000, 4_000]));
+    expect(Math.max(...waits)).toBe(4_000);
     expect(r.scannedTo).toBe(9999);
     expect(r.contracts).toEqual([getAddress(A)]);
     const ac = new AbortController();

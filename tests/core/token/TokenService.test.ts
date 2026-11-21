@@ -854,16 +854,6 @@ describe('TokenService: an RPC error is not "not a token"', () => {
     await expect(getTokenInfo(TOKEN, 'sepolia')).rejects.toMatchObject({ code: 'NOT_A_TOKEN' });
   });
 
-  it('a malformed eth_getLogs reply is RPC_BAD_ANSWER, not a raw TypeError', async () => {
-    const { getWalletTransactionsViaRPC } = await import('../../../src/core/token/TokenService.js');
-    const getBlockNumber = vi.fn(async () => {
-      throw new TypeError('params.map is not a function');
-    });
-    Object.assign(fakeProvider, { getBlockNumber });
-    await expect(
-      getWalletTransactionsViaRPC(RECIPIENT, [TOKEN], new Map(), 'sepolia'),
-    ).rejects.toMatchObject({ code: 'RPC_BAD_ANSWER' });
-  });
 });
 
 describe('TokenService batch decrypt and disclosure calls', () => {

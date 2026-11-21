@@ -90,10 +90,25 @@ export function isPrunedHistory(err: unknown): boolean {
   return classifyRpcLimit(err) === 'pruned';
 }
 
+/**
+ * HTTP status behind an ethers SERVER_ERROR, or null. When ethers gives up retrying an
+ * HTTP 429 it reports status 599 "CLIENT ESCALATED SERVER ERROR (429 Too Many Requests;
+ * exceeded maximum retry limit)"; that is reported as the 429 it was (seen from nodies).
+ */
+export function httpStatusOf(err: unknown): number | null {
+  const r = (err as { response?: { statusCode?: unknown; statusMessage?: unknown } } | null)
+    ?.response;
+  if (typeof r?.statusCode !== 'number') return null;
+  if (r.statusCode === 599 && typeof r.statusMessage === 'string') {
+    const inner = /\((\d{3})\b/.exec(r.statusMessage);
+    if (inner) return Number(inner[1]);
+  }
+  return r.statusCode;
+}
+
 /** True when the endpoint is throttling us (JSON-RPC reply or HTTP 429). */
 export function isRateLimited(err: unknown): boolean {
-  const status = (err as { response?: { statusCode?: unknown } } | null)?.response?.statusCode;
-  return status === 429 || classifyRpcLimit(err) === 'rate';
+  return httpStatusOf(err) === 429 || classifyRpcLimit(err) === 'rate';
 }
 
 /** "10,000" or "2K" as a number. */

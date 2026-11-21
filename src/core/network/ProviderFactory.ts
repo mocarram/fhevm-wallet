@@ -13,7 +13,7 @@ import {
 import { getNetworkConfig, getRpcUrls, NetworkName } from './NetworkConfig.js';
 import { maskUrlsInText, redactSecrets } from '../../utils/redact.js';
 import { abortableGetUrl } from './abortableGetUrl.js';
-import { classifyRpcLimit, type RpcLimitKind } from './rpcLimits.js';
+import { classifyRpcLimit, httpStatusOf, type RpcLimitKind } from './rpcLimits.js';
 
 /** Per-request timeout for JSON-RPC calls. ethers' default is 5 minutes, which freezes the UI. */
 export const RPC_TIMEOUT_MS = 20_000;
@@ -69,12 +69,6 @@ export function resetRefusedEndpoints(): void {
   refusedUrls.clear();
 }
 
-/** HTTP status of an ethers SERVER_ERROR, if it has one. */
-function httpStatusOf(err: unknown): number | null {
-  const s = (err as { response?: { statusCode?: unknown } } | null)?.response?.statusCode;
-  return typeof s === 'number' ? s : null;
-}
-
 /** True for an HTTP refusal that will not change by asking again soon. */
 function isLastingRefusal(err: unknown): boolean {
   const s = httpStatusOf(err);
@@ -119,8 +113,11 @@ function limitIn(results: JsonRpcResult[]): RpcLimitKind | null {
  * out the transaction may already be in a mempool, and the caller reports it as "sent,
  * not confirmed" with its hash instead.
  *
- * The endpoint that answered stays in use. One that refused with HTTP 4xx is skipped for
- * the rest of the process (`refusedUrls`) unless every endpoint did.
+ * The endpoint that answered stays in use, except when the earlier ones only refused the
+ * request's block range or age (a 50-block cap, pruned history): the next request starts
+ * at the preferred endpoint again, so one old or wide query does not move all traffic to
+ * a capped fallback. One that refused with HTTP 4xx is skipped for the rest of the
+ * process (`refusedUrls`) unless every endpoint did.
  *
  * The chain check is per URL. A verified URL is not asked again. A URL that answered with
  * the wrong chain is skipped from then on (the next fallback gets its turn). A transport
@@ -183,8 +180,10 @@ export class FailoverJsonRpcProvider extends JsonRpcProvider {
     // The best outcome so far when every endpoint fails: a reply to hand back, or an error.
     let best: { rank: number; results?: JsonRpcResult[]; error?: unknown } | null = null;
     const tried = new Set<number>();
+    let sticky = true;
+    let next = this.#index;
     for (let attempt = 0; attempt < (canFailOver ? this.urls.length : 1); attempt++) {
-      const index = canFailOver ? this.#usable(this.#index) : this.#index;
+      const index = canFailOver ? this.#usable(attempt === 0 ? this.#index : next) : this.#index;
       // Every usable URL was tried: the rest refused before, so do not ask them again.
       if (tried.has(index)) break;
       tried.add(index);
@@ -197,21 +196,25 @@ export class FailoverJsonRpcProvider extends JsonRpcProvider {
         const results = await this.#post(index, payload);
         const limit = canFailOver ? limitIn(results) : null;
         if (!limit) {
-          if (canFailOver) this.#index = index; // stay with the endpoint that answered
+          // Stay with the endpoint that answered, unless this request only went elsewhere
+          // because of its own size or age (see `sticky`).
+          if (canFailOver && sticky) this.#index = index;
           return results;
         }
         rank = LIMIT_RANK[limit];
         outcome = { results };
+        // A block-range cap or pruned history is about this request: the next, smaller
+        // or newer one may be fine where it is. Rate limits and restrictions are not.
+        if (limit === 'range' || limit === 'pruned') sticky = false;
       } catch (err) {
         if (isLastingRefusal(err)) refusedUrls.set(this.urls[index], err);
         rank = failureRank(err);
         outcome = { error: err };
       }
       if (!best || rank > best.rank) best = { rank, ...outcome };
+      next = this.#usable((index + 1) % this.urls.length);
       // Move on only if nobody else moved the index meanwhile (parallel requests).
-      if (canFailOver && this.#index === index) {
-        this.#index = this.#usable((index + 1) % this.urls.length);
-      }
+      if (canFailOver && sticky && this.#index === index) this.#index = next;
     }
     if (best?.results) return best.results;
     throw best?.error;

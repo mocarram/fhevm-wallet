@@ -217,6 +217,14 @@ Every unit of work goes through this loop until it comes out clean:
   ours was already accepted. Mined reverts stay `TX_REVERTED`; a nonce taken by another
   transaction is `TX_REPLACED`. Both keep the hash. The wait for a receipt is bounded
   (`CONFIRMATION_TIMEOUT_MS`) and also ends in `SENT_UNCONFIRMED`.
+- History sync (`src/core/token/historySync.ts`) keeps a cursor per (wallet, network,
+  token) plus `eth`, saved after every chunk, and stores transfers keyed by tx hash + log
+  index. eth_getLogs goes through `walkBlockRange` (`src/core/network/logRange.ts`:
+  shrinks to a named cap such as nodies' 50 blocks, backs off on rate limits, request
+  budget); Find tokens uses the same walker. On the built-in public endpoints a first RPC
+  sync covers only a recent window and says so; Etherscan replies with `status: "0"` are
+  errors unless "No records found". Test sync changes against `tests/helpers/stubRpc.ts`
+  (real provider + sync code), not only the MockBackend.
 - Never write plaintext token amounts to the audit log. Decrypted transfer amounts live
   only in `amount-cache.json` (`src/storage/AmountCache.ts`, owner-only, keyed by handle).
 - User decryption goes through a `DecryptSession` (`src/core/fhe/DecryptSession.ts`): one

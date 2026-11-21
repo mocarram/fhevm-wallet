@@ -93,13 +93,25 @@ export async function historyJson(options: HistoryJsonOptions): Promise<void> {
     const backend = createBackend();
     const method =
       backend.kind === 'mock' ? 'mock' : process.env.ETHERSCAN_API_KEY ? 'etherscan' : 'rpc';
-    let sync: { method: string; newCount?: number; error?: { code: string; message: string } };
+    let sync: {
+      method: string;
+      newCount?: number;
+      complete?: boolean;
+      notice?: string;
+      error?: { code: string; message: string };
+    };
     try {
-      const newCount =
-        backend.kind === 'mock'
-          ? (await backend.syncHistory(address, network, tokens)).newCount
-          : await syncTransactions(address, network, tokens, method as 'etherscan' | 'rpc');
-      sync = { method, newCount };
+      if (backend.kind === 'mock') {
+        sync = { method, newCount: (await backend.syncHistory(address, network, tokens)).newCount };
+      } else {
+        const r = await syncTransactions(address, network, tokens, method as 'etherscan' | 'rpc');
+        sync = {
+          method,
+          newCount: r.added,
+          complete: r.complete,
+          ...(r.notice ? { notice: r.notice } : {}),
+        };
+      }
     } catch (err) {
       clearProviderForNetwork(network);
       sync = { method, error: jsonErrorOf(err, 'Sync failed') };

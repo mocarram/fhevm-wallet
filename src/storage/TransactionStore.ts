@@ -26,13 +26,25 @@ const TransactionSchema = z.object({
   amountHandle: z.string().optional(),
   network: z.enum(['mainnet', 'sepolia']),
   blockNumber: z.number(),
+  /**
+   * Position of the ConfidentialTransfer log in its block. One transaction can emit
+   * several (a batch, a router), so synced transfers are keyed by hash + log index.
+   * Absent for ETH transfers and for sends recorded locally before the sync saw them.
+   */
+  logIndex: z.number().int().nonnegative().optional(),
   timestamp: z.string(),
 });
 
 const SyncStateSchema = z.record(
   z.string(),
   z.object({
+    /** Last block whose transfers are all stored (inclusive). */
     lastBlock: z.number(),
+    /**
+     * First block the stored history covers (inclusive). Older entries have none: they
+     * were written by a version that started at block 0 or at an unknown block.
+     */
+    firstBlock: z.number().optional(),
     lastSyncedAt: z.string(),
   }),
 );
@@ -73,88 +85,114 @@ function saveStore(store: TransactionStoreData): void {
   writeSecureFile(TRANSACTIONS_FILE, JSON.stringify(store, null, 2));
 }
 
-/**
- * Get sync state key
- */
-function getSyncKey(walletAddress: string, network: NetworkName): string {
-  return `${walletAddress.toLowerCase()}:${network}`;
+/** What one sync cursor covers: blocks `firstBlock`..`lastBlock`, both inclusive. */
+export interface SyncCursor {
+  firstBlock: number;
+  lastBlock: number;
 }
 
 /**
- * Get last synced block for a wallet/network
+ * Cursor key: one per wallet, network and source (a token address, or `eth` for plain
+ * ETH transfers). Per token, so a token added later still gets its earlier history.
+ * The `wallet:network` keys of earlier versions are ignored: they covered every token at
+ * once and so could not say which tokens were complete.
  */
-export function getLastSyncedBlock(walletAddress: string, network: NetworkName): number {
-  const store = loadStore();
-  const key = getSyncKey(walletAddress, network);
-  return store.syncState[key]?.lastBlock ?? 0;
+function getSyncKey(walletAddress: string, network: NetworkName, source: string): string {
+  return `${walletAddress.toLowerCase()}:${network}:${source.toLowerCase()}`;
 }
 
-/**
- * Update last synced block
- */
-export function updateSyncState(
+/** The saved cursor for one wallet, network and source (token address or `eth`), or null. */
+export function getSyncCursor(
   walletAddress: string,
   network: NetworkName,
-  blockNumber: number,
+  source: string,
+): SyncCursor | null {
+  const entry = loadStore().syncState[getSyncKey(walletAddress, network, source)];
+  if (!entry || entry.firstBlock === undefined) return null;
+  return { firstBlock: entry.firstBlock, lastBlock: entry.lastBlock };
+}
+
+/** Save the cursor for one wallet, network and source. */
+export function saveSyncCursor(
+  walletAddress: string,
+  network: NetworkName,
+  source: string,
+  cursor: SyncCursor,
 ): void {
   const store = loadStore();
-  const key = getSyncKey(walletAddress, network);
-  store.syncState[key] = {
-    lastBlock: blockNumber,
+  store.syncState[getSyncKey(walletAddress, network, source)] = {
+    ...cursor,
     lastSyncedAt: new Date().toISOString(),
   };
   saveStore(store);
 }
 
-/**
- * Upsert a transaction (insert or update by txHash)
- */
-export function upsertTransaction(tx: Transaction): void {
+/** Forget every cursor of a wallet on a network, so the next sync starts over. */
+export function clearSyncCursors(walletAddress: string, network: NetworkName): void {
   const store = loadStore();
-
-  const existingIndex = store.transactions.findIndex(
-    (t) => t.txHash.toLowerCase() === tx.txHash.toLowerCase(),
-  );
-
-  if (existingIndex >= 0) {
-    // Merge: keep existing amount if new one is null
-    const existing = store.transactions[existingIndex];
-    store.transactions[existingIndex] = {
-      ...tx,
-      amount: tx.amount ?? existing.amount,
-      amountHandle: tx.amountHandle ?? existing.amountHandle,
-    };
-  } else {
-    store.transactions.push(tx);
+  const prefix = `${walletAddress.toLowerCase()}:${network}`;
+  for (const key of Object.keys(store.syncState)) {
+    if (key === prefix || key.startsWith(prefix + ':')) delete store.syncState[key];
   }
-
   saveStore(store);
 }
 
 /**
- * Batch upsert transactions
+ * Index of the stored entry `tx` updates, or -1. A transfer with a log index matches the
+ * same hash and log index; failing that, an entry of the same hash and token without one
+ * (a send recorded locally before the sync saw it, or an entry from an older version).
+ * An entry without a log index matches the same hash and kind (ETH or token).
  */
-export function upsertTransactions(txs: Transaction[]): void {
-  const store = loadStore();
-
-  for (const tx of txs) {
-    const existingIndex = store.transactions.findIndex(
-      (t) => t.txHash.toLowerCase() === tx.txHash.toLowerCase(),
+function findEntry(list: Transaction[], tx: Transaction): number {
+  const hash = tx.txHash.toLowerCase();
+  const sameHash = (t: Transaction) => t.txHash.toLowerCase() === hash;
+  const isEth = (t: Transaction) => t.type === 'eth';
+  if (tx.logIndex !== undefined) {
+    const exact = list.findIndex((t) => sameHash(t) && t.logIndex === tx.logIndex);
+    if (exact >= 0) return exact;
+    return list.findIndex(
+      (t) =>
+        sameHash(t) &&
+        t.logIndex === undefined &&
+        !isEth(t) &&
+        t.tokenAddress.toLowerCase() === tx.tokenAddress.toLowerCase(),
     );
-
-    if (existingIndex >= 0) {
-      const existing = store.transactions[existingIndex];
-      store.transactions[existingIndex] = {
-        ...tx,
-        amount: tx.amount ?? existing.amount,
-        amountHandle: tx.amountHandle ?? existing.amountHandle,
-      };
-    } else {
-      store.transactions.push(tx);
-    }
   }
+  return list.findIndex((t) => sameHash(t) && isEth(t) === isEth(tx));
+}
 
+/** Insert `tx` or merge it into the entry it updates, keeping known amounts. True if new. */
+function upsertInto(list: Transaction[], tx: Transaction): boolean {
+  const i = findEntry(list, tx);
+  if (i < 0) {
+    list.push(tx);
+    return true;
+  }
+  const existing = list[i];
+  const logIndex = tx.logIndex ?? existing.logIndex;
+  list[i] = {
+    ...tx,
+    amount: tx.amount ?? existing.amount,
+    amountHandle: tx.amountHandle ?? existing.amountHandle,
+    ...(logIndex !== undefined ? { logIndex } : {}),
+  };
+  return false;
+}
+
+/** Insert or update one transaction (see `findEntry` for what counts as the same). */
+export function upsertTransaction(tx: Transaction): void {
+  const store = loadStore();
+  upsertInto(store.transactions, tx);
   saveStore(store);
+}
+
+/** Insert or update several transactions in one write. Returns how many were new. */
+export function upsertTransactions(txs: Transaction[]): number {
+  const store = loadStore();
+  let added = 0;
+  for (const tx of txs) if (upsertInto(store.transactions, tx)) added++;
+  saveStore(store);
+  return added;
 }
 
 /**

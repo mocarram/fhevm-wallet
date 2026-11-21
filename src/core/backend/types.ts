@@ -113,6 +113,8 @@ export interface RelayerCheck {
 export interface HistorySyncResult {
   newCount: number;
   method: 'etherscan' | 'rpc' | 'mock';
+  /** What the sync did not cover and what to do (public RPC window, request budget). */
+  notice?: string;
 }
 
 /** Everything the UI needs from chain and relayer. */

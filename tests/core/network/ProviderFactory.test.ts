@@ -331,14 +331,26 @@ describe('FailoverJsonRpcProvider', () => {
     const getLogs = (p: FailoverJsonRpcProvider) =>
       p.send('eth_getLogs', [{ fromBlock: '0x0', toBlock: '0x100', topics: [] }]);
 
-    it('asks the next endpoint when one says its history is pruned, and stays there', async () => {
+    it('asks the next endpoint when one says its history is pruned, for that request only', async () => {
       const pruned = await startNode('pruned', { rpcErrors: { eth_getLogs: PRUNED } });
       const archive = await startNode('archive', {});
       const provider = new FailoverJsonRpcProvider([pruned, archive], sepolia, 2_000);
       expect(await getLogs(provider)).toBe('0x10');
-      expect(provider.currentUrl).toBe(archive);
-      await getLogs(provider);
-      expect(calls.pruned.filter((m) => m === 'eth_getLogs')).toHaveLength(1);
+      // An older block range says nothing about newer ones: the preferred endpoint stays.
+      expect(provider.currentUrl).toBe(pruned);
+      expect(await provider.send('eth_blockNumber', [])).toBe('0x10');
+      expect(calls.pruned).toContain('eth_blockNumber');
+      provider.destroy();
+    });
+
+    it('moves to the next endpoint for good on a JSON-RPC rate limit', async () => {
+      const busy = await startNode('busy', {
+        rpcErrors: { eth_getLogs: { code: -32005, message: 'rate limit exceeded' } },
+      });
+      const calm = await startNode('calm', {});
+      const provider = new FailoverJsonRpcProvider([busy, calm], sepolia, 2_000);
+      expect(await getLogs(provider)).toBe('0x10');
+      expect(provider.currentUrl).toBe(calm);
       provider.destroy();
     });
 

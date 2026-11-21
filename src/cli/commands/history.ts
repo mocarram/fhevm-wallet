@@ -198,8 +198,10 @@ async function handleSyncError(
     // Retry with Etherscan
     const retrySpinner = ora('Retrying sync with Etherscan...').start();
     try {
-      const newTxCount = await syncTransactions(walletAddress, network, tokens, 'etherscan');
+      const synced = await syncTransactions(walletAddress, network, tokens, 'etherscan');
+      const newTxCount = synced.added;
       retrySpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+      if (synced.notice) console.log(chalk.yellow(synced.notice));
       return true;
     } catch (retryErr) {
       retrySpinner.fail('Sync failed');
@@ -234,8 +236,10 @@ async function handleSyncError(
     // Retry with new RPC
     const retrySpinner = ora('Retrying sync with new RPC...').start();
     try {
-      const newTxCount = await syncTransactions(walletAddress, network, tokens, 'rpc');
+      const synced = await syncTransactions(walletAddress, network, tokens, 'rpc');
+      const newTxCount = synced.added;
       retrySpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+      if (synced.notice) console.log(chalk.yellow(synced.notice));
       return true;
     } catch (retryErr) {
       retrySpinner.fail('Sync failed');
@@ -362,8 +366,10 @@ export function registerHistoryCommand(program: Command): void {
         } else if (hasApiKey) {
           // Use Etherscan API (fast)
           const syncSpinner = ora('Syncing transactions from blockchain...').start();
-          const newTxCount = await syncTransactions(walletAddress, network, tokens, 'etherscan');
+          const synced = await syncTransactions(walletAddress, network, tokens, 'etherscan');
+          const newTxCount = synced.added;
           syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+          if (synced.notice) console.log(chalk.yellow(synced.notice));
         } else {
           // Default to RPC with hint
           const syncSpinner = ora('Syncing via RPC...').start();
@@ -371,8 +377,10 @@ export function registerHistoryCommand(program: Command): void {
             '(tip: set Etherscan API key in Settings for faster sync)',
           );
           try {
-            const newTxCount = await syncTransactions(walletAddress, network, tokens, 'rpc');
+            const synced = await syncTransactions(walletAddress, network, tokens, 'rpc');
+            const newTxCount = synced.added;
             syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+            if (synced.notice) console.log(chalk.yellow(synced.notice));
           } catch (err) {
             syncSpinner.fail('RPC sync failed');
             if (!(await handleSyncError(err, walletAddress, network, tokens))) {
