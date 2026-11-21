@@ -9,6 +9,7 @@ import {
   LAUNCH_ENV,
   MOCK_MARKER,
   prepareMockDataDir,
+  unknownBackendProblem,
 } from '../../../src/core/backend/mockGuard.js';
 import { createBackend } from '../../../src/core/backend/select.js';
 
@@ -87,6 +88,17 @@ describe('launch environment', () => {
     process.env.FHEW_BACKEND = 'mock';
     expect(LAUNCH_ENV.FHEW_BACKEND).toBe(before);
     delete process.env.FHEW_BACKEND;
+  });
+});
+
+describe('unknownBackendProblem', () => {
+  it('accepts unset, real and mock; refuses anything else in one sentence', () => {
+    for (const v of [undefined, '', 'real', 'mock', ' Mock ']) {
+      expect(unknownBackendProblem({ FHEW_BACKEND: v })).toBeNull();
+    }
+    expect(unknownBackendProblem({ FHEW_BACKEND: 'mocks' })).toBe(
+      'Unknown FHEW_BACKEND "mocks". Use "real" or "mock", or unset it.',
+    );
   });
 });
 

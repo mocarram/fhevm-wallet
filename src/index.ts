@@ -13,6 +13,7 @@ import {
   assertNotMockDataDir,
   MockDataDirError,
   prepareMockDataDir,
+  unknownBackendProblem,
   wantsMock,
 } from './core/backend/mockGuard.js';
 import {
@@ -23,6 +24,14 @@ import {
   UntrustedDataDirError,
 } from './storage/paths.js';
 import { takeInvalidRpcSettings } from './core/network/NetworkConfig.js';
+
+// A mistyped FHEW_BACKEND (say `mocks`) must stop every command before it starts:
+// otherwise it would quietly run against the real network.
+const backendProblem = unknownBackendProblem();
+if (backendProblem) {
+  process.stderr.write(`${backendProblem}\n`);
+  process.exit(1);
+}
 
 // Load settings: the data dir's private .env, plus allow-listed keys from ./.env.
 // Failing here (data dir not writable) gets one clear sentence, not a stack trace.

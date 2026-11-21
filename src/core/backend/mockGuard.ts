@@ -46,6 +46,17 @@ export function wantsMock(env: LaunchEnv = LAUNCH_ENV): boolean {
   return (env.FHEW_BACKEND ?? '').trim().toLowerCase() === 'mock';
 }
 
+/**
+ * The refusal for an FHEW_BACKEND value other than unset, "real" or "mock", or null.
+ * Checked at startup for every command, so a typo such as `mocks` can never fall back
+ * to the real network while the user believes they are on the simulation.
+ */
+export function unknownBackendProblem(env: LaunchEnv = LAUNCH_ENV): string | null {
+  const wanted = (env.FHEW_BACKEND ?? '').trim().toLowerCase();
+  if (wanted === '' || wanted === 'real' || wanted === 'mock') return null;
+  return `Unknown FHEW_BACKEND "${env.FHEW_BACKEND}". Use "real" or "mock", or unset it.`;
+}
+
 /** Thrown when the mock and a data folder must not be used together. */
 export class MockDataDirError extends Error {
   readonly code = 'MOCK_DATA_DIR';

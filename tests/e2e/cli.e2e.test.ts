@@ -35,6 +35,21 @@ describe('fhew binary', () => {
   });
 });
 
+describe('FHEW_BACKEND', () => {
+  it('refuses an unknown value for every command before it runs', () => {
+    const t = tempHome();
+    cleanup = t.cleanup;
+    for (const args of [['balance'], ['config', '--show'], ['--version']]) {
+      const res = runCli(args, t.home, { FHEW_BACKEND: 'mocks' });
+      expect(res.code, args.join(' ')).toBe(1);
+      expect(res.stderr.trim()).toBe(
+        'Unknown FHEW_BACKEND "mocks". Use "real" or "mock", or unset it.',
+      );
+      expect(res.stdout).toBe('');
+    }
+  });
+});
+
 describe('fhew output hygiene', () => {
   it('prints nothing but the version (no library banners on stdout)', () => {
     const t = tempHome();

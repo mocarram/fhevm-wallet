@@ -7,6 +7,7 @@ import {
   assertNotMockDataDir,
   LAUNCH_ENV,
   prepareMockDataDir,
+  unknownBackendProblem,
   type GuardPaths,
   type LaunchEnv,
 } from './mockGuard.js';
@@ -32,5 +33,5 @@ export function createBackend(env: LaunchEnv = LAUNCH_ENV, paths: GuardPaths = {
     // Only the FHEW_MOCK_* test knobs are read from the full environment.
     return new MockBackend(mockOptionsFromEnv(process.env));
   }
-  throw new Error(`Unknown FHEW_BACKEND "${env.FHEW_BACKEND}". Use "real" or "mock".`);
+  throw new Error(unknownBackendProblem(env) ?? 'Unknown FHEW_BACKEND.');
 }
