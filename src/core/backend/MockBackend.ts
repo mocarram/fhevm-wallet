@@ -29,7 +29,7 @@ import {
   type DecryptAuthority,
 } from '../fhe/DecryptSession.js';
 import { getAmountEntry } from '../../storage/AmountCache.js';
-import { getTransactionByHash } from '../../storage/TransactionStore.js';
+import { getTransactionByHash, listTransactions } from '../../storage/TransactionStore.js';
 import { getCachedBalance } from '../token/BalanceCache.js';
 import type { NetworkName } from '../network/NetworkConfig.js';
 import { NETWORK_CONFIGS } from '../network/NetworkConfig.js';
@@ -211,6 +211,29 @@ export class MockBackend implements Backend {
     return h;
   }
 
+  /**
+   * Handles live in memory, but history outlives the process: re-register the seeded
+   * incoming transfer's amount (see syncHistory) when a later run asks about it.
+   */
+  private recallHandle(handle: string, network: NetworkName, wallet: string): void {
+    const h = normaliseHandle(handle);
+    if (this.handles.has(h)) return;
+    const key = `${network}:${wallet}`.toLowerCase();
+    if (normaliseHandle(mockHandle(`amt:${key}`)) !== h) return;
+    const tx = listTransactions({ walletAddress: wallet, network, limit: 10_000 }).find(
+      (t) => t.amountHandle && normaliseHandle(t.amountHandle) === h,
+    );
+    const decimals = this.catalogue(network).find(
+      (t) => t.address.toLowerCase() === tx?.tokenAddress.toLowerCase(),
+    )?.decimals;
+    if (!tx || decimals === undefined) return;
+    this.registerHandle(h, 25n * 10n ** BigInt(decimals), [
+      wallet,
+      mockAddress('sender'),
+      tx.tokenAddress,
+    ]);
+  }
+
   /** The current balance handle of `wallet` (changes whenever the balance does). */
   private balanceHandle(network: NetworkName, token: string, wallet: string): string {
     const value = this.balanceOf(network, token, wallet);
@@ -348,6 +371,7 @@ export class MockBackend implements Backend {
   ): Promise<Record<string, bigint | null>> {
     const out: Record<string, bigint | null> = {};
     const user = session.address.toLowerCase();
+    for (const r of requests) this.recallHandle(r.handle, session.network, session.address);
     const allowed = requests
       .map((r) => ({ handle: normaliseHandle(r.handle), contractAddress: r.token }))
       .filter((p) => {
@@ -462,6 +486,7 @@ export class MockBackend implements Backend {
     network: NetworkName,
   ): Promise<PreparedTx> {
     const h = normaliseHandle(handle);
+    this.recallHandle(h, network, signer.address);
     if (!this.handles.get(h)?.allowed.has(signer.address.toLowerCase())) {
       // What ERC7984UnauthorizedUseOfEncryptedAmount looks like after translation.
       throw new WalletTxError(

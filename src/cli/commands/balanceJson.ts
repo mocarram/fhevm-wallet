@@ -6,7 +6,8 @@
 import { walletPassword } from '../utils/passwordInput.js';
 import { loadWallet, hasWallet } from '../../core/wallet/index.js';
 import { listTokens, getToken, type TokenEntry } from '../../core/token/TokenRegistry.js';
-import { getDecryptedBalance } from '../../core/token/TokenService.js';
+import { decryptBalancesWithSession } from '../../core/token/TokenService.js';
+import { RealBackend } from '../../core/backend/RealBackend.js';
 import { checkFheReadiness } from '../../core/fhe/FheService.js';
 import type { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getProvider } from '../../core/network/ProviderFactory.js';
@@ -86,32 +87,34 @@ export async function balanceJson(options: BalanceJsonOptions): Promise<void> {
     }
 
     const ethWei = await getProvider(network).getBalance(wallet.address);
-    const rows = [];
-    for (const t of tokens) {
-      try {
-        const balance = await getDecryptedBalance(t.address, wallet, network, {
-          forceRefresh: options.refresh,
-        });
-        rows.push({
-          address: t.address,
-          symbol: t.symbol,
-          name: t.name,
-          decimals: t.decimals,
-          balance,
-          formatted: formatTokenAmount(balance, t.decimals),
-        });
-      } catch (err) {
-        rows.push({
-          address: t.address,
-          symbol: t.symbol,
-          name: t.name,
-          decimals: t.decimals,
-          balance: null,
-          formatted: null,
-          error: { code: jsonErrorOf(err, 'Failed').code, message: describeErrorShort(err, 200) },
-        });
-      }
+    // One signature for every token and one batched request, as in the text output.
+    const session = new RealBackend().newDecryptSession(wallet, network);
+    let batch;
+    try {
+      batch = await decryptBalancesWithSession(
+        session,
+        tokens.map((t) => t.address),
+        network,
+        { forceRefresh: options.refresh },
+      );
+    } finally {
+      session.clear(); // the decrypt signature lives no longer than the command
     }
+    const rows = tokens.map((t) => {
+      const key = t.address.toLowerCase();
+      const balance = batch.values[key];
+      const base = { address: t.address, symbol: t.symbol, name: t.name, decimals: t.decimals };
+      if (balance !== undefined) {
+        return { ...base, balance, formatted: formatTokenAmount(balance, t.decimals) };
+      }
+      const err = batch.errors[key];
+      return {
+        ...base,
+        balance: null,
+        formatted: null,
+        error: { code: jsonErrorOf(err, 'Failed').code, message: describeErrorShort(err, 200) },
+      };
+    });
     printJson({
       wallet: walletName,
       address: wallet.address,

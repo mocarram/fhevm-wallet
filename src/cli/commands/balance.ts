@@ -9,7 +9,9 @@ import ora from 'ora';
 import chalk from 'chalk';
 import { loadWallet, listWallets, hasWallet } from '../../core/wallet/index.js';
 import { listTokens, getToken, TokenEntry } from '../../core/token/TokenRegistry.js';
-import { getDecryptedBalance } from '../../core/token/TokenService.js';
+import { decryptBalancesWithSession } from '../../core/token/TokenService.js';
+import { RealBackend } from '../../core/backend/RealBackend.js';
+import type { DecryptSession } from '../../core/fhe/DecryptSession.js';
 import { checkFheReadiness } from '../../core/fhe/FheService.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getProvider } from '../../core/network/ProviderFactory.js';
@@ -159,18 +161,9 @@ export function registerBalanceCommand(program: Command): void {
           });
           dynamicTable.start();
 
-          for (let i = 0; i < tokens.length; i++) {
-            dynamicTable.setLoading(i);
-            try {
-              const balance = await getDecryptedBalance(tokens[i].address, wallet, network, {
-                forceRefresh: options.refresh,
-              });
-              const formatted = formatTokenAmount(balance, tokens[i].decimals);
-              dynamicTable.setSuccess(i, formatted);
-            } catch (err) {
-              dynamicTable.setError(i, describeErrorShort(err));
-            }
-          }
+          // One signature for every token and one batched request (DecryptSession).
+          const session = new RealBackend().newDecryptSession(wallet, network);
+          await fillBalances(dynamicTable, session, tokens, Boolean(options.refresh));
 
           dynamicTable.stop();
 
@@ -205,26 +198,37 @@ export function registerBalanceCommand(program: Command): void {
               });
               refreshTable.start();
 
-              for (let i = 0; i < tokens.length; i++) {
-                refreshTable.setLoading(i);
-                try {
-                  const balance = await getDecryptedBalance(tokens[i].address, wallet, network, {
-                    forceRefresh,
-                  });
-                  const formatted = formatTokenAmount(balance, tokens[i].decimals);
-                  refreshTable.setSuccess(i, formatted);
-                } catch (err) {
-                  refreshTable.setError(i, describeErrorShort(err));
-                }
-              }
+              await fillBalances(refreshTable, session, tokens, forceRefresh);
 
               refreshTable.stop();
             }
           }
+          session.clear(); // the decrypt signature lives no longer than the command
         } catch (err) {
           process.exitCode = 1;
           console.log(error(describeError(err, 'Could not load balances')));
         }
       },
     );
+}
+
+/** Decrypt every token's balance in one batch and fill the table rows. */
+async function fillBalances(
+  table: DynamicBalanceTable,
+  session: DecryptSession,
+  tokens: TokenEntry[],
+  forceRefresh: boolean,
+): Promise<void> {
+  tokens.forEach((_, i) => table.setLoading(i));
+  const batch = await decryptBalancesWithSession(
+    session,
+    tokens.map((t) => t.address),
+    session.network,
+    { forceRefresh },
+  );
+  tokens.forEach((t, i) => {
+    const v = batch.values[t.address.toLowerCase()];
+    if (v !== undefined) table.setSuccess(i, formatTokenAmount(v, t.decimals));
+    else table.setError(i, describeErrorShort(batch.errors[t.address.toLowerCase()]));
+  });
 }

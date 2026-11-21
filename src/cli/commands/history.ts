@@ -22,6 +22,25 @@ import { maskUrl } from '../../utils/redact.js';
 import { maskUrlWhenAnswered } from '../utils/secretInput.js';
 import { describeError } from '../utils/userError.js';
 import { historyJson } from './historyJson.js';
+import { PASSWORD_STDIN_HELP } from '../utils/passwordInput.js';
+import { pickWallet, unlockWallet } from '../utils/txFlow.js';
+import { createBackend } from '../../core/backend/select.js';
+import {
+  amountsToDecrypt,
+  decryptHistoryAmounts,
+  knownAmount,
+} from '../../core/token/historyAmounts.js';
+import { formatTokenAmount } from '../../utils/formatting.js';
+
+interface HistoryOptions {
+  network?: string;
+  address?: string;
+  decrypt?: boolean;
+  wallet?: string;
+  passwordStdin?: boolean;
+  limit?: string;
+  json?: boolean;
+}
 
 /**
  * Format date for display
@@ -77,11 +96,19 @@ function getDirectionInfo(tx: Transaction, walletAddress: string): { label: stri
 /**
  * Format amount with color
  */
-function formatAmount(tx: Transaction, walletAddress: string): string {
+function formatAmount(tx: Transaction, walletAddress: string, tokens: TokenEntry[]): string {
   const type = tx.type || 'transfer';
 
   if (tx.amount === null) {
-    return chalk.dim('encrypted');
+    // Decrypted earlier (fhew history --decrypt or the TUI) and cached by handle.
+    const known = knownAmount(tx);
+    const token = tokens.find((t) => t.address.toLowerCase() === tx.tokenAddress.toLowerCase());
+    if (!known || !token) return chalk.dim('encrypted');
+    const isSend = tx.from.toLowerCase() === walletAddress.toLowerCase();
+    const text = `${isSend ? '-' : '+'}${formatTokenAmount(known.value, token.decimals, token.decimals)}`;
+    return (
+      (isSend ? chalk.red(text) : chalk.green(text)) + (known.disclosed ? chalk.dim(' public') : '')
+    );
   }
 
   if (type === 'mint') {
@@ -217,7 +244,11 @@ async function handleSyncError(
 /**
  * Display transaction history table
  */
-function displayTransactionTable(transactions: Transaction[], walletAddress: string): void {
+function displayTransactionTable(
+  transactions: Transaction[],
+  walletAddress: string,
+  tokens: TokenEntry[],
+): void {
   if (transactions.length === 0) {
     console.log('\nNo transactions found.');
     return;
@@ -237,7 +268,7 @@ function displayTransactionTable(transactions: Transaction[], walletAddress: str
   for (const tx of transactions) {
     const icon = getTypeIcon(tx.type || 'transfer');
     const { label } = getDirectionInfo(tx, walletAddress);
-    const amount = formatAmount(tx, walletAddress);
+    const amount = formatAmount(tx, walletAddress, tokens);
 
     table.push([icon, formatShortDate(tx.timestamp), tx.tokenSymbol, label, amount]);
   }
@@ -251,92 +282,147 @@ export function registerHistoryCommand(program: Command): void {
     .description('View transaction history')
     .option('-n, --network <network>', 'Network (sepolia or mainnet)')
     .option('-a, --address <address>', 'Wallet address to view')
+    .option('--decrypt', 'Decrypt confidential amounts (asks for the wallet password)')
+    .option('-w, --wallet <name>', 'Wallet to decrypt with (default: the default wallet)')
+    .option('--password-stdin', PASSWORD_STDIN_HELP)
     .option('--limit <n>', 'With --json: how many transfers to print (default 10)')
     .option('--json', 'Print machine-readable JSON')
-    .action(
-      async (options: { network?: string; address?: string; limit?: string; json?: boolean }) => {
-        if (options.json) return historyJson(options);
-        try {
-          // Validate network if provided
-          let network: NetworkName = getDefaultNetwork();
-          if (options.network) {
-            if (!isValidNetwork(options.network)) {
-              process.exitCode = 1;
-              console.log(error('Invalid network. Use "sepolia" or "mainnet"'));
-              return;
-            }
-            network = options.network;
-          }
-
-          // Require wallet address for CLI
-          if (!options.address) {
+    .action(async (options: HistoryOptions) => {
+      if (options.json) return historyJson(options);
+      try {
+        // Validate network if provided
+        let network: NetworkName = getDefaultNetwork();
+        if (options.network) {
+          if (!isValidNetwork(options.network)) {
             process.exitCode = 1;
-            console.log(error('Please specify a wallet address with --address'));
+            console.log(error('Invalid network. Use "sepolia" or "mainnet"'));
             return;
           }
+          network = options.network;
+        }
 
-          if (!isValidAddress(options.address)) {
+        // --decrypt works on a wallet: its address is the one shown.
+        let decryptWallet: { name: string; address: string } | null = null;
+        if (options.decrypt) {
+          decryptWallet = pickWallet(options.wallet);
+          if (!decryptWallet) return;
+          if (
+            options.address &&
+            options.address.toLowerCase() !== decryptWallet.address.toLowerCase()
+          ) {
             process.exitCode = 1;
-            console.log(error('Invalid wallet address'));
+            console.log(error('--address and the wallet to decrypt with differ. Drop --address.'));
             return;
           }
+          options.address = decryptWallet.address;
+        }
 
-          const walletAddress = options.address;
-          const tokens = listTokens(network);
+        // Require wallet address for CLI
+        if (!options.address) {
+          process.exitCode = 1;
+          console.log(error('Please specify a wallet address with --address'));
+          return;
+        }
 
-          if (tokens.length === 0) {
-            process.exitCode = 1;
-            console.log(
-              error(
-                `No tokens tracked on ${network}. Add one with: fhevm-wallet token add <address>`,
-              ),
-            );
-            return;
-          }
+        if (!isValidAddress(options.address)) {
+          process.exitCode = 1;
+          console.log(error('Invalid wallet address'));
+          return;
+        }
 
-          // Sync from blockchain
-          const hasApiKey = !!process.env.ETHERSCAN_API_KEY;
+        const walletAddress = options.address;
+        const tokens = listTokens(network);
 
-          if (hasApiKey) {
-            // Use Etherscan API (fast)
-            const syncSpinner = ora('Syncing transactions from blockchain...').start();
-            const newTxCount = await syncTransactions(walletAddress, network, tokens, 'etherscan');
+        if (tokens.length === 0) {
+          process.exitCode = 1;
+          console.log(
+            error(
+              `No tokens tracked on ${network}. Add one with: fhevm-wallet token add <address>`,
+            ),
+          );
+          return;
+        }
+
+        // Sync from blockchain
+        const hasApiKey = !!process.env.ETHERSCAN_API_KEY;
+        const backend = createBackend();
+
+        if (backend.kind === 'mock') {
+          const r = await backend.syncHistory(walletAddress, network, tokens);
+          console.log(chalk.dim(`Synced (mock${r.newCount ? `, ${r.newCount} new` : ''})`));
+        } else if (hasApiKey) {
+          // Use Etherscan API (fast)
+          const syncSpinner = ora('Syncing transactions from blockchain...').start();
+          const newTxCount = await syncTransactions(walletAddress, network, tokens, 'etherscan');
+          syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+        } else {
+          // Default to RPC with hint
+          const syncSpinner = ora('Syncing via RPC...').start();
+          syncSpinner.suffixText = chalk.dim(
+            '(tip: set Etherscan API key in Settings for faster sync)',
+          );
+          try {
+            const newTxCount = await syncTransactions(walletAddress, network, tokens, 'rpc');
             syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+          } catch (err) {
+            syncSpinner.fail('RPC sync failed');
+            if (!(await handleSyncError(err, walletAddress, network, tokens))) {
+              process.exitCode = 1; // the history below is only what was saved earlier
+            }
+          }
+        }
+
+        // Get last 10 transactions
+        const transactions = listTransactions({
+          walletAddress,
+          network,
+          limit: 10,
+        });
+
+        console.log();
+        console.log(bold('Transaction History'));
+        console.log(chalk.dim(`Wallet: ${formatAddress(walletAddress)}`));
+        console.log(chalk.dim(`Network: ${formatNetworkName(network)}`));
+        console.log();
+
+        if (decryptWallet) {
+          const enc = amountsToDecrypt(transactions, tokens);
+          if (enc.length === 0) {
+            console.log(chalk.dim('No encrypted amounts to decrypt.'));
           } else {
-            // Default to RPC with hint
-            const syncSpinner = ora('Syncing via RPC...').start();
-            syncSpinner.suffixText = chalk.dim(
-              '(tip: set Etherscan API key in Settings for faster sync)',
-            );
-            try {
-              const newTxCount = await syncTransactions(walletAddress, network, tokens, 'rpc');
-              syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
-            } catch (err) {
-              syncSpinner.fail('RPC sync failed');
-              if (!(await handleSyncError(err, walletAddress, network, tokens))) {
-                process.exitCode = 1; // the history below is only what was saved earlier
+            const notReady = backend.readinessProblem(network);
+            if (notReady) {
+              process.exitCode = 1;
+              console.log(error(notReady));
+            } else {
+              const signer = await unlockWallet(decryptWallet.name, network, options.passwordStdin);
+              if (!signer) return;
+              // One signature for every tracked token; dropped as soon as we are done.
+              const session = backend.newDecryptSession(signer, network);
+              const spin = ora(`Decrypting ${enc.length} amount(s)...`).start();
+              try {
+                const r = await decryptHistoryAmounts(backend, session, transactions, tokens);
+                if (r.failed) {
+                  process.exitCode = 1;
+                  spin.warn(
+                    `Decrypted ${r.decrypted}; ${r.failed} failed: ${describeError(r.error, 'unknown error')}`,
+                  );
+                } else {
+                  spin.succeed(
+                    `Decrypted ${r.decrypted} amount(s)${r.hidden ? `; ${r.hidden} not decryptable by this wallet` : ''}`,
+                  );
+                }
+              } finally {
+                session.clear();
               }
             }
           }
-
-          // Get last 10 transactions
-          const transactions = listTransactions({
-            walletAddress,
-            network,
-            limit: 10,
-          });
-
-          console.log();
-          console.log(bold('Transaction History'));
-          console.log(chalk.dim(`Wallet: ${formatAddress(walletAddress)}`));
-          console.log(chalk.dim(`Network: ${formatNetworkName(network)}`));
-          console.log();
-
-          displayTransactionTable(transactions, walletAddress);
-        } catch (err) {
-          process.exitCode = 1;
-          console.log(error(describeError(err, 'Failed to load history')));
         }
-      },
-    );
+
+        displayTransactionTable(transactions, walletAddress, tokens);
+      } catch (err) {
+        process.exitCode = 1;
+        console.log(error(describeError(err, 'Failed to load history')));
+      }
+    });
 }

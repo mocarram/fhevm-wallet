@@ -129,10 +129,13 @@ const MOCK_COMMANDS = new Set([
   'send',
   'wallet',
   'help',
-  // These go through the Backend too (Phase 4).
+  // These go through the Backend for every network call (Phase 4).
   'token',
   'doctor',
   'receive',
+  'history',
+  'operator',
+  'disclose',
 ]);
 
 /** The subcommand in `argv` (after the global `-n/--network` option), or '' for none. */
@@ -153,13 +156,13 @@ export function commandName(argv: string[]): string {
 
 /**
  * With FHEW_BACKEND=mock, refuse commands that would silently use the real network
- * (balance, history, token add, config --rpc-*): the user asked for a simulation.
+ * (balance, token add, config --rpc-*): the user asked for a simulation.
  */
 export function assertCommandSupportsMock(argv: string[]): void {
   const cmd = commandName(argv);
   if (!MOCK_COMMANDS.has(cmd)) {
     throw new MockDataDirError(
-      `FHEW_BACKEND=mock works with the interactive UI (fhew) and the send, token, doctor, receive and wallet commands only; \`fhew ${cmd}\` would use the real network. Unset FHEW_BACKEND to run it.`,
+      `FHEW_BACKEND=mock works with the interactive UI (fhew) and the send, token, doctor, receive, history, operator, disclose and wallet commands only; \`fhew ${cmd}\` would use the real network. Unset FHEW_BACKEND to run it.`,
     );
   }
 }
