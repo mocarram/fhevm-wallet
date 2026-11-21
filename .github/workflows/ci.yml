@@ -15,13 +15,17 @@ jobs:
     name: Lint, Format, Build & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      # Pinned by commit: a moved tag cannot change what runs with our token.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version-file: .nvmrc
           cache: npm
 
-      - run: npm ci
+      # No install scripts (none is needed; keccak falls back to pure JS).
+      - run: npm ci --ignore-scripts
+      # Registry signatures and provenance of every installed package.
+      - run: npm audit signatures
       # Same gate agents run locally: lint, format, build, unit and e2e tests.
       - run: npm run verify
       - run: npm audit
