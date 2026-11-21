@@ -132,3 +132,39 @@ describe('TransactionStore CRUD', () => {
     expect(listTransactions({ walletAddress: WALLET, network: 'sepolia' })).toEqual([]);
   });
 });
+
+describe('listTransactions order (V2)', () => {
+  it('lists unconfirmed entries (block 0) first, so a limit never cuts them', () => {
+    for (let i = 1; i <= 12; i++) {
+      upsertTransaction({
+        txHash: '0x' + i.toString(16).padStart(64, '0'),
+        type: 'transfer',
+        tokenAddress: TOKEN,
+        tokenSymbol: 'cT',
+        from: COUNTERPARTY,
+        to: WALLET,
+        amount: null,
+        network: 'sepolia',
+        blockNumber: 1000 + i,
+        logIndex: 0,
+        timestamp: new Date(1_700_000_000_000 + i * 1000).toISOString(),
+      });
+    }
+    const pending = recordLocalTransaction({
+      txHash: '0x' + 'ff'.repeat(32),
+      tokenAddress: TOKEN,
+      tokenSymbol: 'cT',
+      from: WALLET,
+      to: COUNTERPARTY,
+      amount: '1',
+      network: 'sepolia',
+      blockNumber: 0,
+    });
+    const ten = listTransactions({ walletAddress: WALLET, network: 'sepolia', limit: 10 });
+    expect(ten).toHaveLength(10);
+    expect(ten[0].txHash).toBe(pending.txHash);
+    expect(ten.slice(1).map((t) => t.blockNumber)).toEqual([
+      1012, 1011, 1010, 1009, 1008, 1007, 1006, 1005, 1004,
+    ]);
+  });
+});

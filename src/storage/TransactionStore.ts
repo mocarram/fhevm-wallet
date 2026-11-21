@@ -233,8 +233,13 @@ export function listTransactions(options: {
       (t.from.toLowerCase() === addr || t.to.toLowerCase() === addr),
   );
 
-  // Sort by block number descending (most recent first)
-  transactions = transactions.sort((a, b) => b.blockNumber - a.blockNumber);
+  // Newest first. Unconfirmed ones (block 0: a send, wrap or unwrap whose receipt did
+  // not arrive) are the newest of all and come first, so a limit never cuts them: they
+  // are what the user must check before sending again. Ties go by time, newest first.
+  const rank = (t: Transaction) => (t.blockNumber === 0 ? Infinity : t.blockNumber);
+  transactions = transactions.sort(
+    (a, b) => rank(b) - rank(a) || b.timestamp.localeCompare(a.timestamp),
+  );
 
   const limit = options.limit ?? 10;
   return transactions.slice(0, limit);
