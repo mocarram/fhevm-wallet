@@ -8,6 +8,8 @@ import { getEnvVar } from '../../../src/storage/paths.js';
 // A tiny local JSON-RPC server whose chain id we control. No external network needed.
 let server: Server;
 let chainIdHex = '0xaa36a7';
+/** When true, only eth_chainId gets a result; everything else an error. */
+let chainIdOnly = false;
 let url = '';
 
 beforeAll(async () => {
@@ -16,7 +18,10 @@ beforeAll(async () => {
     req.on('data', (c) => (body += c));
     req.on('end', () => {
       const msg = JSON.parse(body);
-      const reply = (m: { id: number }) => ({ jsonrpc: '2.0', id: m.id, result: chainIdHex });
+      const reply = (m: { id: number; method: string }) =>
+        chainIdOnly && m.method !== 'eth_chainId'
+          ? { jsonrpc: '2.0', id: m.id, error: { code: -32601, message: 'method not found' } }
+          : { jsonrpc: '2.0', id: m.id, result: chainIdHex };
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify(Array.isArray(msg) ? msg.map(reply) : reply(msg)));
     });
@@ -28,6 +33,7 @@ afterAll(() => server.close());
 beforeEach(() => {
   wipeTestDataDir();
   chainIdHex = '0xaa36a7';
+  chainIdOnly = false;
 });
 
 describe('validateRpcUrl', () => {
@@ -50,6 +56,12 @@ describe('setCustomRpc', () => {
   it('refuses an endpoint on the wrong chain and saves nothing', async () => {
     chainIdHex = '0x1';
     await expect(setCustomRpc('sepolia', url)).rejects.toThrow(/serves chain 1/);
+    expect(getEnvVar('SEPOLIA_RPC_URL')).toBeUndefined();
+  });
+
+  it('refuses an endpoint that only answers eth_chainId', async () => {
+    chainIdOnly = true;
+    await expect(setCustomRpc('sepolia', url)).rejects.toThrow(/eth_blockNumber/);
     expect(getEnvVar('SEPOLIA_RPC_URL')).toBeUndefined();
   });
 

@@ -268,25 +268,60 @@ export async function getChainId(network: NetworkName): Promise<bigint> {
 export interface RpcProbe {
   chainId: bigint;
   latencyMs: number;
+  /** Latest block, when the probe asked for it (`withBlockNumber`). */
+  blockNumber?: number;
+}
+
+/** Thrown when an endpoint reports its chain but will not answer a real request. */
+export class RpcNoRealAnswerError extends Error {
+  readonly code = 'RPC_NO_REAL_ANSWER';
 }
 
 /**
- * Ask an RPC endpoint which chain it serves, with a short timeout.
- *
- * A single raw request rather than a throwaway provider: a provider without a static
- * network would keep retrying network detection (and logging) when the URL is wrong.
+ * One raw JSON-RPC call with a short timeout and no retries. A single request rather than
+ * a throwaway provider: a provider without a static network would keep retrying network
+ * detection (and logging) when the URL is wrong.
  */
-export async function probeRpc(url: string, timeoutMs = RPC_PROBE_TIMEOUT_MS): Promise<RpcProbe> {
+async function rawRpcCall(url: string, method: string, timeoutMs: number): Promise<unknown> {
   const req = rpcRequest(url, timeoutMs);
-  req.body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] });
+  req.body = JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: [] });
   req.setHeader('content-type', 'application/json');
   req.retryFunc = async () => false; // a probe should answer once, quickly
-  const started = Date.now();
   const res = await req.send();
   res.assertOk();
-  const body = res.bodyJson as { result?: unknown };
-  if (typeof body?.result !== 'string') throw new Error('No chain ID in the reply');
-  return { chainId: BigInt(body.result), latencyMs: Date.now() - started };
+  return (res.bodyJson as { result?: unknown })?.result;
+}
+
+/**
+ * Ask an RPC endpoint which chain it serves, with a short timeout. With
+ * `withBlockNumber`, also make one real call (eth_blockNumber): some gateways answer
+ * eth_chainId from a static config without a node behind them, and would only fail
+ * later, at send time.
+ */
+export async function probeRpc(
+  url: string,
+  timeoutMs = RPC_PROBE_TIMEOUT_MS,
+  opts: { withBlockNumber?: boolean } = {},
+): Promise<RpcProbe> {
+  const started = Date.now();
+  const result = await rawRpcCall(url, 'eth_chainId', timeoutMs);
+  if (typeof result !== 'string') throw new Error('No chain ID in the reply');
+  const probe: RpcProbe = { chainId: BigInt(result), latencyMs: Date.now() - started };
+  if (opts.withBlockNumber) {
+    let block: unknown;
+    try {
+      block = await rawRpcCall(url, 'eth_blockNumber', timeoutMs);
+    } catch {
+      block = undefined;
+    }
+    if (typeof block !== 'string' || !/^0x[0-9a-f]+$/i.test(block)) {
+      throw new RpcNoRealAnswerError(
+        'That RPC endpoint reported its chain but did not answer a basic request (eth_blockNumber). It may be restricted or not backed by a node. Use another URL.',
+      );
+    }
+    probe.blockNumber = Number(BigInt(block));
+  }
+  return probe;
 }
 
 /**
@@ -306,14 +341,16 @@ export function describeProbeFailure(err: unknown): string {
 }
 
 /**
- * Throw unless `url` answers with `expectedChainId`. A Sepolia URL saved as the mainnet
+ * Throw unless `url` answers with `expectedChainId` and answers one real request
+ * (eth_blockNumber). A Sepolia URL saved as the mainnet
  * RPC (or the reverse) would otherwise produce confusing failures at send time.
  */
 export async function assertRpcChain(url: string, expectedChainId: bigint): Promise<RpcProbe> {
   let probe: RpcProbe;
   try {
-    probe = await probeRpc(url);
+    probe = await probeRpc(url, RPC_PROBE_TIMEOUT_MS, { withBlockNumber: true });
   } catch (err) {
+    if (err instanceof RpcNoRealAnswerError) throw new Error(err.message);
     throw new Error(describeProbeFailure(err));
   }
   if (probe.chainId !== expectedChainId) {
