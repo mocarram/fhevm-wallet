@@ -32,6 +32,7 @@ import { getNameByAddress } from '../../storage/AddressBook.js';
 import { saveEnvVar, getEnvVar, loadEnv } from '../../storage/paths.js';
 import { setCustomRpc, validateRpcUrl } from '../../core/network/rpcSettings.js';
 import { maskUrl } from '../../utils/redact.js';
+import { maskUrlWhenAnswered } from '../utils/secretInput.js';
 import { describeError } from '../utils/userError.js';
 
 /**
@@ -231,7 +232,13 @@ async function handleSyncError(
       },
     ]);
 
-    saveEnvVar('ETHERSCAN_API_KEY', apiKey.trim());
+    // A key that cannot be saved (a space in it, say) must not skip the saved history.
+    try {
+      saveEnvVar('ETHERSCAN_API_KEY', apiKey.trim());
+    } catch (err) {
+      console.log(error(describeError(err, 'Could not save the key')));
+      return false;
+    }
     loadEnv();
     console.log(chalk.green('✓ API key saved'));
 
@@ -260,6 +267,8 @@ async function handleSyncError(
           ? `Enter ${network} RPC URL (current: ${maskUrl(currentCustom)}):`
           : `Enter ${network} RPC URL:`,
         validate: (input: string) => validateRpcUrl(input) ?? true,
+        // Once answered, show only scheme and host: the key must not stay on screen.
+        transformer: maskUrlWhenAnswered,
       },
     ]);
 

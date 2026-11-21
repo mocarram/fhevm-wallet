@@ -19,7 +19,7 @@ import { setCustomRpc } from '../core/network/rpcSettings.js';
 import { clearProviderCache } from '../core/network/ProviderFactory.js';
 import { describeError } from './utils/userError.js';
 import { maskUrl } from '../utils/redact.js';
-import { resolveSecretOption, secretOptionHelp } from './utils/secretInput.js';
+import { resolveSecretOption, rpcOptionHelp, secretOptionHelp } from './utils/secretInput.js';
 
 /**
  * Read the version from package.json at runtime so `--version` can never drift from the
@@ -79,8 +79,8 @@ export function createProgram(): Command {
     .description('View or update configuration')
     .option('--network <network>', 'Set default network')
     .option('--show', 'Show current configuration')
-    .option('--rpc-mainnet <url>', 'Set Mainnet RPC URL')
-    .option('--rpc-sepolia <url>', 'Set Sepolia RPC URL')
+    .option('--rpc-mainnet <url>', rpcOptionHelp('Mainnet'))
+    .option('--rpc-sepolia <url>', rpcOptionHelp('Sepolia'))
     .option('--etherscan-key [key]', secretOptionHelp('the Etherscan API key'))
     .option('--zama-key [key]', secretOptionHelp('the Zama mainnet API key'))
     .action(
@@ -144,7 +144,9 @@ export function createProgram(): Command {
 
         if (options.rpcMainnet) {
           try {
-            const probe = await setCustomRpc('mainnet', options.rpcMainnet);
+            const url = await resolveSecretOption(options.rpcMainnet, 'Mainnet RPC URL');
+            if (!url) throw new Error('No URL entered; nothing was saved.');
+            const probe = await setCustomRpc('mainnet', url);
             console.log(chalk.green(`Mainnet RPC URL updated (answered in ${probe.latencyMs} ms)`));
           } catch (err) {
             console.log(chalk.red(describeError(err, 'Could not set RPC URL')));
@@ -154,7 +156,9 @@ export function createProgram(): Command {
 
         if (options.rpcSepolia) {
           try {
-            const probe = await setCustomRpc('sepolia', options.rpcSepolia);
+            const url = await resolveSecretOption(options.rpcSepolia, 'Sepolia RPC URL');
+            if (!url) throw new Error('No URL entered; nothing was saved.');
+            const probe = await setCustomRpc('sepolia', url);
             console.log(chalk.green(`Sepolia RPC URL updated (answered in ${probe.latencyMs} ms)`));
           } catch (err) {
             console.log(chalk.red(describeError(err, 'Could not set RPC URL')));

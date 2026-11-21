@@ -4,10 +4,11 @@
  * `--etherscan-key VALUE` stays for scripts, but the value then lands in ~/.bash_history
  * and `ps` output. `--etherscan-key` with no value (or `-`) asks for it with hidden input
  * on a terminal; `-` with piped stdin reads it from there (`pass show x | fhew config
- * --etherscan-key -`).
+ * --etherscan-key -`). RPC URL options take `-` the same way, since URLs often hold keys.
  */
 
 import inquirer from 'inquirer';
+import { maskUrl } from '../../utils/redact.js';
 
 /** Minimal readable stream we need, so tests can pass their own. */
 export interface SecretInputIO {
@@ -42,11 +43,41 @@ export async function resolveSecretOption(
   io: SecretInputIO = defaultIO,
 ): Promise<string> {
   if (value !== true && value !== '-') return value.trim();
-  if (value === '-' && !io.stdin.isTTY) return (await readAll(io.stdin)).trim();
+  if (value === '-' && !io.stdin.isTTY) {
+    // Piped stdin can only be read once: a second "-" would silently get nothing.
+    if (consumedStreams.has(io.stdin)) {
+      throw new Error(
+        'Only one value can be piped in per run. Run the command again for the next one.',
+      );
+    }
+    consumedStreams.add(io.stdin);
+    return (await readAll(io.stdin)).trim();
+  }
   return (await io.ask(label)).trim();
 }
 
+/** Streams already read to the end by `resolveSecretOption`. */
+const consumedStreams = new WeakSet<object>();
+
 /** Help text for a key option, with the shell-history warning. */
 export function secretOptionHelp(what: string): string {
-  return `Set ${what}. Omit the value (or use -) to type it hidden or pipe it in; a value typed on the command line is kept in your shell history`;
+  return `Set ${what}. Omit the value (or use -) to type it hidden or pipe it in (one piped value per run); a value typed on the command line is kept in your shell history`;
+}
+
+/** Help text for an RPC URL option: URLs often hold an API key too. */
+export function rpcOptionHelp(network: string): string {
+  return `Set the ${network} RPC URL. Use - to type it hidden or pipe it in (one piped value per run); a URL typed on the command line, with any key in it, is kept in your shell history`;
+}
+
+/**
+ * inquirer `transformer` for an RPC URL prompt: shows what is typed while typing, and
+ * only the masked URL (scheme and host) once answered, so the key in it does not stay
+ * on screen or in the scrollback.
+ */
+export function maskUrlWhenAnswered(
+  input: string,
+  _answers: unknown,
+  flags: { isFinal?: boolean } = {},
+): string {
+  return flags.isFinal ? maskUrl(input.trim()) : input;
 }

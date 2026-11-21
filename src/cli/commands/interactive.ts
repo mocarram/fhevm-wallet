@@ -70,6 +70,7 @@ import {
 import { addAddress, listAddresses, removeAddress } from '../../storage/AddressBook.js';
 import { DynamicBalanceTable } from '../utils/DynamicBalanceTable.js';
 import { displayHistoryInteractive } from './history.js';
+import { maskUrlWhenAnswered } from '../utils/secretInput.js';
 import { describeError, describeErrorShort } from '../utils/userError.js';
 import { maskUrl } from '../../utils/redact.js';
 
@@ -342,6 +343,8 @@ async function handleSetRpcEndpoint(): Promise<void> {
         ? `Enter RPC URL (current: ${maskUrl(currentCustom)}):`
         : 'Enter RPC URL:',
       validate: (input) => validateRpcUrl(input) ?? true,
+      // Once answered, show only scheme and host: the key must not stay on screen.
+      transformer: maskUrlWhenAnswered,
     },
   ]);
 

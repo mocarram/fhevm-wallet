@@ -5,7 +5,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { Wallet } from 'ethers';
 import { join, sep } from 'path';
 import { CLI, runCliAsync, tempHome } from './helpers.js';
-import { spawnSync } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 
 // A local "RPC provider" that always fails with HTTP 500. ethers puts the full request
 // URL (with the key in its path and query) into the error it throws.
@@ -196,6 +196,52 @@ describe('secrets never reach the terminal', () => {
           expect(text, file).not.toContain(secret);
         }
       }
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it('`--rpc-sepolia -` reads the URL from stdin and never prints it', async () => {
+    const t = tempHome();
+    try {
+      // Async spawn: the local server in this process must be able to answer.
+      const res = await new Promise<{ code: number | null; out: string; stdout: string }>(
+        (done) => {
+          const child = spawn(process.execPath, [CLI, 'config', '--rpc-sepolia', '-'], {
+            env: { PATH: process.env.PATH ?? '', HOME: t.home, NO_COLOR: '1' },
+          });
+          let stdout = '';
+          let stderr = '';
+          child.stdout.on('data', (c) => (stdout += c));
+          child.stderr.on('data', (c) => (stderr += c));
+          child.on('close', (code) => done({ code, out: stdout + stderr, stdout }));
+          child.stdin.end(`${base}/v2/${KEY}?apikey=${KEY}\n`);
+        },
+      );
+      expect(res.code).toBe(1); // the local server answers 500
+      expect(res.stdout).toMatch(/returned an error \(HTTP 500\)/);
+      expect(res.out).not.toContain(KEY);
+    } finally {
+      t.cleanup();
+    }
+  });
+
+  it('two piped options in one run fail clearly for the second', () => {
+    const t = tempHome();
+    try {
+      const res = spawnSync(
+        process.execPath,
+        [CLI, 'config', '--etherscan-key', '-', '--zama-key', '-'],
+        {
+          env: { PATH: process.env.PATH ?? '', HOME: t.home, NO_COLOR: '1' },
+          input: 'ONLYONEKEY12345\n',
+          encoding: 'utf-8',
+          timeout: 30_000,
+        },
+      );
+      expect(res.status).toBe(1);
+      expect(res.stdout).toMatch(/Etherscan API key saved/);
+      expect(res.stdout).toMatch(/Only one value can be piped in per run/);
     } finally {
       t.cleanup();
     }

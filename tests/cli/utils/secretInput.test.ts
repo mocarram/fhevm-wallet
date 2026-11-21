@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PassThrough } from 'stream';
-import { resolveSecretOption } from '../../../src/cli/utils/secretInput.js';
+import { maskUrlWhenAnswered, resolveSecretOption } from '../../../src/cli/utils/secretInput.js';
 
 function io(isTTY: boolean, piped = '') {
   const stdin = new PassThrough() as PassThrough & { isTTY?: boolean };
@@ -28,5 +28,19 @@ describe('resolveSecretOption', () => {
     const i = io(false, 'piped-key\n');
     expect(await resolveSecretOption('-', 'Key', i)).toBe('piped-key');
     expect(i.ask).not.toHaveBeenCalled();
+  });
+
+  it('refuses a second piped value instead of silently reading nothing', async () => {
+    const i = io(false, 'first\n');
+    expect(await resolveSecretOption('-', 'A', i)).toBe('first');
+    await expect(resolveSecretOption('-', 'B', i)).rejects.toThrow(/Only one value can be piped/);
+  });
+});
+
+describe('maskUrlWhenAnswered', () => {
+  it('shows the typed URL while typing and only scheme and host once answered', () => {
+    const url = 'https://rpc.example/v2/TYPEDKEY123';
+    expect(maskUrlWhenAnswered(url, {}, { isFinal: false })).toBe(url);
+    expect(maskUrlWhenAnswered(url, {}, { isFinal: true })).toBe('https://rpc.example/…');
   });
 });
