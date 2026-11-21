@@ -27,6 +27,14 @@ import {
 import { syncTransactions } from '../token/historySync.js';
 import { checkErc7984, type TokenCheck } from '../token/erc7984Check.js';
 import { translateTxError } from '../token/txErrors.js';
+import { knownTokens } from '../token/tokenLists.js';
+import {
+  scanIncoming,
+  SCAN_START_BLOCK,
+  type ScanOptions,
+  type ScanResult,
+} from '../token/tokenScan.js';
+import { loadConfig } from '../../storage/ConfigStore.js';
 import type { TokenEntry } from '../token/TokenRegistry.js';
 import type {
   Backend,
@@ -114,6 +122,25 @@ export class RealBackend implements Backend {
     const url = getRpcUrls(network)[0];
     const probe = await probeRpc(url);
     return { ...probe, url, chainMatches: probe.chainId === NETWORK_CONFIGS[network].chainId };
+  }
+
+  knownTokens(network: NetworkName, opts: { refresh?: boolean } = {}) {
+    return knownTokens(network, { url: loadConfig().tokenListUrl, refresh: opts.refresh });
+  }
+
+  async scanReceivedTokens(
+    address: string,
+    network: NetworkName,
+    opts: Omit<ScanOptions, 'toBlock'>,
+  ): Promise<ScanResult> {
+    const provider = getProvider(network);
+    const result = await scanIncoming(provider, address, opts);
+    if (result.error) result.error = translateTxError(result.error, { action: 'token scan' });
+    return result;
+  }
+
+  scanStartBlock(network: NetworkName): number {
+    return SCAN_START_BLOCK[network];
   }
 
   async checkRpcEndpoints(network: NetworkName): Promise<RpcEndpointCheck[]> {

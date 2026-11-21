@@ -28,6 +28,8 @@ import { setCachedBalance } from '../token/BalanceCache.js';
 import { assertTransferAmount } from '../token/TokenService.js';
 import type { TokenEntry } from '../token/TokenRegistry.js';
 import type { TokenCheck } from '../token/erc7984Check.js';
+import type { KnownToken } from '../token/tokenLists.js';
+import type { ScanOptions, ScanResult } from '../token/tokenScan.js';
 import { upsertTransactions } from '../../storage/TransactionStore.js';
 import type {
   Backend,
@@ -97,6 +99,14 @@ function catalogue(network: NetworkName): MockToken[] {
 export function mockNonConfidentialToken(network: NetworkName): string {
   return mockAddress(`${network}:plain-erc20`);
 }
+
+/** A compliant mock token that is on no list: "found in your history", unverified. */
+export function mockGiftToken(network: NetworkName): string {
+  return mockAddress(`${network}:cGIFT`);
+}
+
+/** Where the mock chain's history starts. */
+const MOCK_SCAN_START = 6_990_000;
 
 /** Read mock settings from `FHEW_MOCK_*` variables (see the module comment). */
 export function mockOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): MockOptions {
@@ -187,6 +197,14 @@ export class MockBackend implements Backend {
     if (known) {
       const { start: _start, ...info } = known;
       return info;
+    }
+    if (getAddress(tokenAddress) === mockGiftToken(network)) {
+      return {
+        address: getAddress(tokenAddress),
+        name: 'Gift Token',
+        symbol: 'cGIFT',
+        decimals: 6,
+      };
     }
     // Any other address is treated as a token too, with a name derived from it.
     const tag = getAddress(tokenAddress).slice(2, 6).toUpperCase();
@@ -416,6 +434,64 @@ export class MockBackend implements Backend {
     this.rpcFailure();
     const chainId = NETWORK_CONFIGS[network].chainId;
     return { url: 'mock://rpc', chainId, latencyMs: 12, chainMatches: true };
+  }
+
+  async knownTokens(network: NetworkName): Promise<{ tokens: KnownToken[] }> {
+    // The catalogue stands in for a curated list; the real shipped lists stay untouched.
+    return { tokens: this.catalogue(network).map((t) => ({ ...t, list: 'mock list' })) };
+  }
+
+  scanStartBlock(): number {
+    return MOCK_SCAN_START;
+  }
+
+  /**
+   * Simulated log scan in four chunks (with latency, progress and cancellation): it
+   * "finds" cDAI (also on the known list), a gift token that is on no list, and the
+   * plain ERC-20 that fails the ERC-7984 check. A resumed scan finds nothing new.
+   */
+  async scanReceivedTokens(
+    _address: string,
+    network: NetworkName,
+    opts: Omit<ScanOptions, 'toBlock'>,
+  ): Promise<ScanResult> {
+    const toBlock = this.block;
+    const fromBlock = Math.max(opts.fromBlock, MOCK_SCAN_START);
+    const found = new Set<string>();
+    const hits = [
+      catalogue(network)[1].address,
+      mockGiftToken(network),
+      mockNonConfidentialToken(network),
+    ];
+    const span = Math.max(1, Math.ceil((toBlock - fromBlock + 1) / 4));
+    let scannedTo = fromBlock - 1;
+    for (let at = fromBlock; at <= toBlock; at += span) {
+      if (opts.signal?.aborted) {
+        return { contracts: [...found], fromBlock, toBlock, scannedTo, cancelled: true };
+      }
+      await this.sleep(this.opts.latencyMs);
+      if (this.opts.fail === 'rpc') {
+        return {
+          contracts: [...found],
+          fromBlock,
+          toBlock,
+          scannedTo,
+          cancelled: false,
+          error: translateTxError(
+            Object.assign(new Error('fetch failed (mock)'), { code: 'NETWORK_ERROR' }),
+          ),
+        };
+      }
+      const end = Math.min(at + span - 1, toBlock);
+      // Each hit sits at a fixed block, so a resumed scan only finds what is new.
+      hits.forEach((h, i) => {
+        const block = MOCK_SCAN_START + 1000 + i * 1000;
+        if (block >= at && block <= end) found.add(h);
+      });
+      scannedTo = end;
+      opts.onProgress?.({ fromBlock, toBlock, current: end, found: found.size });
+    }
+    return { contracts: [...found], fromBlock, toBlock, scannedTo, cancelled: false };
   }
 
   async checkRpcEndpoints(network: NetworkName): Promise<RpcEndpointCheck[]> {

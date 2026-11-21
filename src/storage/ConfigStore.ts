@@ -12,6 +12,8 @@ import { DATA_DIR, ensureDataDir } from './paths.js';
 const ConfigSchema = z.object({
   defaultNetwork: z.enum(['mainnet', 'sepolia']).default('sepolia'),
   defaultWallet: z.string().optional(),
+  /** Optional token list (token-list JSON format) used by "Find tokens"; https only. */
+  tokenListUrl: z.string().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

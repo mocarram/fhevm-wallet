@@ -287,6 +287,8 @@ export const WALLET_DATA_ENTRIES = [
   'transactions.json',
   'balance-cache.json',
   'ui-prefs.json',
+  'token-lists.json',
+  'scan-state.json',
   '.fhew-mock',
 ] as const;
 

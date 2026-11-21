@@ -1,0 +1,7 @@
+{
+  "name": "fhEVM Wallet known confidential tokens (mainnet)",
+  "timestamp": "2026-11-21T00:00:00.000Z",
+  "version": { "major": 1, "minor": 0, "patch": 0 },
+  "keywords": ["erc-7984", "confidential"],
+  "tokens": []
+}

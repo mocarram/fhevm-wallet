@@ -15,6 +15,8 @@ import type { RpcProbe } from '../network/ProviderFactory.js';
 import type { TokenEntry } from '../token/TokenRegistry.js';
 import type { SendHooks, TokenInfo, TransferResult } from '../token/TokenService.js';
 import type { TokenCheck } from '../token/erc7984Check.js';
+import type { KnownToken } from '../token/tokenLists.js';
+import type { ScanOptions, ScanResult } from '../token/tokenScan.js';
 
 /** Which implementation is running. The UI shows a MOCK badge for 'mock'. */
 export type BackendKind = 'real' | 'mock';
@@ -134,6 +136,28 @@ export interface Backend {
 
   /** Ask the configured RPC endpoint which chain it serves and how fast it answers. */
   checkRpc(network: NetworkName): Promise<RpcCheck>;
+
+  /**
+   * Curated tokens for `network`: the shipped list plus the user's configured list
+   * (refreshed when stale or when `refresh`). `listError` says why a refresh failed.
+   */
+  knownTokens(
+    network: NetworkName,
+    opts?: { refresh?: boolean },
+  ): Promise<{ tokens: KnownToken[]; listError?: string }>;
+
+  /**
+   * Scan ConfidentialTransfer logs sent to `address` for token contracts (tokenScan.ts).
+   * Never throws for a failed chunk: the result carries the error and what was found.
+   */
+  scanReceivedTokens(
+    address: string,
+    network: NetworkName,
+    opts: Omit<ScanOptions, 'toBlock'>,
+  ): Promise<ScanResult>;
+
+  /** First block a scan with no saved progress starts from on `network`. */
+  scanStartBlock(network: NetworkName): number;
 
   /** Probe every RPC URL in use for `network` (custom, or default plus fallbacks). */
   checkRpcEndpoints(network: NetworkName): Promise<RpcEndpointCheck[]>;
