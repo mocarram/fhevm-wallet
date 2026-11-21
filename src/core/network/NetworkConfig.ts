@@ -76,6 +76,29 @@ function getRpcUrl(network: NetworkName): string {
 /** Custom URLs already reported as invalid, so the notice is printed once per process. */
 const reportedInvalid = new Set<string>();
 
+/** Why the custom RPC URL in `key` is ignored, or null when it is unset or valid. */
+export function invalidRpcReason(key: 'MAINNET_RPC_URL' | 'SEPOLIA_RPC_URL'): string | null {
+  const custom = process.env[key]?.trim();
+  return custom ? validateRpcUrl(custom) : null;
+}
+
+/**
+ * The custom RPC URL settings that will be ignored, for one startup notice. Marks them
+ * reported, so `getRpcUrls` does not repeat the notice later.
+ */
+export function takeInvalidRpcSettings(): { key: string; reason: string }[] {
+  const out: { key: string; reason: string }[] = [];
+  for (const key of ['MAINNET_RPC_URL', 'SEPOLIA_RPC_URL'] as const) {
+    const reason = invalidRpcReason(key);
+    const value = process.env[key]?.trim();
+    if (reason && value && !reportedInvalid.has(value)) {
+      reportedInvalid.add(value);
+      out.push({ key, reason });
+    }
+  }
+  return out;
+}
+
 /**
  * Every RPC URL to try for `network`, in order: just the custom URL when one is set,
  * otherwise the default followed by the public fallbacks.

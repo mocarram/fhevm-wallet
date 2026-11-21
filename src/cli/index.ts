@@ -13,7 +13,7 @@ import { registerHistoryCommand } from './commands/history.js';
 import { registerInteractiveCommand } from './commands/interactive.js';
 import { updateConfig, loadConfig } from '../storage/ConfigStore.js';
 import { isValidNetwork } from '../utils/validation.js';
-import { NetworkName, DEFAULT_RPC_URLS } from '../core/network/NetworkConfig.js';
+import { NetworkName, DEFAULT_RPC_URLS, invalidRpcReason } from '../core/network/NetworkConfig.js';
 import { saveEnvVar, settingSource, SettingSource } from '../storage/paths.js';
 import { setCustomRpc } from '../core/network/rpcSettings.js';
 import { clearProviderCache } from '../core/network/ProviderFactory.js';
@@ -103,9 +103,14 @@ export function createProgram(): Command {
           const config = loadConfig();
           // Show what is in effect (saved settings, ./.env or the environment), masked,
           // and where it comes from: a ./.env in this folder can change the RPC.
-          const rpcLine = (key: string, fallback: string) => {
+          const rpcLine = (key: 'MAINNET_RPC_URL' | 'SEPOLIA_RPC_URL', fallback: string) => {
             const value = process.env[key];
             const source = settingSource(key);
+            // A URL that fails the https check is not used: say so, not "(custom)".
+            const invalid = invalidRpcReason(key);
+            if (value && source && invalid) {
+              return `${fallback}${chalk.yellow(` (default; ${key} ${SOURCE_LABELS[source]} ignored: ${invalid})`)}`;
+            }
             return value && source
               ? `${maskUrl(value)}${chalk.cyan(` (custom, ${SOURCE_LABELS[source]})`)}`
               : `${fallback}${chalk.dim(' (default)')}`;

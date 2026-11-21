@@ -83,6 +83,24 @@ describe('secrets never reach the terminal', () => {
     }
   });
 
+  it('a plain-http remote RPC URL from the environment is ignored, and --show says so', async () => {
+    const t = tempHome();
+    try {
+      const res = await runCliAsync(['config', '--show'], t.home, {
+        SEPOLIA_RPC_URL: `http://remote.example/v2/${KEY}`,
+      });
+      expect(res.code).toBe(0);
+      expect(res.stderr).toMatch(/Ignored SEPOLIA_RPC_URL: Use an https:\/\/ URL/);
+      expect(res.stdout).toMatch(
+        /Sepolia: \S+ \(default; SEPOLIA_RPC_URL from the environment ignored: Use an https/,
+      );
+      expect(res.stdout).not.toMatch(/custom/);
+      expect(res.stdout + res.stderr).not.toContain(KEY);
+    } finally {
+      t.cleanup();
+    }
+  });
+
   it('API keys saved with `fhew config` are never echoed back in full', async () => {
     const t = tempHome();
     try {

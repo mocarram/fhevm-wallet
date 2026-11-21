@@ -13,6 +13,7 @@ import {
   secureExistingData,
   UntrustedDataDirError,
 } from './storage/paths.js';
+import { takeInvalidRpcSettings } from './core/network/NetworkConfig.js';
 
 // Load settings: the data dir's private .env, plus allow-listed keys from ./.env.
 // Failing here (data dir not writable) gets one clear sentence, not a stack trace.
@@ -28,6 +29,10 @@ try {
     process.stderr.write(
       `Ignored ${env.ignoredFromSettings.join(', ')} in ${ENV_FILE_PATH}: only RPC URLs and API keys are read from there. Set other options in your shell instead.\n`,
     );
+  }
+  // The same check for URLs from the environment or a hand-edited settings file.
+  for (const { key, reason } of takeInvalidRpcSettings()) {
+    process.stderr.write(`Ignored ${key}: ${reason} Using the default endpoints.\n`);
   }
   for (const { key, reason } of env.rejectedFromCwd) {
     process.stderr.write(`Ignored ${key} in ./.env: ${reason}\n`);
