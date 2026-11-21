@@ -92,6 +92,23 @@ describe('redactSecrets: pieces of the configured RPC URLs', () => {
     expect(fragments).not.toContain('v'); // nor is a one-letter query value
   });
 
+  it('masks long all-letter segments, anything after /v2/ or /v3/, and base64 creds', () => {
+    const fragments = rpcUrlSecretFragments({
+      MAINNET_RPC_URL: 'https://bob:hunter2pw@h.example/rpc/abcdefghijklmnopqrstuv/v3/shortk',
+      SEPOLIA_RPC_URL: 'https://h.example/v2/allletterskey',
+    });
+    expect(fragments).toEqual(
+      expect.arrayContaining([
+        'abcdefghijklmnopqrstuv',
+        'shortk',
+        'allletterskey',
+        Buffer.from('bob:hunter2pw').toString('base64'),
+      ]),
+    );
+    expect(fragments).not.toContain('rpc');
+    expect(fragments).not.toContain('v3');
+  });
+
   it('ignores settings that are not URLs', () => {
     expect(rpcUrlSecretFragments({ SEPOLIA_RPC_URL: 'not a url' })).toEqual([]);
   });

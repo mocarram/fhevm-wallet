@@ -29,6 +29,13 @@ const RPC_URL_ENV_VARS = ['MAINNET_RPC_URL', 'SEPOLIA_RPC_URL'];
 
 /** Shortest path segment treated as a possible key: `v2`, `rpc`, `sepolia` stay readable. */
 const MIN_PATH_SECRET = 8;
+/**
+ * A path segment this long is masked even when it is all letters (or all digits): a
+ * random 20+ character token can happen to avoid digits, and no network name is that long.
+ */
+const MIN_ANY_PATH_SECRET = 20;
+/** Path segments right after these are provider keys (Alchemy `/v2/`, Infura `/v3/`). */
+const KEY_PREFIX_SEGMENTS = new Set(['v2', 'v3']);
 /** Shortest query value or credential treated as a possible key. */
 const MIN_VALUE_SECRET = 6;
 /** Shortest unlabelled query value that may be a key when it mixes letters and digits. */
@@ -46,12 +53,14 @@ function looksGenerated(value: string): boolean {
 /**
  * The parts of the configured RPC URLs that could be a key, as written and
  * percent-decoded, longest first (so a fragment that contains another is masked whole):
- * - path segments of 8+ characters that mix letters and digits (`/v3/<key>`, QuickNode
- *   tokens), not words like `eth_sepolia` or `ogrpc`;
+ * - path segments of 8+ characters that mix letters and digits (QuickNode tokens), any
+ *   segment of 20+ characters, and any segment right after `/v2/` or `/v3/` (Alchemy and
+ *   Infura keys), but not words like `eth_sepolia` or `ogrpc`;
  * - query values under key-like names (`dkey`, `apikey`, `token`, ...), and other values
  *   of 16+ characters that mix letters and digits; `network=sepolia` and
  *   `chainid=11155111` stay readable;
- * - the fragment and user:password.
+ * - the fragment and user:password, and user:password in base64 as a Basic
+ *   Authorization header carries it (ethers echoes request headers in some errors).
  */
 export function rpcUrlSecretFragments(env: NodeJS.ProcessEnv = process.env): string[] {
   const fragments = new Set<string>();
@@ -67,9 +76,14 @@ export function rpcUrlSecretFragments(env: NodeJS.ProcessEnv = process.env): str
     } catch {
       continue; // not a URL: step 1 still masks the value as a whole
     }
-    for (const segment of url.pathname.split('/')) {
-      if (looksGenerated(safeDecode(segment))) add(segment, MIN_PATH_SECRET);
-    }
+    const segments = url.pathname.split('/');
+    segments.forEach((segment, i) => {
+      const decoded = safeDecode(segment);
+      // 4+: a one-letter "key" would mask that letter everywhere in the text.
+      if (i > 0 && KEY_PREFIX_SEGMENTS.has(segments[i - 1].toLowerCase())) add(segment, 4);
+      else if (decoded.length >= MIN_ANY_PATH_SECRET) add(segment, MIN_ANY_PATH_SECRET);
+      else if (looksGenerated(decoded)) add(segment, MIN_PATH_SECRET);
+    });
     for (const part of url.search.slice(1).split('&')) {
       const eq = part.indexOf('=');
       if (eq < 0) continue;
@@ -81,6 +95,10 @@ export function rpcUrlSecretFragments(env: NodeJS.ProcessEnv = process.env): str
     if (url.hash.length > 1) add(url.hash.slice(1), MIN_VALUE_SECRET);
     add(url.username, MIN_VALUE_SECRET);
     add(url.password, MIN_VALUE_SECRET);
+    if (url.username || url.password) {
+      const creds = `${safeDecode(url.username)}:${safeDecode(url.password)}`;
+      fragments.add(Buffer.from(creds).toString('base64'));
+    }
   }
   return [...fragments].sort((a, b) => b.length - a.length);
 }
