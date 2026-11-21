@@ -61,6 +61,19 @@ process.on('uncaughtException', (err) => {
 /** How long a finished one-shot command may linger on open sockets before we exit. */
 const EXIT_GRACE_MS = 1_000;
 
+/**
+ * Resolve once everything written to stdout and stderr has been handed to the OS. An
+ * empty write's callback runs after the writes queued before it.
+ */
+function flushOutput(): Promise<void> {
+  const flush = (stream: NodeJS.WriteStream) =>
+    new Promise<void>((done) => {
+      if (stream.destroyed || !stream.writable) return done();
+      stream.write('', () => done());
+    });
+  return Promise.all([flush(process.stdout), flush(process.stderr)]).then(() => undefined);
+}
+
 const program = createProgram();
 
 // If no arguments provided, launch interactive mode
@@ -72,9 +85,12 @@ if (process.argv.length <= 2) {
     .catch(failSafely)
     .finally(() => {
       // The command has printed its result. Relayer SDK requests take no AbortSignal, so
-      // one that timed out (see withTimeout) can keep a socket open for minutes. Give
-      // stdout a moment to drain, then exit with the code the command set. unref: a
-      // process that is already done exits at once, without waiting for this.
-      setTimeout(() => process.exit(), EXIT_GRACE_MS).unref();
+      // one that timed out (see withTimeout) can keep a socket open for minutes. After a
+      // short grace, wait for stdout and stderr to drain (a pipe into `less` on macOS
+      // is asynchronous and would be cut off), then exit with the code the command set.
+      // unref: a process that is already done exits at once, without waiting for this.
+      setTimeout(() => {
+        void flushOutput().then(() => process.exit());
+      }, EXIT_GRACE_MS).unref();
     });
 }
