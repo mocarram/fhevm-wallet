@@ -12,6 +12,7 @@ import { registerTransferCommand } from './commands/transfer.js';
 import { registerHistoryCommand } from './commands/history.js';
 import { registerOperatorCommands } from './commands/operator.js';
 import { registerDiscloseCommand } from './commands/disclose.js';
+import { registerWrapCommands } from './commands/wrap.js';
 import { registerInteractiveCommand } from './commands/interactive.js';
 import { registerDoctorCommand } from './commands/doctor.js';
 import { registerReceiveCommand } from './commands/receive.js';
@@ -127,6 +128,7 @@ export function createProgram(): Command {
   registerHistoryCommand(program);
   registerOperatorCommands(program);
   registerDiscloseCommand(program);
+  registerWrapCommands(program);
   registerInteractiveCommand(program);
   registerDoctorCommand(program);
   registerReceiveCommand(program);

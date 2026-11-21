@@ -136,6 +136,9 @@ const MOCK_COMMANDS = new Set([
   'history',
   'operator',
   'disclose',
+  // Phase 5: every chain call goes through the Backend's wrap methods.
+  'wrap',
+  'unwrap',
 ]);
 
 /** The subcommand in `argv` (after the global `-n/--network` option), or '' for none. */
@@ -163,7 +166,7 @@ export function assertCommandSupportsMock(argv: string[]): void {
   const cmd = commandName(argv);
   if (!MOCK_COMMANDS.has(cmd)) {
     throw new MockDataDirError(
-      `FHEW_BACKEND=mock works with the interactive UI (fhew) and the send, token, doctor, receive, history, operator, disclose and wallet commands only; \`fhew ${cmd}\` would use the real network. Unset FHEW_BACKEND to run it.`,
+      `FHEW_BACKEND=mock works with the interactive UI (fhew) and the send, token, doctor, receive, history, operator, disclose, wrap, unwrap and wallet commands only; \`fhew ${cmd}\` would use the real network. Unset FHEW_BACKEND to run it.`,
     );
   }
 }
