@@ -456,6 +456,66 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     });
   }
 
+  it('200 contacts and transfers: History newest first, menus and filter stay on screen', () => {
+    const home = freshHome();
+    const dir = join(home, 'wallet-data');
+    const me = JSON.parse(readFileSync(join(dir, 'wallets', 'alice.meta.json'), 'utf-8')).address;
+    const tokens = JSON.parse(readFileSync(join(dir, 'tokens.json'), 'utf-8')).tokens;
+    const addr = (i: number) => getAddress('0x' + id(`seed${i}`).slice(-40));
+    const book = JSON.parse(readFileSync(join(dir, 'addressbook.json'), 'utf-8'));
+    for (let i = 0; i < 200; i++) {
+      book.entries.push({ name: `c${i}`, address: addr(i), addedAt: new Date().toISOString() });
+    }
+    writeFileSync(join(dir, 'addressbook.json'), JSON.stringify(book), { mode: 0o600 });
+    const txs = Array.from({ length: 200 }, (_, i) => ({
+      txHash: id(`tx${i}`),
+      type: 'transfer',
+      tokenAddress: tokens[0].address,
+      tokenSymbol: tokens[0].symbol,
+      from: me,
+      to: addr(i),
+      amount: null,
+      network: 'sepolia',
+      blockNumber: 9_000_000 + i,
+      timestamp: new Date(Date.now() - (200 - i) * 60_000).toISOString(),
+    }));
+    writeFileSync(
+      join(dir, 'transactions.json'),
+      JSON.stringify({ transactions: txs, syncState: {} }),
+      { mode: 0o600 },
+    );
+    const screens = runTui(
+      home,
+      [
+        { expect: 'Balances' },
+        { keys: 'h' },
+        { expect: 'rows 1-' },
+        { expect: 'Back' },
+        { keys: '\u001b[F' }, // End
+        { expect: 'pgup scroll' },
+        { keys: ESC, delay: 0.1 },
+        { keys: '7' },
+        { expect: 'Add contact' },
+        { keys: '/c19' },
+        { expect: '/ c19' },
+        { keys: '\r' },
+        { expect: 'Remove contact' },
+        { keys: CTRL_C },
+        { keys: '0' },
+        { exit: 0 },
+      ],
+      {},
+      [],
+      [80, 24],
+    );
+    // Newest first: block 9000199 (c199) is the first row, c0 is reached with End.
+    const first = screens[1].split('\n').find((l) => / c\d+$/.test(l));
+    expect(first).toMatch(/ c199$/);
+    expect(screens[3]).toMatch(/ c0$/m);
+    expect(screens[1]).toMatch(/When +Type/);
+    expect(screens[3]).toMatch(/When +Type/);
+  });
+
   it('Esc answers at once and a key typed right after it is not lost', () => {
     runTui(freshHome(), [
       { expect: 'Balances' },
@@ -802,7 +862,7 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     // The mock keeps operator grants in memory, so a new process starts without them.
     const list = doc(['operator', 'list', 'bob']);
     expect(list.json.operators).toEqual([
-      { address: set.json.operator.address, contact: 'bob', isOperator: false },
+      { address: set.json.operator.address, contact: 'bob', isOperator: false, until: null },
     ]);
     // A new process: the mock forgot the grant, so the revoke is refused, unsent.
     const rev = doc(['operator', 'revoke', 'bob', '--password-stdin', '--yes']);
