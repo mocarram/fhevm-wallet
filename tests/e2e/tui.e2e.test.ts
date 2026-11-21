@@ -33,12 +33,17 @@ afterAll(() => rmSync(work, { recursive: true, force: true }));
 const esc = (): Step[] => [{ keys: ESC }, { sleep: 0.7 }];
 
 /** Run the TUI in a pty against the mock backend; returns the screens seen. */
-function runTui(home: string, steps: Step[], env: Record<string, string> = {}): string[] {
+function runTui(
+  home: string,
+  steps: Step[],
+  env: Record<string, string> = {},
+  args: string[] = [],
+): string[] {
   const script = join(work, `script-${Math.random().toString(36).slice(2)}.json`);
   writeFileSync(
     script,
     JSON.stringify({
-      argv: [process.execPath, CLI],
+      argv: [process.execPath, CLI, ...args],
       cols: 100,
       rows: 34,
       env: {
@@ -147,7 +152,8 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
   });
 
   it('full send with countdown cancel, then resend: pending → confirmed, and repeat', () => {
-    const screens = runTui(freshHome(), [
+    const home = freshHome();
+    const screens = runTui(home, [
       { expect: 'Balances' },
       { keys: ':send bob 25 cusdc\r' },
       { expect: 'From the command bar' },
@@ -172,6 +178,67 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
       { exit: 0 },
     ]);
     expect(screens.join('\n')).toMatch(/cUSDC 1,225\.00/);
+
+    // The printed "Next time" command works as printed.
+    const hint =
+      screens
+        .join('\n')
+        .match(/Next time: (fhew send [^\n]*)/)?.[1]
+        .trim() ?? '';
+    expect(hint).toBe('fhew send bob 25 cusdc');
+    const out = runTui(
+      home,
+      [
+        { expect: 'Enter wallet password', timeout: 20 },
+        { keys: `${PASSWORD}\r` },
+        { expect: 'Confirm transaction', timeout: 30 },
+        { expect: 'MOCK: simulated, no real funds' },
+        { keys: 'y\r' },
+        { expect: 'Transfer confirmed (mock)', timeout: 20 },
+        { exit: 0, timeout: 15 },
+      ],
+      {},
+      hint.split(/\s+/).slice(1),
+    );
+    expect(out.join('\n')).toMatch(/Sent 25 cUSDC to bob/);
+  });
+
+  it('fhew send in a script: --password-stdin and --yes, friendly amount', () => {
+    const home = freshHome();
+    const res = spawnSync(
+      process.execPath,
+      [CLI, 'send', 'bob', 'half', 'cusdc', '--password-stdin', '--yes'],
+      {
+        env: {
+          PATH: process.env.PATH ?? '',
+          HOME: home,
+          FHEVM_WALLET_HOME: join(home, 'wallet-data'),
+          FHEW_BACKEND: 'mock',
+          FHEW_MOCK_LATENCY_MS: '20',
+          FHEW_MOCK_CONFIRM_MS: '200',
+        },
+        input: `${PASSWORD}\n`,
+        encoding: 'utf-8',
+        timeout: 60_000,
+      },
+    );
+    expect(res.stdout).toMatch(/Sent 625 cUSDC to bob\. Transfer confirmed \(mock\)/);
+    expect(res.status).toBe(0);
+    // Without --yes and without a terminal, nothing is sent.
+    const no = spawnSync(process.execPath, [CLI, 'send', 'bob', '1', '--password-stdin'], {
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: home,
+        FHEVM_WALLET_HOME: join(home, 'wallet-data'),
+        FHEW_BACKEND: 'mock',
+        FHEW_MOCK_LATENCY_MS: '20',
+      },
+      input: `${PASSWORD}\n`,
+      encoding: 'utf-8',
+      timeout: 60_000,
+    });
+    expect(no.status).toBe(1);
+    expect(no.stdout).toMatch(/Nothing was sent: confirm in a terminal, or pass --yes/);
   });
 
   it('stops on a look-alike of a contact', () => {

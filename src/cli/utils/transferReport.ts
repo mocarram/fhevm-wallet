@@ -12,7 +12,7 @@ import { formatTokenAmount } from '../../utils/formatting.js';
  * balance move 0 without reverting, so a confirmed receipt alone is not proof.
  */
 export function describeBalanceCheck(
-  result: TransferResult,
+  result: Pick<TransferResult, 'balanceCheck' | 'balanceAfter'>,
   symbol: string,
   decimals: number,
 ): string[] {

@@ -58,11 +58,14 @@ describe('send command early exits', () => {
     expect(out).toMatch(/No tokens tracked on sepolia/);
   });
 
-  it('rejects an invalid token address (registry must be non-empty)', async () => {
+  it('rejects an invalid token address, and an unknown symbol (registry must be non-empty)', async () => {
     saveConfig({ defaultNetwork: 'sepolia' });
     seedToken('sepolia', KNOWN_ADDRESS);
-    const out = await runSend('--token', 'not-an-address');
-    expect(out).toMatch(/Invalid token address/);
+    expect(await runSend('--token', '0xnot-an-address')).toMatch(/Invalid token address/);
+    logSpy.mockRestore();
+    expect(await runSend('--token', 'cxyz')).toMatch(/No tracked token called "cxyz". Try mock/);
+    logSpy.mockRestore();
+    expect(await runSend('bob', '1', 'cxyz')).toMatch(/No tracked token called "cxyz"/);
   });
 
   it('rejects a token not in the registry', async () => {
@@ -82,8 +85,20 @@ describe('send command early exits', () => {
   it('rejects a malformed positional recipient', async () => {
     saveConfig({ defaultNetwork: 'sepolia' });
     seedToken('sepolia', KNOWN_ADDRESS);
-    const out = await runSend('not-an-address', '1', '--token', KNOWN_ADDRESS);
-    expect(out).toMatch(/Invalid recipient address/);
+    expect(await runSend('0xnot-an-address', '1', '--token', KNOWN_ADDRESS)).toMatch(
+      /Invalid recipient address/,
+    );
+    logSpy.mockRestore();
+    expect(await runSend('nobody', '1', 'mock')).toMatch(/No contact called "nobody"/);
+  });
+
+  it('stops on a look-alike of a contact without a terminal', async () => {
+    saveConfig({ defaultNetwork: 'sepolia' });
+    seedToken('sepolia', KNOWN_ADDRESS);
+    addAddress('bob', '0x91Be4C2a6d0f83B1e7c5a9d2f4E8b0C6D3d207AF');
+    const out = await runSend('0x91bE9f71c0aE2B58d4a3f6C0B9e1D7a5f33207Af', '1', 'mock');
+    expect(out).toMatch(/looks like your contact bob/);
+    expect(out).toMatch(/Send stopped\. To send to bob, use: fhew send bob/);
   });
 
   it('rejects mainnet send without ZAMA API key (FHE readiness)', async () => {
