@@ -41,7 +41,12 @@ const NAME_SPEC = {
   accept: /^[a-zA-Z0-9 ]$/,
   maxLength: 32,
 };
-const ADDR_SPEC = { field: 'contactAddress', placeholder: '0x…', maxLength: 42 };
+const ADDR_SPEC = {
+  field: 'contactAddress',
+  placeholder: '0x…',
+  accept: /^[0-9a-zA-Z]$/,
+  maxLength: 42,
+};
 
 export const contactNameScreen: ScreenDef = {
   crumb: ['Address book', 'Name'],

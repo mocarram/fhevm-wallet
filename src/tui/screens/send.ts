@@ -456,7 +456,8 @@ export const sendErrorScreen: ScreenDef = {
     if (e.cause) body.push(line('  ', seg('Likely cause', 'bold')), line(`  ${e.cause}`), BLANK);
     if (e.hint) body.push(line('  ', seg('What to try', 'bold')), line(`  ${e.hint}`));
     if (e.txHash) body.push(BLANK, line('  Transaction  ', seg(e.txHash, 'bold')));
-    if (v.explorerUrl) body.push(line('  Explorer     ', seg(v.explorerUrl, 'cyan')));
+    // On its own row so it can be copied in one piece.
+    if (v.explorerUrl) body.push(line('  Explorer'), line('  ', seg(v.explorerUrl, 'cyan')));
     if (e.replacementHash) body.push(line('  Replaced by  ', seg(e.replacementHash, 'bold')));
     if (v.afterBroadcast) {
       body.push(

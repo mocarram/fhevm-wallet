@@ -24,7 +24,7 @@ import { SCREENS } from './screens/registry.js';
 import { BLANK } from './screens/common.js';
 import { back, goHome, inSetup, top, type AppState } from './state.js';
 import { statusBar } from './statusBar.js';
-import { clipLine, dimLine, line, pad, seg, type Line } from './text.js';
+import { clipLine, dimLine, line, pad, seg, wrapLine, type Line } from './text.js';
 import { isPrintable, type Key } from './keys.js';
 
 /** Terminal size. Zero (some CI terminals and detached ptys report 0×0) means unknown. */
@@ -309,6 +309,8 @@ export function render(s: AppState, size: Size): Line[] {
   const head: Line[] = [statusBar(s, cols), BLANK];
   const content: Line[] = [];
   let cursorAt = -1;
+  // Menu rows are cut, not wrapped (a wrapped item would look like two items).
+  let menuStart = Number.MAX_SAFE_INTEGER;
 
   if (s.help) {
     content.push(...helpLines(view, cols));
@@ -327,6 +329,7 @@ export function render(s: AppState, size: Size): Line[] {
     if (view.items.length) {
       if (view.body.length || s.fieldError || s.busy) content.push(BLANK);
       const menu = renderMenu(view.items, f.cur, cols);
+      menuStart = content.length;
       if (menu.cursorLine >= 0) cursorAt = content.length + menu.cursorLine;
       content.push(...menu.lines);
     }
@@ -340,12 +343,21 @@ export function render(s: AppState, size: Size): Line[] {
         ]
       : [BLANK, dimLine(` ${s.help ? 'any key closes help' : view.hint}`)];
 
+  // Wrap long lines (links, hints) rather than cutting them, keeping track of the cursor.
+  const wrapped: Line[] = [];
+  let cursorRow = -1;
+  content.forEach((l, i) => {
+    if (i === cursorAt) cursorRow = wrapped.length;
+    if (i >= menuStart) wrapped.push(l);
+    else wrapped.push(...wrapLine(l, cols));
+  });
+
   // Fit the middle part; when it is too long, keep the cursor's line in view.
   const room = Math.max(0, rows - head.length - foot.length);
-  let middle = content;
-  if (content.length > room) {
-    const start = cursorAt >= room ? cursorAt - room + 1 : 0;
-    middle = content.slice(start, start + room);
+  let middle = wrapped;
+  if (wrapped.length > room) {
+    const start = cursorRow >= room ? cursorRow - room + 1 : 0;
+    middle = wrapped.slice(start, start + room);
   }
   while (middle.length < room) middle = [...middle, BLANK];
 

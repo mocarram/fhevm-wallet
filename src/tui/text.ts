@@ -125,3 +125,41 @@ export function toAnsi(l: Line, color: boolean): string {
     })
     .join('');
 }
+
+/**
+ * Wrap a line to `cols` columns instead of cutting it, so nothing (an explorer link, a
+ * hint) is lost on a narrow terminal. Breaks after a space when there is one in the last
+ * third of the row, otherwise mid-word (hashes and URLs have no spaces). Continuation
+ * rows are indented by two spaces and keep each segment's style.
+ */
+export function wrapLine(l: Line, cols: number): Line[] {
+  if (cols <= 4 || lineWidth(l) <= cols) return [l];
+  // Flatten to styled characters, then cut rows.
+  const chars: Array<{ c: string; s?: Style[] }> = [];
+  for (const sg of l) for (const c of Array.from(sg.t)) chars.push({ c, s: sg.s });
+  const rows: Line[] = [];
+  let i = 0;
+  let first = true;
+  while (i < chars.length) {
+    const room = first ? cols : cols - 2;
+    let end = Math.min(chars.length, i + room);
+    if (end < chars.length) {
+      for (let j = end; j > i + Math.floor((room * 2) / 3); j--) {
+        if (chars[j - 1].c === ' ') {
+          end = j;
+          break;
+        }
+      }
+    }
+    const row: Line = first ? [] : [{ t: '  ' }];
+    for (const ch of chars.slice(i, end)) {
+      const last = row[row.length - 1];
+      if (last && last.s === ch.s) last.t += ch.c;
+      else row.push({ t: ch.c, s: ch.s });
+    }
+    rows.push(row);
+    i = end;
+    first = false;
+  }
+  return rows;
+}

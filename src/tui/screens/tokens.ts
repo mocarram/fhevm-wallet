@@ -65,6 +65,7 @@ export const tokensScreen: ScreenDef = {
 const ADDR_SPEC = {
   field: 'tokenAddress',
   placeholder: '0x… token contract address',
+  accept: /^[0-9a-zA-Z]$/,
   maxLength: 42,
 };
 

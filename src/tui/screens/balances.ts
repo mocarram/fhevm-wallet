@@ -21,6 +21,8 @@ function unlockMinutesText(s: AppState): string {
 
 export const balancesScreen: ScreenDef = {
   crumb: ['Balances'],
+  // Opening Balances while unlocked refreshes them (the cache skips unchanged handles).
+  onEnter: (s) => decryptAll(s),
   view: (s) => {
     const body: Line[] = [
       dimLine('  Token      Balance             Contract'),
