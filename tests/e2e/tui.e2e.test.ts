@@ -44,7 +44,8 @@ function runTui(home: string, steps: Step[], env: Record<string, string> = {}): 
       env: {
         PATH: process.env.PATH ?? '',
         HOME: home,
-        FHEVM_WALLET_HOME: join(home, '.fhevm-wallet'),
+        // A separate folder: the mock refuses to run on the default ~/.fhevm-wallet.
+        FHEVM_WALLET_HOME: join(home, 'wallet-data'),
         TERM: 'xterm-256color',
         FHEW_BACKEND: 'mock',
         FHEW_MOCK_LATENCY_MS: '20',
@@ -104,7 +105,7 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
       { exit: 0 },
     ]);
     expect(screens.at(-1)).toMatch(/Bye\. Your wallets stay encrypted/);
-    const book = join(seeded, '.fhevm-wallet', 'addressbook.json');
+    const book = join(seeded, 'wallet-data', 'addressbook.json');
     writeFileSync(
       book,
       JSON.stringify({
@@ -257,7 +258,7 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
         env: {
           PATH: process.env.PATH ?? '',
           HOME: home,
-          FHEVM_WALLET_HOME: join(home, '.fhevm-wallet'),
+          FHEVM_WALLET_HOME: join(home, 'wallet-data'),
           TERM: 'xterm',
           FHEW_BACKEND: 'mock',
         },
@@ -266,6 +267,43 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     );
     const res = spawnSync(python!, ['-I', DRIVER, script], { encoding: 'utf-8', timeout: 60_000 });
     expect(JSON.parse(res.stdout).ok).toBe(true);
+  });
+
+  it('refuses the mock backend without a separate FHEVM_WALLET_HOME', () => {
+    const home = freshHome();
+    const script = join(work, 'nomockhome.json');
+    writeFileSync(
+      script,
+      JSON.stringify({
+        argv: [process.execPath, CLI],
+        env: { PATH: process.env.PATH ?? '', HOME: home, TERM: 'xterm', FHEW_BACKEND: 'mock' },
+        steps: [{ expect: 'FHEVM_WALLET_HOME is not set' }, { exit: 1 }],
+      }),
+    );
+    let out = JSON.parse(
+      spawnSync(python!, ['-I', DRIVER, script], { encoding: 'utf-8', timeout: 60_000 }).stdout,
+    );
+    expect(out.ok).toBe(true);
+    expect(out.screens.join('\n')).toMatch(/mktemp -d/);
+    // Pointing it at the real folder is refused too.
+    writeFileSync(
+      script,
+      JSON.stringify({
+        argv: [process.execPath, CLI],
+        env: {
+          PATH: process.env.PATH ?? '',
+          HOME: home,
+          TERM: 'xterm',
+          FHEW_BACKEND: 'mock',
+          FHEVM_WALLET_HOME: join(home, '.fhevm-wallet'),
+        },
+        steps: [{ expect: 'real wallet folder' }, { exit: 1 }],
+      }),
+    );
+    out = JSON.parse(
+      spawnSync(python!, ['-I', DRIVER, script], { encoding: 'utf-8', timeout: 60_000 }).stdout,
+    );
+    expect(out.ok).toBe(true);
   });
 
   it('refuses to start without a terminal and says what to do', () => {

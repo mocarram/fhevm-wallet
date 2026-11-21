@@ -1,6 +1,10 @@
 import { Wallet } from 'ethers';
 import { beforeEach, describe, expect, it } from 'vitest';
+import { mkdirSync, mkdtempSync, symlinkSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { createBackend, MockBackend, mockOptionsFromEnv } from '../../../src/core/backend/index.js';
+import { mockDataDirProblem } from '../../../src/core/backend/select.js';
 import { RealBackend } from '../../../src/core/backend/RealBackend.js';
 import { WalletTxError } from '../../../src/core/token/txErrors.js';
 import { peekCachedBalance } from '../../../src/core/token/BalanceCache.js';
@@ -17,7 +21,32 @@ describe('createBackend', () => {
   it('defaults to the real backend and only mocks when asked', () => {
     expect(createBackend({})).toBeInstanceOf(RealBackend);
     expect(createBackend({ FHEW_BACKEND: 'real' }).kind).toBe('real');
-    expect(createBackend({ FHEW_BACKEND: 'mock' }).kind).toBe('mock');
+    expect(
+      createBackend({ FHEW_BACKEND: 'mock', FHEVM_WALLET_HOME: join(tmpdir(), 'fhew-mock') }).kind,
+    ).toBe('mock');
+  });
+
+  it('refuses the mock unless FHEVM_WALLET_HOME is a separate folder', () => {
+    expect(() => createBackend({ FHEW_BACKEND: 'mock' })).toThrow(/FHEVM_WALLET_HOME is not set/);
+    expect(() => createBackend({ FHEW_BACKEND: 'mock', FHEVM_WALLET_HOME: ' ' })).toThrow(
+      /not set/,
+    );
+    const home = mkdtempSync(join(tmpdir(), 'fhew-home-'));
+    mkdirSync(join(home, '.fhevm-wallet'));
+    symlinkSync(join(home, '.fhevm-wallet'), join(home, 'link'));
+    for (const dir of [
+      join(home, '.fhevm-wallet'),
+      join(home, '.fhevm-wallet', '.'),
+      join(home, 'link'),
+    ]) {
+      expect(mockDataDirProblem({ FHEVM_WALLET_HOME: dir }, home)).toMatch(/real wallet folder/);
+      expect(() => createBackend({ FHEW_BACKEND: 'mock', FHEVM_WALLET_HOME: dir }, home)).toThrow(
+        /real wallet folder/,
+      );
+    }
+    expect(mockDataDirProblem({ FHEVM_WALLET_HOME: join(home, 'scratch') }, home)).toBeNull();
+    // The real backend never cares.
+    expect(createBackend({}, home).kind).toBe('real');
   });
 
   it('refuses an unknown value instead of guessing', () => {
