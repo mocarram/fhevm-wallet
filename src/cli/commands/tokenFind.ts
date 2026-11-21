@@ -207,6 +207,8 @@ export function registerTokenFind(token: Command): void {
             ? addCandidates(result, network, options.add ?? [], options)
             : null;
         if (outcome && outcome.skipped.length && !outcome.added.length) process.exitCode = 1;
+        // A failed scan is a failure even when the known lists gave something to show.
+        if (result.scan?.error) process.exitCode = 1;
 
         if (json) {
           printJson({
@@ -243,7 +245,9 @@ export function registerTokenFind(token: Command): void {
 
         if (!result.candidates.length) {
           console.log(
-            'No tokens found. The known lists are empty for this network and your history shows no confidential transfers.',
+            s?.error
+              ? 'No tokens found in the known lists, and your history could not be scanned (see above).'
+              : 'No tokens found. The known lists are empty for this network and your history shows no confidential transfers.',
           );
         } else {
           const table = new Table({

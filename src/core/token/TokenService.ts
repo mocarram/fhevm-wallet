@@ -35,6 +35,7 @@ import { isTransferAmountHandle, recordLocalTransaction } from '../../storage/Tr
 import { getCachedBalance, setCachedBalance, invalidateBalance } from './BalanceCache.js';
 import { MAX_EUINT64 } from './limits.js';
 import { CONFIDENTIAL_TRANSFER_TOPIC0 as CONFIDENTIAL_TRANSFER_TOPIC } from './tokenScan.js';
+import { newChunkState, walkBlockRange } from '../network/logRange.js';
 
 /** The address in a 32-byte indexed event topic. */
 function parseAddressFromTopic(topic: string): string {
@@ -1057,6 +1058,51 @@ export async function filterUserDecryptable(
     }),
   );
   return ok;
+}
+
+/** Blocks searched back from the head for an `AmountDisclosed` log, and the requests. */
+export const DISCLOSURE_SEARCH_BLOCKS = 40_000;
+const DISCLOSURE_SEARCH_REQUESTS = 40;
+
+/**
+ * The value an `AmountDisclosed(handle, amount)` log of `tokenAddress` published in the
+ * last `DISCLOSURE_SEARCH_BLOCKS` blocks, or null when none was found there. Lets a rerun
+ * see that step 2 of a disclosure was mined even when this wallet never saw it confirm
+ * (it ended SENT_UNCONFIRMED), so it does not send step 2 again.
+ */
+export async function findAmountDisclosed(
+  tokenAddress: string,
+  handle: string,
+  network: NetworkName,
+): Promise<bigint | null> {
+  const provider = getProvider(network);
+  const head = await provider.getBlockNumber();
+  const event = ERC7984_INTERFACE.getEvent('AmountDisclosed')!;
+  let found: bigint | null = null;
+  const walk = await walkBlockRange({
+    from: Math.max(0, head - DISCLOSURE_SEARCH_BLOCKS + 1),
+    to: head,
+    chunk: newChunkState(),
+    budget: { left: DISCLOSURE_SEARCH_REQUESTS },
+    fetchChunk: async (fromBlock, toBlock) => {
+      if (found !== null) return;
+      const logs = await provider.getLogs({
+        address: tokenAddress,
+        topics: [event.topicHash, normaliseHandle(handle)],
+        fromBlock,
+        toBlock,
+      });
+      for (const log of logs) {
+        try {
+          found = ERC7984_INTERFACE.parseLog(log)!.args.amount as bigint;
+        } catch {
+          /* not decodable: ignore */
+        }
+      }
+    },
+  });
+  if (walk.stopped === 'error' && found === null) throw walk.error;
+  return found;
 }
 
 /** Whether a handle has been made publicly decryptable (disclosure step 1 done). */

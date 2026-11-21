@@ -23,6 +23,7 @@ import { publicDecryptHandle, relayerDecryptAuthority } from '../fhe/DecryptionS
 import {
   decryptBalancesWithSession,
   filterUserDecryptable,
+  findAmountDisclosed,
   findTransferHandle,
   getDecryptedBalance,
   getTokenInfo,
@@ -35,11 +36,12 @@ import {
   prepareSetOperator,
   type PreparedCall,
 } from '../token/TokenService.js';
-import { getAmountEntry } from '../../storage/AmountCache.js';
+import { getAmountEntry, setCachedAmounts } from '../../storage/AmountCache.js';
 import { syncTransactions } from '../token/historySync.js';
 import { checkErc7984, type TokenCheck } from '../token/erc7984Check.js';
 import {
   pendingPublicDecryption,
+  WalletTxError,
   translateTxError,
   type DiscloseRequestOptions,
 } from '../token/txErrors.js';
@@ -85,6 +87,28 @@ function toPreparedTx(p: PreparedCall): PreparedTx {
       return { txHash: r.txHash, blockNumber: r.receipt.blockNumber };
     },
   };
+}
+
+/**
+ * Refuse a new step 2 while an earlier one is still pending: it is in a mempool and
+ * would be mined as well, paying twice. A mined or unknown one is handled elsewhere.
+ */
+async function refuseIfDisclosurePending(network: NetworkName, handle: string): Promise<void> {
+  const hash = getAmountEntry(network, handle)?.discloseTx;
+  if (!hash) return;
+  const provider = getProvider(network);
+  const receipt = await provider.getTransactionReceipt(hash).catch(() => null);
+  if (receipt) return; // mined (a revert may be retried; success is caught by the stage)
+  const pending = await provider.getTransaction(hash).catch(() => null);
+  if (!pending) return; // dropped or never arrived: sending again is safe
+  throw new WalletTxError(
+    'SENT_UNCONFIRMED',
+    'A disclosure of this amount was already sent and is not confirmed yet.',
+    'The earlier transaction is still waiting to be mined.',
+    `Do not send it again. Check ${getTxExplorerUrl(hash, network)} and try later.`,
+    '',
+    hash,
+  );
 }
 
 /** Delegates every call to the production code paths. */
@@ -191,16 +215,33 @@ export class RealBackend implements Backend {
   }
 
   async discloseStage(
-    _tokenAddress: string,
+    tokenAddress: string,
     handle: string,
     network: NetworkName,
   ): Promise<DiscloseStage> {
-    // "disclosed" is only known locally (set after our own confirmed disclosure): finding
-    // AmountDisclosed logs would need an unbounded log scan.
-    if (getAmountEntry(network, normaliseHandle(handle))?.disclosed) return 'disclosed';
-    return (await isPubliclyDecryptable(aclAddress(network), handle, network))
-      ? 'requested'
-      : 'private';
+    const h = normaliseHandle(handle);
+    const entry = getAmountEntry(network, h);
+    if (entry?.disclosed) return 'disclosed';
+    // A step 2 sent earlier that ended SENT_UNCONFIRMED: was it mined after all?
+    if (entry?.discloseTx) {
+      const receipt = await getProvider(network)
+        .getTransactionReceipt(entry.discloseTx)
+        .catch(() => null);
+      if (receipt?.status === 1) {
+        setCachedAmounts(network, [{ handle: h, value: BigInt(entry.value), disclosed: true }]);
+        return 'disclosed';
+      }
+    }
+    if (!(await isPubliclyDecryptable(aclAddress(network), handle, network))) return 'private';
+    // Step 1 is done. Someone (this wallet on another machine, or a step 2 whose result
+    // we never saw) may have finished step 2: look for its AmountDisclosed log in recent
+    // blocks, so a rerun does not send step 2 again.
+    const value = await findAmountDisclosed(tokenAddress, h, network).catch(() => null);
+    if (value !== null) {
+      setCachedAmounts(network, [{ handle: h, value, disclosed: true }]);
+      return 'disclosed';
+    }
+    return 'requested';
   }
 
   async prepareDiscloseRequest(
@@ -228,6 +269,8 @@ export class RealBackend implements Backend {
     } catch (err) {
       throw pendingPublicDecryption(err instanceof Error ? err.message : String(err));
     }
+    const h = normaliseHandle(handle);
+    await refuseIfDisclosurePending(network, h);
     const prepared = await prepareDiscloseAmount(
       signer,
       tokenAddress,
@@ -236,7 +279,25 @@ export class RealBackend implements Backend {
       pub.proof,
       network,
     );
-    return { ...toPreparedTx(prepared), value: pub.value };
+    const tx = toPreparedTx(prepared);
+    return {
+      ...tx,
+      value: pub.value,
+      // Remember the signed hash before broadcasting: if the result is never seen, the
+      // next attempt checks it instead of sending step 2 a second time.
+      send: (hooks) =>
+        tx.send({
+          ...hooks,
+          onSigned: (txHash) => {
+            try {
+              setCachedAmounts(network, [{ handle: h, value: pub.value, discloseTx: txHash }]);
+            } catch {
+              /* bookkeeping only */
+            }
+            hooks?.onSigned?.(txHash);
+          },
+        }),
+    };
   }
 
   async findTransferHandle(

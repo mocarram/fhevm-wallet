@@ -160,9 +160,13 @@ describe('scanIncoming', () => {
 });
 
 describe('token lists', () => {
-  it('ships empty lists (no verified addresses yet)', () => {
+  it('ships verified Sepolia tokens and an empty mainnet list', () => {
     expect(shippedTokens('mainnet')).toEqual([]);
-    expect(shippedTokens('sepolia')).toEqual([]);
+    const sepolia = shippedTokens('sepolia');
+    expect(sepolia.map((t) => t.address)).toContain('0x85E3A388B8b8939Ab4f41e0B1eF70A998b23F938');
+    // Checksummed, unique, 6 decimals (what was read on-chain).
+    expect(new Set(sepolia.map((t) => t.address)).size).toBe(sepolia.length);
+    for (const t of sepolia) expect(t.decimals).toBe(6);
   });
 
   it('keeps valid entries for the chain, checksummed and sanitised', () => {
@@ -221,11 +225,11 @@ describe('token lists', () => {
     await expect(refreshTokenList('http://lists.example/x.json', ok)).rejects.toThrow(/https/);
     const big = (async () => new Response('x'.repeat(1_000_001))) as typeof fetch;
     await expect(refreshTokenList(url, big)).rejects.toThrow(/too large/);
+    const fromList = (t: { list?: string }) => t.list === 'lists.example';
     const r = await knownTokens('sepolia', { url, fetchImpl: ok });
-    expect(r.tokens.map((t) => t.symbol)).toEqual(['cLST']);
-    expect(r.tokens[0].list).toBe('lists.example');
+    expect(r.tokens.filter(fromList).map((t) => t.symbol)).toEqual(['cLST']);
     const again = await knownTokens('sepolia', { url, refresh: true, fetchImpl: down });
-    expect(again.tokens.map((t) => t.symbol)).toEqual(['cLST']);
+    expect(again.tokens.filter(fromList).map((t) => t.symbol)).toEqual(['cLST']);
     expect(again.listError).toMatch(/did not answer/);
   });
 });

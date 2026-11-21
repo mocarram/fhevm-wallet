@@ -21,6 +21,11 @@ const EntrySchema = z.object({
   value: z.string().regex(/^\d{1,20}$/),
   at: z.string(),
   disclosed: z.boolean().optional(),
+  /** Hash of a disclosure (step 2) that was sent but not seen confirmed. */
+  discloseTx: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{64}$/)
+    .optional(),
 });
 const FileSchema = z.record(z.string(), EntrySchema);
 
@@ -62,17 +67,30 @@ export function getAmountEntry(network: string, handle: string): AmountEntry | n
 /** Save decrypted amounts in one write. */
 export function setCachedAmounts(
   network: string,
-  amounts: Array<{ handle: string; value: bigint; disclosed?: boolean }>,
+  amounts: Array<{
+    handle: string;
+    value: bigint;
+    disclosed?: boolean;
+    discloseTx?: string | null;
+  }>,
 ): void {
   if (!amounts.length) return;
   const data = load();
   const at = new Date().toISOString();
   for (const a of amounts) {
     const prev = data[key(network, a.handle)];
+    const disclosed = a.disclosed || prev?.disclosed;
+    // Once disclosed the pending hash is moot; null clears it explicitly.
+    const discloseTx = disclosed
+      ? undefined
+      : a.discloseTx === null
+        ? undefined
+        : (a.discloseTx ?? prev?.discloseTx);
     data[key(network, a.handle)] = {
       value: a.value.toString(),
       at,
-      ...(a.disclosed || prev?.disclosed ? { disclosed: true } : {}),
+      ...(disclosed ? { disclosed: true } : {}),
+      ...(discloseTx ? { discloseTx } : {}),
     };
   }
   save(data);

@@ -1,7 +1,78 @@
 {
   "name": "fhEVM Wallet known confidential tokens (sepolia)",
   "timestamp": "2026-11-21T00:00:00.000Z",
-  "version": { "major": 1, "minor": 0, "patch": 0 },
-  "keywords": ["erc-7984", "confidential"],
-  "tokens": []
+  "version": {
+    "major": 1,
+    "minor": 1,
+    "patch": 0
+  },
+  "keywords": [
+    "erc-7984",
+    "confidential"
+  ],
+  "tokens": [
+    {
+      "chainId": 11155111,
+      "address": "0xf2D628d2598aF4eAF94CB76a437Ff86CA78FfbFB",
+      "name": "Confidential ZAMA (Mock)",
+      "symbol": "cZAMAMock",
+      "decimals": 6
+    },
+    {
+      "chainId": 11155111,
+      "address": "0x421fBC08993628d703DD9Ad8641C57b9F3CC2Df7",
+      "name": "Confidential Tether USD",
+      "symbol": "cUSDT",
+      "decimals": 6
+    },
+    {
+      "chainId": 11155111,
+      "address": "0x85E3A388B8b8939Ab4f41e0B1eF70A998b23F938",
+      "name": "Confidential Zama",
+      "symbol": "cZAMA",
+      "decimals": 6
+    },
+    {
+      "chainId": 11155111,
+      "address": "0x4E7B06D78965594eB5EF5414c357ca21E1554491",
+      "name": "Confidential USDT (Mock)",
+      "symbol": "cUSDTMock",
+      "decimals": 6
+    },
+    {
+      "chainId": 11155111,
+      "address": "0x7c5BF43B851c1dff1a4feE8dB225b87f2C223639",
+      "name": "Confidential USDC (Mock)",
+      "symbol": "cUSDCMock",
+      "decimals": 6
+    },
+    {
+      "chainId": 11155111,
+      "address": "0xef98481d937cbcb55f1d548200B38A27E0Bb729e",
+      "name": "Confidential USD Coin",
+      "symbol": "cUSDC",
+      "decimals": 6
+    },
+    {
+      "chainId": 11155111,
+      "address": "0xa8Ca984a3F1e158ca30a508127C1B45dBAa81c01",
+      "name": "Confidential USDC",
+      "symbol": "cUSDC",
+      "decimals": 6
+    },
+    {
+      "chainId": 11155111,
+      "address": "0x78F9581CCC7C1A0DfB53ACEd253F70cCe4d42e36",
+      "name": "Confidential Wrapped BTC",
+      "symbol": "cWBTC",
+      "decimals": 6
+    },
+    {
+      "chainId": 11155111,
+      "address": "0xE8FBCA3Ee0a368d190A6c47A5293f32bC9827F15",
+      "name": "Confidential Wrapped Ether",
+      "symbol": "cWETH",
+      "decimals": 6
+    }
+  ]
 }
