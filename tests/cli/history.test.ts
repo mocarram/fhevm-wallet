@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createProgram } from '../../src/cli/index.js';
-import { saveConfig } from '../../src/storage/ConfigStore.js';
+import { saveConfig, setDefaultWallet } from '../../src/storage/ConfigStore.js';
+import { saveWalletKeystore } from '../../src/storage/WalletStore.js';
 import { wipeTestDataDir } from '../helpers/dataDir.js';
 
 const KNOWN_ADDRESS = '0x52908400098527886E0F7030069857D2E4169EE7';
@@ -26,10 +27,19 @@ afterEach(() => {
 });
 
 describe('history command early exits', () => {
-  it('requires --address', async () => {
+  it('needs --address when there is no default wallet', async () => {
     saveConfig({ defaultNetwork: 'sepolia' });
     const out = await runHistory();
-    expect(out).toMatch(/specify a wallet address with --address/);
+    expect(out).toMatch(/Pass a wallet address with --address/);
+  });
+
+  it('falls back to the default wallet without --address', async () => {
+    saveConfig({ defaultNetwork: 'sepolia' });
+    saveWalletKeystore('alice', '{}', KNOWN_ADDRESS);
+    setDefaultWallet('alice');
+    // Gets past the address step to the token check.
+    const out = await runHistory();
+    expect(out).toMatch(/No tokens tracked on sepolia/);
   });
 
   it('rejects an invalid wallet address', async () => {

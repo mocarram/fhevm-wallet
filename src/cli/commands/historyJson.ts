@@ -9,10 +9,11 @@
  * the TUI) are filled in from the owner-only cache either way.
  */
 
+import { getWalletAddress, hasWallet } from '../../core/wallet/index.js';
 import { listTransactions } from '../../storage/TransactionStore.js';
 import { listTokens } from '../../core/token/TokenRegistry.js';
 import { syncTransactions } from '../../core/token/historySync.js';
-import { getDefaultNetwork } from '../../storage/ConfigStore.js';
+import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.js';
 import { clearProviderForNetwork } from '../../core/network/ProviderFactory.js';
 import type { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getNameByAddress } from '../../storage/AddressBook.js';
@@ -72,6 +73,7 @@ export async function historyJson(options: HistoryJsonOptions): Promise<void> {
       }
       options.address = decryptWallet.address;
     }
+    options.address ??= defaultWalletAddress(options.wallet) ?? undefined;
     if (!options.address || !isValidAddress(options.address)) {
       return printJsonError('INVALID_ADDRESS', 'Pass a valid wallet address with --address');
     }
@@ -174,4 +176,14 @@ export async function historyJson(options: HistoryJsonOptions): Promise<void> {
   } finally {
     restore();
   }
+}
+
+/**
+ * The address `history` shows without `--address`: the `-w` wallet, else the default
+ * wallet, like the other commands. Null when there is neither (or `-w` names none).
+ */
+export function defaultWalletAddress(name?: string): string | null {
+  const walletName = name || getDefaultWallet();
+  if (!walletName || !hasWallet(walletName)) return null;
+  return getWalletAddress(walletName) ?? null;
 }

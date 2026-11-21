@@ -21,7 +21,7 @@ import { RPC_ENV_KEYS, setCustomRpc, validateRpcUrl } from '../../core/network/r
 import { maskUrl } from '../../utils/redact.js';
 import { maskUrlWhenAnswered } from '../utils/secretInput.js';
 import { describeError } from '../utils/userError.js';
-import { historyJson } from './historyJson.js';
+import { defaultWalletAddress, historyJson } from './historyJson.js';
 import { PASSWORD_STDIN_HELP } from '../utils/passwordInput.js';
 import { pickWallet, unlockWallet } from '../utils/txFlow.js';
 import { createBackend } from '../../core/backend/select.js';
@@ -317,10 +317,13 @@ export function registerHistoryCommand(program: Command): void {
           options.address = decryptWallet.address;
         }
 
-        // Require wallet address for CLI
+        // Without --address: the -w wallet or the default wallet, like other commands.
+        options.address ??= defaultWalletAddress(options.wallet) ?? undefined;
         if (!options.address) {
           process.exitCode = 1;
-          console.log(error('Please specify a wallet address with --address'));
+          console.log(
+            error('No default wallet. Pass a wallet address with --address, or -w <name>.'),
+          );
           return;
         }
 
