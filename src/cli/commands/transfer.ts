@@ -63,6 +63,7 @@ import {
   MAINNET_OPTION_HELP,
   mainnetGuardProblem,
 } from '../utils/mainnetGuard.js';
+import { resolveWalletRef } from '../utils/txFlow.js';
 
 /** Options of `fhew send`. */
 interface SendOptions {
@@ -307,13 +308,20 @@ async function send(
     if (!early.ok) return fail(`${early.error} ${early.hint}`, 'INVALID_AMOUNT');
   }
 
-  // Wallet and password.
-  let walletName = options.wallet || getDefaultWallet();
-  if (!walletName) {
+  // Wallet and password: the same rules as every other command (pickWallet: -w, the
+  // default, or the only wallet). Only with several wallets, no usable default and
+  // someone at a terminal is there a choice to make, so it is asked.
+  let walletName: string;
+  const current = getDefaultWallet();
+  const several = listWallets().length > 1;
+  if (
+    !options.wallet &&
+    (!current || !hasWallet(current)) &&
+    several &&
+    process.stdin.isTTY &&
+    !jsonMode
+  ) {
     const wallets = listWallets();
-    if (wallets.length === 0) {
-      return fail('No wallets found. Create one with: fhevm-wallet wallet create');
-    }
     const name = await prompts.select({
       message: 'Select wallet:',
       choices: [
@@ -323,8 +331,11 @@ async function send(
     });
     if (name === '__cancel__') return;
     walletName = name;
+  } else {
+    const picked = resolveWalletRef(options.wallet);
+    if (!picked.ok) return fail(picked.message, picked.code);
+    walletName = picked.name;
   }
-  if (!hasWallet(walletName)) return fail(`Wallet "${walletName}" not found`, 'WALLET_NOT_FOUND');
 
   const noPassword = passwordStdinNeeded(options.passwordStdin, 'send');
   if (noPassword) return fail(noPassword, 'PASSWORD_STDIN_REQUIRED');

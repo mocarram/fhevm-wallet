@@ -76,10 +76,18 @@ export function failWith(err: unknown, fallback: string): void {
  * With --json nobody can answer a prompt: require `--yes` and `--password-stdin` up
  * front. False (and PROMPT_NOT_ALLOWED printed) when one is missing.
  */
-export function jsonPromptsCovered(options: { yes?: boolean; passwordStdin?: boolean }): boolean {
-  if (!jsonMode || (options.yes && options.passwordStdin)) return true;
+export function jsonPromptsCovered(
+  options: { yes?: boolean; passwordStdin?: boolean },
+  needs: { password?: boolean } = {},
+): boolean {
+  // `needs.password: false`: the command reads no password (unwrap --forget), so only
+  // --yes is asked for.
+  const password = needs.password !== false;
+  if (!jsonMode || (options.yes && (!password || options.passwordStdin))) return true;
   fail(
-    'With --json, pass --yes and --password-stdin: there is nobody to answer prompts.',
+    password
+      ? 'With --json, pass --yes and --password-stdin: there is nobody to answer prompts.'
+      : 'With --json, pass --yes: there is nobody to answer prompts.',
     'PROMPT_NOT_ALLOWED',
   );
   return false;
@@ -158,32 +166,45 @@ export function alignLabels(rows: string[]): string[] {
 }
 
 /**
- * Wallet name and address from `-w`, the default, or the only wallet there is (no
- * password needed). Several wallets and no default: says how to pick one.
+ * Which wallet a command uses: `-w`, the default, or the only wallet there is (no
+ * password needed). Several wallets and no default: says how to pick one. Shared by every
+ * command (send has its own error printer, so this one returns instead of printing).
  */
-export function pickWallet(name?: string): { name: string; address: string } | null {
+export function resolveWalletRef(
+  name?: string,
+):
+  | { ok: true; name: string; address: string }
+  | { ok: false; message: string; code: 'NO_WALLET' | 'WALLET_NOT_FOUND' } {
   let walletName = name || getDefaultWallet();
   if (!name && (!walletName || !hasWallet(walletName))) {
     const all = listWallets();
     if (all.length === 1) walletName = all[0].name;
     else if (all.length > 1) {
-      fail(
-        `No default wallet. Pass -w <name> or set one with: fhevm-wallet wallet set-default <name> (wallets: ${all.map((w) => w.name).join(', ')})`,
-        'NO_WALLET',
-      );
-      return null;
+      return {
+        ok: false,
+        message: `No default wallet. Pass -w <name> or set one with: fhevm-wallet wallet set-default <name> (wallets: ${all.map((w) => w.name).join(', ')})`,
+        code: 'NO_WALLET',
+      };
     }
   }
   if (!walletName || !hasWallet(walletName)) {
-    fail(
-      walletName
-        ? `Wallet "${walletName}" not found`
-        : 'No wallet yet. Create one with: fhevm-wallet wallet create (or wallet import)',
-      walletName ? 'WALLET_NOT_FOUND' : 'NO_WALLET',
-    );
-    return null;
+    return walletName
+      ? { ok: false, message: `Wallet "${walletName}" not found`, code: 'WALLET_NOT_FOUND' }
+      : {
+          ok: false,
+          message: 'No wallet yet. Create one with: fhevm-wallet wallet create (or wallet import)',
+          code: 'NO_WALLET',
+        };
   }
-  return { name: walletName, address: getWalletAddress(walletName)! };
+  return { ok: true, name: walletName, address: getWalletAddress(walletName)! };
+}
+
+/** `resolveWalletRef`, printing its error (null then). */
+export function pickWallet(name?: string): { name: string; address: string } | null {
+  const r = resolveWalletRef(name);
+  if (r.ok) return { name: r.name, address: r.address };
+  fail(r.message, r.code);
+  return null;
 }
 
 /** Ask for the password (or read it from stdin) and decrypt the wallet. Null on failure. */

@@ -191,6 +191,10 @@ export function wrapLine(l: Line, cols: number): Line[] {
   let i = 0;
   let first = true;
   while (i < chars.length) {
+    // A continuation never starts with the space it was cut at: it would sit one column
+    // right of the first row's text.
+    if (!first) while (i < chars.length && chars[i].c === ' ') i++;
+    if (i >= chars.length) break;
     const room = first ? cols : cols - 2;
     let end = Math.min(chars.length, i + room);
     if (end < chars.length) {

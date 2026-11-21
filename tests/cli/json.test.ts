@@ -118,6 +118,24 @@ describe('--json output', () => {
     expect(doc.apiKeys.zama).toEqual({ set: false });
   });
 
+  it('send picks the wallet like every other command (D1), also with --json', async () => {
+    addTokenWithInfo({ address: TOKEN, name: 'Tok', symbol: 'TOK', decimals: 6 }, 'sepolia');
+    saveWalletKeystore('a', '{}', ADDRESS);
+    saveWalletKeystore('b', '{}', '0x91Be4C2a6d0f83B1e7c5a9d2f4E8b0C6D3d207AF');
+    setDefaultWallet('gone'); // a removed default: not "Wallet gone not found"
+    const args = ['-n', 'sepolia', '--yes', '--password-stdin', '--json'];
+    const doc = JSON.parse(await stdoutOf('send', ADDRESS, '1', 'TOK', ...args));
+    expect(doc.error.code).toBe('NO_WALLET');
+    expect(doc.error.message).toMatch(/wallet set-default <name> \(wallets: a, b\)/);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('unwrap --forget --json asks only for --yes (it reads no password)', async () => {
+    const doc = JSON.parse(await stdoutOf('unwrap', '--forget', '0x' + '12'.repeat(32), '--json'));
+    expect(doc.error.code).toBe('PROMPT_NOT_ALLOWED');
+    expect(doc.error.message).toBe('With --json, pass --yes: there is nobody to answer prompts.');
+  });
+
   it('send refuses prompts with --json', async () => {
     const doc = JSON.parse(await stdoutOf('send', 'bob', '1', '--json'));
     expect(doc.error.code).toBe('PROMPT_NOT_ALLOWED');

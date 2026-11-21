@@ -170,3 +170,16 @@ it('Receive at 100x34 shows both QR codes; a flash makes room by hiding it', asy
   expect(t).toMatch(/The QR code needs/);
   expect(t.split('\n')).toHaveLength(34);
 });
+
+describe('wrapLine continuation indent (N2)', () => {
+  it('a row cut just before a space does not start one column further right', async () => {
+    const { wrapLine, plain, line, seg } = await import('../../src/tui/text.js');
+    // 20 columns: the cut falls right before the space after "abcdefghijklmnopqr".
+    const rows = wrapLine(
+      line('  ', seg('abcdefghijklmnopqr stuvwxyz0123456789abc', 'yellow')),
+      20,
+    ).map(plain);
+    expect(rows[0]).toBe('  abcdefghijklmnopqr');
+    expect(rows[1].startsWith('  s')).toBe(true);
+  });
+});

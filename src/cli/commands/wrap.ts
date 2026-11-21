@@ -925,7 +925,7 @@ async function resumeCommand(ref: string | undefined, options: UnwrapOptions): P
 async function forgetCommand(ref: string, options: UnwrapOptions): Promise<void> {
   const network = pickNetwork(options.network);
   if (!network) return;
-  if (!jsonPromptsCovered({ yes: options.yes, passwordStdin: true })) return;
+  if (!jsonPromptsCovered(options, { password: false })) return;
   const walletRef = pickWallet(options.wallet);
   if (!walletRef) return;
   const found = pickEntries(ref, network, walletRef.address, false);
