@@ -7,10 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MockBackend } from '../../src/core/backend/MockBackend.js';
 
 let backend: MockBackend;
+let password = 'pw';
 vi.mock('../../src/core/backend/select.js', () => ({ createBackend: () => backend }));
 vi.mock('../../src/cli/utils/passwordInput.js', async (orig) => ({
   ...(await orig<typeof import('../../src/cli/utils/passwordInput.js')>()),
-  walletPassword: async () => 'pw',
+  walletPassword: async () => password,
 }));
 
 const { createProgram } = await import('../../src/cli/index.js');
@@ -51,6 +52,7 @@ const yes = ['--yes', '--password-stdin', '-n', 'sepolia'];
 
 beforeEach(() => {
   wipeTestDataDir();
+  password = 'pw';
   process.exitCode = undefined;
   backend = new MockBackend(instant);
   saveWalletKeystore('alice', keystore, wallet.address);
@@ -210,6 +212,21 @@ describe('fhew unwrap', () => {
     const doc = await run('unwrap', '5', 'cusdc', ...yes);
     const r = await run('unwrap', '--forget', doc.id, '--yes');
     expect(r.error.code).toBe('UNWRAP_STILL_OPEN');
+    expect(listUnwraps({ open: true })).toHaveLength(1);
+  });
+
+  it('--resume --json with a wrong password prints exactly one error document', async () => {
+    backend = new MockBackend({ ...instant, fail: 'public-pending' });
+    await run('unwrap', '5', 'cusdc', ...yes);
+    backend = new MockBackend(instant);
+    password = 'wrong';
+    const spy = vi.spyOn(backend, 'prepareFinalizeUnwrap');
+    // run() parses stdout as one JSON document: a second one would make it throw.
+    const doc = await run('unwrap', '--resume', ...yes);
+    expect(doc.error.code).toBe('WRONG_PASSWORD');
+    expect(doc.results).toBeUndefined();
+    expect(process.exitCode).toBe(1);
+    expect(spy).not.toHaveBeenCalled();
     expect(listUnwraps({ open: true })).toHaveLength(1);
   });
 });

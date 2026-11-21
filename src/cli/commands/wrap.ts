@@ -880,16 +880,23 @@ async function resumeCommand(ref: string | undefined, options: UnwrapOptions): P
   };
   const outcomes: FinishOutcome[] = [];
   for (const e of entries) {
-    outcomes.push(
-      await finishOne(
-        backend,
-        wallet,
-        e,
-        options,
-        { tries: ref ? PUBLIC_DECRYPT_TRIES : 1, confirmed: false },
-        unlock,
-      ),
+    const o = await finishOne(
+      backend,
+      wallet,
+      e,
+      options,
+      { tries: ref ? PUBLIC_DECRYPT_TRIES : 1, confirmed: false },
+      unlock,
     );
+    if (asked && !wallet) {
+      // The unlock failed and `unlockWallet` already reported it (one JSON document in
+      // --json mode, exit 1). Stop: the other unwraps would need the key as well, and a
+      // second report would put two documents on stdout.
+      if (!options.json && outcomes.length)
+        await reportOutcomes(backend, walletRef, outcomes, options);
+      return;
+    }
+    outcomes.push(o);
   }
   await reportOutcomes(backend, walletRef, outcomes, options);
 }
