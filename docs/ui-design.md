@@ -144,8 +144,9 @@ broadcast) with detail lines:
   You get    2 cZAMA (confidential)
   Stays      0.0000005 ZAMA (below 1 cZAMA unit)          only with dust
   Step 1     Approve cZAMA to take exactly 2 ZAMA (not unlimited)   only when needed
-  Step 2     Wrap
-  Fee        up to 0.0004 ETH (approval) + about 0.0006 ETH (wrap, simulated after the approval)
+  Step 2     Wrap (simulated after the approval)
+  The fee below includes an estimate for the wrap.         only when it follows an approval
+  Fee        up to 0.0004 ETH (you have 0.4210)
 ```
 
 After the confirm both transactions go out in order; the wrap is simulated only after the
