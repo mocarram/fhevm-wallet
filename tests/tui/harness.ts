@@ -6,8 +6,8 @@
 
 import { Wallet } from 'ethers';
 import { MockBackend, type MockOptions } from '../../src/core/backend/MockBackend.js';
-import { addTokenWithInfo } from '../../src/core/token/TokenRegistry.js';
-import { addAddress } from '../../src/storage/AddressBook.js';
+import { addTokenWithInfo, listTokens } from '../../src/core/token/TokenRegistry.js';
+import { addAddress, listAddresses } from '../../src/storage/AddressBook.js';
 import { handleKey, render, tick } from '../../src/tui/app.js';
 import type { Deps, Effect, Updater } from '../../src/tui/effects.js';
 import { normalizeKey } from '../../src/tui/keys.js';
@@ -22,8 +22,9 @@ export const STRANGER = '0x6e1d3a0B7C25F9e84d1a6b3c0e7F52a9d8c194fa';
 
 /** Seed the (test) data dir with bob and the mock cUSDC token. */
 export function seedData(backend: MockBackend): void {
-  addAddress('bob', BOB);
-  addTokenWithInfo(backend.catalogue('sepolia')[0], 'sepolia');
+  if (!listAddresses().some((c) => c.name === 'bob')) addAddress('bob', BOB);
+  const t = backend.catalogue('sepolia')[0];
+  if (!listTokens('sepolia').some((x) => x.address === t.address)) addTokenWithInfo(t, 'sepolia');
 }
 
 export interface HarnessOptions {
@@ -48,7 +49,12 @@ export class Harness {
   readonly deps: Deps;
 
   constructor(opts: HarnessOptions = {}) {
-    this.backend = new MockBackend({ latencyMs: 0, confirmMs: 0, sleep: async () => {}, ...opts.mock });
+    this.backend = new MockBackend({
+      latencyMs: 0,
+      confirmMs: 0,
+      sleep: async () => {},
+      ...opts.mock,
+    });
     if (opts.seed !== false) seedData(this.backend);
     const data = loadSnapshot('sepolia');
     this.s = initialState({ network: 'sepolia', backendKind: 'mock', data, now: this.now });

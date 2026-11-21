@@ -104,7 +104,9 @@ describe('send wizard', () => {
     expect(prefs.networks.sepolia.lastRecipient).toBe(BOB);
     expect(prefs.networks.sepolia.lastSend?.amount).toBe('25000000');
     expect(prefs.networks.mainnet.lastSend).toBeUndefined();
-    expect(listTransactions({ walletAddress: h.signer.address, network: 'sepolia' })).toHaveLength(1);
+    expect(listTransactions({ walletAddress: h.signer.address, network: 'sepolia' })).toHaveLength(
+      1,
+    );
 
     // "." repeats it, stopping on Review with the whole draft filled in.
     expect(h.text()).toMatch(/↻ 25\.00 cUSDC → bob/);
@@ -280,8 +282,8 @@ describe('nextTimeCommand', () => {
       'fhew send bob 25 cusdc',
     );
     h.s.network = 'mainnet';
-    expect(
-      nextTimeCommand(h.s, t, { address: STRANGER, isNew: true }, 1_500_000n),
-    ).toBe(`fhew send ${STRANGER} 1.5 cusdc -n mainnet`);
+    expect(nextTimeCommand(h.s, t, { address: STRANGER, isNew: true }, 1_500_000n)).toBe(
+      `fhew send ${STRANGER} 1.5 cusdc -n mainnet`,
+    );
   });
 });
