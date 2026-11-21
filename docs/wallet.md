@@ -166,8 +166,15 @@ looser permissions, the wallet fixes them on start and prints a one-line notice 
 If `FHEVM_WALLET_HOME` points at an existing folder that also holds other files, or at a
 shared folder (your home or a folder above it, the temp folder, the current folder, `/`
 or any sticky folder), the wallet leaves that folder's permissions alone and only
-restricts its own files. It refuses to start when other users can write to the data
-folder or `wallets/`, because they could plant a keystore or settings there.
+restricts its own files. It refuses to start, without changing anything, when other
+users can write to the data folder, `wallets/` or any wallet file, when one of them
+belongs to another user, or when one is a symbolic link: someone could have planted a
+keystore or settings there. Check the contents, then run `chmod -R go-w <folder>` (or
+`chown` it back to your user).
+
+The `.env` in the data folder only supplies RPC URLs and API keys (what `fhew config`
+saves there). Anything else in it, such as `FHEW_DEBUG`, is ignored with a notice; set
+those in your shell.
 
 ```
 ~/.fhevm-wallet/

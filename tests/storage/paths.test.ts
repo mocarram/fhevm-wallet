@@ -7,9 +7,11 @@ import {
   removeEnvVar,
   saveEnvVar,
   settingSource,
+  assertTrustedDataDir,
+  ensureDataDir,
 } from '../../src/storage/paths.js';
 import { wipeTestDataDir } from '../helpers/dataDir.js';
-import { mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -45,12 +47,63 @@ describe('env file CRUD', () => {
     expect(listEnvVars()).toEqual({ A: '1', B: '2' });
   });
 
-  it('loadEnv injects env file values with override', () => {
-    saveEnvVar('TEST_KEY', 'from-file');
-    process.env.TEST_KEY = 'from-shell';
-    loadEnv();
-    expect(process.env.TEST_KEY).toBe('from-file');
+  it('loadEnv applies saved settings over the environment', () => {
+    saveEnvVar('ETHERSCAN_API_KEY', 'from-file');
+    process.env.ETHERSCAN_API_KEY = 'from-shell';
+    try {
+      loadEnv();
+      expect(process.env.ETHERSCAN_API_KEY).toBe('from-file');
+    } finally {
+      delete process.env.ETHERSCAN_API_KEY;
+    }
   });
+
+  it('the data-dir .env only supplies settings the wallet saves (regression)', () => {
+    ensureDataDir();
+    writeFileSync(
+      ENV_FILE_PATH,
+      'SEPOLIA_RPC_URL=https://saved.example\nFHEW_BACKEND=mock\nFHEW_DEBUG=1\nFHEVM_WALLET_HOME=/tmp/x\nNODE_OPTIONS=--inspect\n',
+      { mode: 0o600 },
+    );
+    delete process.env.FHEW_BACKEND;
+    delete process.env.FHEW_DEBUG;
+    try {
+      const res = loadEnv(join(tmpdir(), 'no-such-dir', '.env'));
+      expect(process.env.SEPOLIA_RPC_URL).toBe('https://saved.example');
+      expect(process.env.FHEW_BACKEND).toBeUndefined();
+      expect(process.env.FHEW_DEBUG).toBeUndefined();
+      expect(process.env.FHEVM_WALLET_HOME).toBeUndefined();
+      expect(res.ignoredFromSettings).toEqual([
+        'FHEW_BACKEND',
+        'FHEW_DEBUG',
+        'FHEVM_WALLET_HOME',
+        'NODE_OPTIONS',
+      ]);
+    } finally {
+      delete process.env.SEPOLIA_RPC_URL;
+    }
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'refuses a data dir, wallets/ or .env that others can write to, or a symlinked entry',
+    () => {
+      const rm = rmSync;
+      const dataDir = join(ENV_FILE_PATH, '..');
+      mkdirSync(join(dataDir, 'wallets'), { recursive: true, mode: 0o700 });
+      writeFileSync(ENV_FILE_PATH, 'ETHERSCAN_API_KEY=x\n', { mode: 0o600 });
+      expect(() => assertTrustedDataDir()).not.toThrow();
+      chmodSync(ENV_FILE_PATH, 0o666);
+      expect(() => assertTrustedDataDir()).toThrow(/Other users can change .*\.env/);
+      chmodSync(ENV_FILE_PATH, 0o600);
+      chmodSync(join(dataDir, 'wallets'), 0o777);
+      expect(() => assertTrustedDataDir()).toThrow(/chmod -R go-w/);
+      chmodSync(join(dataDir, 'wallets'), 0o700);
+      rm(ENV_FILE_PATH);
+      symlinkSync('/etc/hostname', ENV_FILE_PATH);
+      expect(() => assertTrustedDataDir()).toThrow(/symbolic link/);
+      rm(ENV_FILE_PATH);
+    },
+  );
 
   it('reads only allow-listed keys from ./.env, never debug or backend switches', () => {
     const dir = mkdtempSync(join(tmpdir(), 'cwd-env-'));

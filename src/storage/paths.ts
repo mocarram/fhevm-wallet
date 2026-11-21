@@ -6,13 +6,14 @@ import {
   accessSync,
   constants as fsConstants,
   existsSync,
+  lstatSync,
   readdirSync,
   readFileSync,
   statSync,
 } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
-import { config as dotenvConfig, parse as dotenvParse } from 'dotenv';
+import { parse as dotenvParse } from 'dotenv';
 import {
   ensureSecureDir,
   markNoChmod,
@@ -109,23 +110,61 @@ export class UntrustedDataDirError extends Error {
   readonly code = 'UNTRUSTED_DATA_DIR';
 }
 
-/** Throw UntrustedDataDirError if other users can write to the data dir or wallets/. */
+/** Group and other write bits: someone else could change the file or folder. */
+const OTHERS_WRITE = 0o022;
+
+/**
+ * Throw UntrustedDataDirError unless the data dir, `wallets/`, the keystores in it and
+ * the wallet's own files (`WALLET_DATA_ENTRIES`) are all owned by the current user and
+ * not writable by group or others, and none of them is a symbolic link.
+ *
+ * Checked before anything is tightened or read: a folder that *was* writable by others
+ * may already hold a planted keystore or a `.env` pointing at an attacker's RPC, and
+ * fixing the mode afterwards would hide that. The user checks and fixes it once.
+ * Windows has no POSIX owners or modes, so there is nothing to check there.
+ */
 export function assertTrustedDataDir(): void {
-  if (process.platform === 'win32') return; // no POSIX modes to check
-  for (const dir of [DATA_DIR, join(DATA_DIR, 'wallets')]) {
+  if (process.platform === 'win32' || typeof process.getuid !== 'function') return;
+  const me = process.getuid();
+  const fixMode = `chmod -R go-w ${DATA_DIR}`;
+  const fixOwner = `sudo chown -R ${me} ${DATA_DIR}`;
+  const check = (path: string, isDataDir: boolean) => {
     let st;
     try {
-      st = statSync(dir);
+      st = lstatSync(path);
     } catch {
-      continue; // not there yet: the wallet creates it 0700
+      return; // not there yet: the wallet creates it owner-only
     }
-    if ((st.mode & 0o022) !== 0) {
-      const mine = typeof process.getuid !== 'function' || st.uid === process.getuid();
+    // The data dir itself may be a link to another disk; everything inside may not.
+    if (st.isSymbolicLink()) {
+      if (!isDataDir) {
+        throw new UntrustedDataDirError(
+          `${path} is a symbolic link, so the wallet will not load keys or settings from ${DATA_DIR}. Replace the link with the real file or folder.`,
+        );
+      }
+      st = statSync(path);
+    }
+    if (st.uid !== me) {
       throw new UntrustedDataDirError(
-        `Other users can change the wallet data folder ${dir}${mine ? '' : ' (it belongs to another user)'}, so the wallet will not load keys or settings from it. Remove write access for group and others (chmod go-w), or set FHEVM_WALLET_HOME to a private folder.`,
+        `${path} belongs to another user, so the wallet will not load keys or settings from ${DATA_DIR}. If it is yours, check its contents, then take it back with: ${fixOwner}`,
       );
     }
+    if ((st.mode & OTHERS_WRITE) !== 0) {
+      throw new UntrustedDataDirError(
+        `Other users can change ${path}, so the wallet will not load keys or settings from ${DATA_DIR}. Check that nothing in it was added or changed by someone else, then remove that access with: ${fixMode}`,
+      );
+    }
+  };
+  check(DATA_DIR, true);
+  for (const entry of WALLET_DATA_ENTRIES) check(join(DATA_DIR, entry), false);
+  const walletsDir = join(DATA_DIR, 'wallets');
+  let children: string[] = [];
+  try {
+    children = readdirSync(walletsDir);
+  } catch {
+    /* no wallets yet */
   }
+  for (const child of children) check(join(walletsDir, child), false);
 }
 
 /**
@@ -155,35 +194,28 @@ export interface DataDirSecurity {
 /**
  * Tighten permissions on data written by older versions (which used the default umask),
  * and explain once when the data dir cannot be made private. Throws
- * UntrustedDataDirError when other users can still write to it afterwards.
+ * UntrustedDataDirError (before changing anything) when the data is not the user's alone.
  */
 export function secureExistingData(): DataDirSecurity {
-  ensureDataDir();
   const policy = getDataDirPolicy();
-  const tightened =
-    policy.ours || policy.sharedWithOtherFiles
-      ? tightenPermissions(DATA_DIR, WALLET_DATA_ENTRIES, { includeRoot: policy.ours }).length
-      : 0;
-  let warning = policy.reason;
-  try {
-    const st = statSync(DATA_DIR);
-    // Ours to use but not ours to chmod (a Docker volume created by root, say).
-    if (!warning && typeof process.getuid === 'function' && st.uid !== process.getuid()) {
-      warning = `The wallet data folder ${DATA_DIR} belongs to another user, so its permissions cannot be restricted. Give it to your user (chown) to keep it private.`;
-    }
-  } catch {
-    /* missing dir: nothing to warn about */
-  }
+  // Refuse first, before ensureDataDir's chmod: never tighten (and so hide) what other
+  // users could have changed.
   try {
     assertTrustedDataDir();
   } catch (err) {
-    // Say first why the wallet did not just fix the permissions itself.
+    // Say first why the wallet would not have changed the folder itself.
     if (err instanceof UntrustedDataDirError && policy.reason) {
       throw new UntrustedDataDirError(`${policy.reason}\n${err.message}`);
     }
     throw err;
   }
-  return { tightened, warning };
+  ensureDataDir();
+  // Only read bits are left to fix here (0644 files and 0755 folders from older versions).
+  const tightened =
+    policy.ours || policy.sharedWithOtherFiles
+      ? tightenPermissions(DATA_DIR, WALLET_DATA_ENTRIES, { includeRoot: policy.ours }).length
+      : 0;
+  return { tightened, warning: policy.reason };
 }
 
 /**
@@ -200,6 +232,14 @@ export const CWD_ENV_ALLOWED_KEYS = [
   'ZAMA_MAINNET_API_KEY',
 ] as const;
 
+/**
+ * The only settings the data dir's own `.env` may provide: what the wallet itself saves
+ * there (`fhew config`, the Settings screens). A stale or planted line such as
+ * FHEW_BACKEND, FHEW_DEBUG, FHEVM_WALLET_HOME or NODE_OPTIONS is ignored with a notice:
+ * those only ever come from the real process environment.
+ */
+export const SAVED_ENV_KEYS = CWD_ENV_ALLOWED_KEYS;
+
 /** What `loadEnv` took from ./.env, so startup can say so (RPC URLs change behaviour). */
 export interface LoadEnvResult {
   /** Keys taken from ./.env and in effect. */
@@ -208,6 +248,8 @@ export interface LoadEnvResult {
   ignoredFromCwd: string[];
   /** Allow-listed RPC URLs in ./.env that failed validation, with the reason. */
   rejectedFromCwd: { key: string; reason: string }[];
+  /** Keys in the data dir's .env that are not settings the wallet saves. */
+  ignoredFromSettings: string[];
 }
 
 /** Keys whose value in process.env came from ./.env (set by `loadEnv`). */
@@ -227,12 +269,17 @@ export function settingSource(key: string): SettingSource | null {
 }
 
 /**
- * Load settings from the data dir's private `.env` (any key: it is the user's own
- * owner-only file, and it overrides everything) and the allow-listed keys from a `.env`
- * in the current directory (never overriding the environment).
+ * Load settings from the data dir's private `.env` (only `SAVED_ENV_KEYS`; they override
+ * everything) and the allow-listed keys from a `.env` in the current directory (never
+ * overriding the environment).
  */
 export function loadEnv(cwdEnvPath = resolve('.env')): LoadEnvResult {
-  const result: LoadEnvResult = { fromCwd: [], ignoredFromCwd: [], rejectedFromCwd: [] };
+  const result: LoadEnvResult = {
+    fromCwd: [],
+    ignoredFromCwd: [],
+    rejectedFromCwd: [],
+    ignoredFromSettings: [],
+  };
   if (existsSync(cwdEnvPath) && resolve(cwdEnvPath) !== ENV_FILE_PATH) {
     let parsed: Record<string, string> = {};
     try {
@@ -265,10 +312,23 @@ export function loadEnv(cwdEnvPath = resolve('.env')): LoadEnvResult {
   // A .env others could have written would let them pick the RPC (and see the API keys).
   assertTrustedDataDir();
   if (existsSync(ENV_FILE_PATH)) {
-    // quiet: dotenv 17+ otherwise prints a promotional line to stdout.
-    const loaded = dotenvConfig({ path: ENV_FILE_PATH, override: true, quiet: true });
+    let parsed: Record<string, string> = {};
+    try {
+      parsed = dotenvParse(readFileSync(ENV_FILE_PATH));
+    } catch {
+      /* unreadable: like a missing one */
+    }
+    // Saved settings override everything, but only the ones the wallet saves.
+    const saved: string[] = [];
+    for (const [key, value] of Object.entries(parsed)) {
+      if (!(SAVED_ENV_KEYS as readonly string[]).includes(key)) {
+        result.ignoredFromSettings.push(key);
+        continue;
+      }
+      process.env[key] = value;
+      saved.push(key);
+    }
     // The saved settings win over ./.env: don't claim ./.env is in use for those keys.
-    const saved = Object.keys(loaded.parsed ?? {});
     result.fromCwd = result.fromCwd.filter((k) => !saved.includes(k));
     saved.forEach((k) => keysFromCwd.delete(k));
   }

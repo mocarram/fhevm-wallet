@@ -6,7 +6,13 @@
  * A CLI wallet for managing encrypted ERC-7984 tokens using Zama's FHE technology.
  */
 
-import { DATA_DIR, loadEnv, secureExistingData, UntrustedDataDirError } from './storage/paths.js';
+import {
+  DATA_DIR,
+  ENV_FILE_PATH,
+  loadEnv,
+  secureExistingData,
+  UntrustedDataDirError,
+} from './storage/paths.js';
 
 // Load settings: the data dir's private .env, plus allow-listed keys from ./.env.
 // Failing here (data dir not writable) gets one clear sentence, not a stack trace.
@@ -17,6 +23,11 @@ try {
   // A ./.env can point the wallet at another RPC: say where settings came from.
   if (env.fromCwd.length > 0) {
     process.stderr.write(`Using ${env.fromCwd.join(', ')} from ./.env in this folder.\n`);
+  }
+  if (env.ignoredFromSettings.length > 0) {
+    process.stderr.write(
+      `Ignored ${env.ignoredFromSettings.join(', ')} in ${ENV_FILE_PATH}: only RPC URLs and API keys are read from there. Set other options in your shell instead.\n`,
+    );
   }
   for (const { key, reason } of env.rejectedFromCwd) {
     process.stderr.write(`Ignored ${key} in ./.env: ${reason}\n`);

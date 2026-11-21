@@ -62,6 +62,13 @@ root, give it to that user once:
 sudo chown -R 1000:1000 ./data && chmod 700 ./data
 ```
 
+Do not work around an ownership problem with `chmod 777 ./data`: the wallet refuses to
+start when other users can write to its data folder, `wallets/` or any of its files
+(they could plant a keystore or a `.env` pointing at their own RPC), and it says so
+instead of quietly fixing the mode. It also refuses files there that belong to another
+user. Check the folder's contents, then fix it with the `chown` above and
+`chmod -R go-w ./data`.
+
 `docker-compose.yml` treats `.env` as optional (`required: false`), which needs Docker
 Compose 2.24 or newer. Settings you save from inside the wallet (`fhew config …`) go to
 `/data/.env` on the volume, not to the `.env` next to the compose file.
