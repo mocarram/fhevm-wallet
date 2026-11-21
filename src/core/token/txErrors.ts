@@ -35,6 +35,7 @@ export type TxErrorCode =
   | 'RPC_RATE_LIMITED'
   | 'RPC_AUTH'
   | 'RPC_BAD_ANSWER'
+  | 'PUBLIC_DECRYPT_PENDING'
   | 'UNKNOWN';
 
 /** A user-facing transaction error. `raw` is only shown when the user asks for details. */
@@ -610,4 +611,15 @@ export function formatTxError(err: WalletTxError, includeRaw = wantsErrorDetails
 /** Whether the user asked for technical details on errors (FHEW_DEBUG=1). */
 export function wantsErrorDetails(): boolean {
   return process.env.FHEW_DEBUG === '1';
+}
+
+/** The amount is not publicly decryptable yet (step 1 not mined, or the relayer is behind). */
+export function pendingPublicDecryption(raw?: string): WalletTxError {
+  return new WalletTxError(
+    'PUBLIC_DECRYPT_PENDING',
+    'This amount is not publicly decryptable yet.',
+    'Step 1 (the disclosure request) has to be confirmed on-chain, and the Zama gateway then needs a little time.',
+    'Wait a minute and try again. Nothing was signed or sent.',
+    raw,
+  );
 }

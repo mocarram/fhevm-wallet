@@ -19,6 +19,11 @@ const TransactionSchema = z.object({
   from: z.string(),
   to: z.string(),
   amount: z.string().nullable(), // null = encrypted (needs decryption)
+  /**
+   * Handle of the encrypted amount (ConfidentialTransfer topic 3), for "decrypt amounts"
+   * and disclosure. Never the plaintext: decrypted amounts live in AmountCache.
+   */
+  amountHandle: z.string().optional(),
   network: z.enum(['mainnet', 'sepolia']),
   blockNumber: z.number(),
   timestamp: z.string(),
@@ -117,6 +122,7 @@ export function upsertTransaction(tx: Transaction): void {
     store.transactions[existingIndex] = {
       ...tx,
       amount: tx.amount ?? existing.amount,
+      amountHandle: tx.amountHandle ?? existing.amountHandle,
     };
   } else {
     store.transactions.push(tx);
@@ -141,6 +147,7 @@ export function upsertTransactions(txs: Transaction[]): void {
       store.transactions[existingIndex] = {
         ...tx,
         amount: tx.amount ?? existing.amount,
+        amountHandle: tx.amountHandle ?? existing.amountHandle,
       };
     } else {
       store.transactions.push(tx);

@@ -21,7 +21,9 @@ export type AuditEvent =
   | 'TRANSFER'
   | 'TOKEN_ADDED'
   | 'TOKEN_REMOVED'
-  | 'OPERATOR_SET';
+  | 'OPERATOR_SET'
+  | 'DISCLOSE_REQUESTED'
+  | 'AMOUNT_DISCLOSED';
 
 /** Audit fields that only ever hold a network name, a transaction hash or an address. */
 const SAFE_FIELDS = new Set(['network', 'txHash', 'address', 'token', 'to', 'from', 'operator']);

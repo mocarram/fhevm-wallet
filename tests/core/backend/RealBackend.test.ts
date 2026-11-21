@@ -30,6 +30,7 @@ describe('RealBackend', () => {
       '0xR',
       9n,
       'sepolia',
+      {},
     );
     expect(prepared).toMatchObject({ feeWei: 2n, ethBalanceWei: 3n, tokenBalance: 4n });
     const hooks = { onBroadcast: vi.fn() };

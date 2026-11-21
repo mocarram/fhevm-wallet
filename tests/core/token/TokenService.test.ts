@@ -865,3 +865,42 @@ describe('TokenService: an RPC error is not "not a token"', () => {
     ).rejects.toMatchObject({ code: 'RPC_BAD_ANSWER' });
   });
 });
+
+describe('TokenService batch decrypt and disclosure calls', () => {
+  it('reads all handles, skips zero and cached ones, decrypts the rest in one session call', async () => {
+    const T2 = '0x1111111111111111111111111111111111111111';
+    const T3 = '0x2222222222222222222222222222222222222222';
+    contractStubs.confidentialBalanceOf
+      .mockResolvedValueOnce('0x' + '0'.repeat(64))
+      .mockResolvedValueOnce('0x' + '1'.repeat(60) + '0500')
+      .mockResolvedValueOnce('0x' + '2'.repeat(60) + '0500');
+    const decrypt = vi.fn(async (pairs: Array<{ handle: string }>) => ({
+      values: new Map(pairs.map((p, i) => [p.handle, BigInt(i + 10)])),
+      errors: new Map(),
+    }));
+    const session = { address: USER, network: 'sepolia', active: true, decrypt } as never;
+    const { decryptBalancesWithSession } = await import('../../../src/core/token/TokenService.js');
+    const out = await decryptBalancesWithSession(session, [TOKEN, T2, T3], 'sepolia');
+    expect(out.values).toEqual({ [TOKEN]: 0n, [T2]: 10n, [T3]: 11n });
+    expect(decrypt).toHaveBeenCalledTimes(1);
+    expect(decrypt.mock.calls[0][0]).toHaveLength(2);
+    expect(decrypt.mock.calls[0][1]).toEqual([TOKEN, T2, T3]);
+  });
+
+  it('prepareDiscloseRequest simulates requestDiscloseEncryptedAmount before signing', async () => {
+    const fn = Object.assign(vi.fn(), {
+      estimateGas: vi.fn(async () => 40_000n),
+      populateTransaction: vi.fn(),
+    });
+    contractStubs.getFunction.mockImplementation(() => fn);
+    const { prepareDiscloseRequest } = await import('../../../src/core/token/TokenService.js');
+    const h = '0x' + 'a'.repeat(60) + '0500';
+    const p = await prepareDiscloseRequest(signingWallet as never, TOKEN, h, 'sepolia');
+    expect(contractStubs.getFunction).toHaveBeenCalledWith(
+      'requestDiscloseEncryptedAmount(bytes32)',
+    );
+    expect(fn.estimateGas).toHaveBeenCalledWith(h);
+    expect(p.feeWei).toBe(48_000n * 10n);
+    expect(signingWallet.signTransaction).not.toHaveBeenCalled();
+  });
+});

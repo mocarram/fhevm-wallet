@@ -18,15 +18,27 @@ import { MainnetConfig, SepoliaConfig } from '@zama-fhe/relayer-sdk/node';
 import { maskUrl } from '../../utils/redact.js';
 import { setCustomRpc } from '../network/rpcSettings.js';
 import { checkFheReadiness } from '../fhe/FheService.js';
+import { DecryptSession, decryptDaysFromEnv, normaliseHandle } from '../fhe/DecryptSession.js';
+import { publicDecryptHandle, relayerDecryptAuthority } from '../fhe/DecryptionService.js';
 import {
+  decryptBalancesWithSession,
+  filterUserDecryptable,
+  findTransferHandle,
   getDecryptedBalance,
   getTokenInfo,
   getTxExplorerUrl,
+  isOperator,
+  isPubliclyDecryptable,
   prepareConfidentialTransfer,
+  prepareDiscloseAmount,
+  prepareDiscloseRequest,
+  prepareSetOperator,
+  type PreparedCall,
 } from '../token/TokenService.js';
+import { getAmountEntry } from '../../storage/AmountCache.js';
 import { syncTransactions } from '../token/historySync.js';
 import { checkErc7984, type TokenCheck } from '../token/erc7984Check.js';
-import { translateTxError } from '../token/txErrors.js';
+import { pendingPublicDecryption, translateTxError } from '../token/txErrors.js';
 import { knownTokens } from '../token/tokenLists.js';
 import {
   scanIncoming,
@@ -37,10 +49,15 @@ import {
 import { loadConfig } from '../../storage/ConfigStore.js';
 import type { TokenEntry } from '../token/TokenRegistry.js';
 import type {
+  AmountRequest,
   Backend,
+  BalanceBatch,
+  DiscloseStage,
   HistorySyncResult,
+  PreparedDisclose,
   PreparedSend,
   RelayerCheck,
+  PreparedTx,
   RpcCheck,
   RpcEndpointCheck,
   UnlockedSigner,
@@ -48,6 +65,22 @@ import type {
 
 /** How long the relayer has to answer the doctor's reachability probe. */
 const RELAYER_PROBE_TIMEOUT_MS = 8_000;
+/** The Zama ACL contract for a network (from the relayer SDK's network config). */
+function aclAddress(network: NetworkName): string {
+  return (network === 'mainnet' ? MainnetConfig : SepoliaConfig).aclContractAddress;
+}
+
+/** Adapt a TokenService PreparedCall to the Backend's PreparedTx. */
+function toPreparedTx(p: PreparedCall): PreparedTx {
+  return {
+    feeWei: p.feeWei,
+    ethBalanceWei: p.ethBalanceWei,
+    send: async (hooks) => {
+      const r = await p.send(hooks);
+      return { txHash: r.txHash, blockNumber: r.receipt.blockNumber };
+    },
+  };
+}
 
 /** Delegates every call to the production code paths. */
 export class RealBackend implements Backend {
@@ -83,14 +116,148 @@ export class RealBackend implements Backend {
     return getDecryptedBalance(tokenAddress, signer, network, opts);
   }
 
+  newDecryptSession(signer: UnlockedSigner, network: NetworkName): DecryptSession {
+    return new DecryptSession(signer, network, relayerDecryptAuthority(network), {
+      durationDays: decryptDaysFromEnv(),
+    });
+  }
+
+  decryptBalances(
+    session: DecryptSession,
+    tokens: string[],
+    opts: { forceRefresh?: boolean } = {},
+  ): Promise<BalanceBatch> {
+    return decryptBalancesWithSession(session, tokens, session.network, opts);
+  }
+
+  async decryptAmounts(
+    session: DecryptSession,
+    requests: AmountRequest[],
+    contracts: string[],
+  ): Promise<Record<string, bigint | null>> {
+    const out: Record<string, bigint | null> = {};
+    if (!requests.length) return out;
+    const pairs = requests.map((r) => ({
+      handle: normaliseHandle(r.handle),
+      contractAddress: r.token,
+    }));
+    // The SDK fails a whole batch when one handle is not allowed for this wallet; check
+    // the ACL first so those show as "encrypted" and the rest still decrypt.
+    const allowed = await filterUserDecryptable(
+      aclAddress(session.network),
+      pairs,
+      session.address,
+      session.network,
+    );
+    for (const p of pairs) if (!allowed.has(p.handle)) out[p.handle] = null;
+    const { values } = await session.decrypt(
+      pairs.filter((p) => allowed.has(p.handle)),
+      contracts,
+    );
+    for (const [h, v] of values) out[h] = v;
+    return out;
+  }
+
+  async operatorStatus(
+    tokenAddress: string,
+    holder: string,
+    spenders: string[],
+    network: NetworkName,
+  ): Promise<Record<string, boolean>> {
+    const entries = await Promise.all(
+      spenders.map(
+        async (sp) =>
+          [sp.toLowerCase(), await isOperator(tokenAddress, holder, sp, network)] as const,
+      ),
+    );
+    return Object.fromEntries(entries);
+  }
+
+  async prepareSetOperator(
+    signer: UnlockedSigner,
+    tokenAddress: string,
+    operator: string,
+    untilUnixSeconds: number,
+    network: NetworkName,
+  ): Promise<PreparedTx> {
+    return toPreparedTx(
+      await prepareSetOperator(signer, tokenAddress, operator, untilUnixSeconds, network),
+    );
+  }
+
+  async discloseStage(
+    _tokenAddress: string,
+    handle: string,
+    network: NetworkName,
+  ): Promise<DiscloseStage> {
+    // "disclosed" is only known locally (set after our own confirmed disclosure): finding
+    // AmountDisclosed logs would need an unbounded log scan.
+    if (getAmountEntry(network, normaliseHandle(handle))?.disclosed) return 'disclosed';
+    return (await isPubliclyDecryptable(aclAddress(network), handle, network))
+      ? 'requested'
+      : 'private';
+  }
+
+  async prepareDiscloseRequest(
+    signer: UnlockedSigner,
+    tokenAddress: string,
+    handle: string,
+    network: NetworkName,
+  ): Promise<PreparedTx> {
+    return toPreparedTx(await prepareDiscloseRequest(signer, tokenAddress, handle, network));
+  }
+
+  async prepareDisclose(
+    signer: UnlockedSigner,
+    tokenAddress: string,
+    handle: string,
+    network: NetworkName,
+  ): Promise<PreparedDisclose> {
+    if (!(await isPubliclyDecryptable(aclAddress(network), handle, network))) {
+      throw pendingPublicDecryption();
+    }
+    let pub;
+    try {
+      pub = await publicDecryptHandle(normaliseHandle(handle), network);
+    } catch (err) {
+      throw pendingPublicDecryption(err instanceof Error ? err.message : String(err));
+    }
+    const prepared = await prepareDiscloseAmount(
+      signer,
+      tokenAddress,
+      handle,
+      pub.value,
+      pub.proof,
+      network,
+    );
+    return { ...toPreparedTx(prepared), value: pub.value };
+  }
+
+  async findTransferHandle(
+    txHash: string,
+    wallet: string,
+    tokens: string[],
+    network: NetworkName,
+  ): Promise<AmountRequest | null> {
+    return findTransferHandle(txHash, wallet, tokens, network);
+  }
+
   async prepareTransfer(
     signer: UnlockedSigner,
     tokenAddress: string,
     to: string,
     amount: bigint,
     network: NetworkName,
+    opts: { session?: DecryptSession } = {},
   ): Promise<PreparedSend> {
-    const prepared = await prepareConfidentialTransfer(signer, tokenAddress, to, amount, network);
+    const prepared = await prepareConfidentialTransfer(
+      signer,
+      tokenAddress,
+      to,
+      amount,
+      network,
+      opts,
+    );
     return {
       feeWei: prepared.feeWei,
       ethBalanceWei: prepared.ethBalanceWei,

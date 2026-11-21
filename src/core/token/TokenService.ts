@@ -26,7 +26,8 @@ import { getProvider, NetworkName, getNetworkConfig } from '../network/index.js'
 import { encryptAmount } from '../fhe/EncryptionService.js';
 import { decryptBalance } from '../fhe/DecryptionService.js';
 import { CHAIN_IDS } from '../network/NetworkConfig.js';
-import { logEvent } from '../../storage/AuditLog.js';
+import { logEvent, type AuditEvent } from '../../storage/AuditLog.js';
+import { normaliseHandle, type DecryptSession } from '../fhe/DecryptSession.js';
 import { recordLocalTransaction } from '../../storage/TransactionStore.js';
 import { getCachedBalance, setCachedBalance, invalidateBalance } from './BalanceCache.js';
 import { MAX_EUINT64 } from './limits.js';
@@ -48,9 +49,15 @@ export const ERC7984_ABI = [
   'function confidentialTransfer(address to, bytes32 encryptedAmount, bytes inputProof) returns (bytes32)',
   'function setOperator(address operator, uint48 until)',
   'function isOperator(address holder, address spender) view returns (bool)',
+  // Disclosure (OpenZeppelin ERC7984): make an amount publicly decryptable, then publish
+  // the KMS-signed cleartext. euint64 is a bytes32 handle at the ABI level.
+  'function requestDiscloseEncryptedAmount(bytes32 encryptedAmount)',
+  'function discloseEncryptedAmount(bytes32 encryptedAmount, uint64 cleartextAmount, bytes decryptionProof)',
   'function supportsInterface(bytes4 interfaceId) view returns (bool)',
   'event ConfidentialTransfer(address indexed from, address indexed to, bytes32 indexed amount)',
   'event OperatorSet(address indexed holder, address indexed operator, uint48 until)',
+  'event AmountDiscloseRequested(bytes32 indexed encryptedAmount, address indexed requester)',
+  'event AmountDisclosed(bytes32 indexed encryptedAmount, uint64 amount)',
   'error ERC7984InvalidReceiver(address receiver)',
   'error ERC7984InvalidSender(address sender)',
   'error ERC7984UnauthorizedSpender(address holder, address spender)',
@@ -105,6 +112,11 @@ export interface GetBalanceOptions {
    * node that lags behind cannot hand back the old handle (and the old balance).
    */
   blockTag?: number;
+  /**
+   * Decrypt through this session's signature instead of signing a new one-off request.
+   * Must belong to the same wallet and network.
+   */
+  session?: DecryptSession;
 }
 
 /**
@@ -354,7 +366,7 @@ export async function getDecryptedBalance(
   network: NetworkName,
   options: GetBalanceOptions = {},
 ): Promise<bigint> {
-  const { forceRefresh = false, blockTag } = options;
+  const { forceRefresh = false, blockTag, session } = options;
 
   // Always fetch the encrypted handle first (cheap RPC call)
   const encryptedHandle = await getEncryptedBalance(
@@ -383,7 +395,9 @@ export async function getDecryptedBalance(
   // contract read above.
   let balance: bigint;
   try {
-    balance = await decryptBalance(encryptedHandle, tokenAddress, wallet, network);
+    balance = session
+      ? await decryptOneWithSession(session, encryptedHandle, tokenAddress)
+      : await decryptBalance(encryptedHandle, tokenAddress, wallet, network);
   } catch (err) {
     throw new DecryptionFailedError(err);
   }
@@ -395,6 +409,92 @@ export async function getDecryptedBalance(
   );
 
   return balance;
+}
+
+/** Decrypt one handle with a session; throws the request's error. */
+async function decryptOneWithSession(
+  session: DecryptSession,
+  handle: bigint,
+  tokenAddress: string,
+): Promise<bigint> {
+  const key = normaliseHandle(handle);
+  const { values, errors } = await session.decrypt([
+    { handle: key, contractAddress: tokenAddress },
+  ]);
+  const v = values.get(key);
+  if (v === undefined) throw errors.get(key) ?? new Error('Decryption returned no value');
+  return v;
+}
+
+/** Decrypted balances by lowercase token address, and per-token failures. */
+export interface BalanceBatch {
+  values: Record<string, bigint>;
+  errors: Record<string, unknown>;
+}
+
+/**
+ * Decrypt the balances of many tokens with one session: read every handle (cheap RPC
+ * reads, in parallel), answer zero handles and unchanged handles from the cache, and
+ * send the rest to the relayer in as few userDecrypt requests as the SDK allows. The
+ * session signs once for the whole token list.
+ */
+export async function decryptBalancesWithSession(
+  session: DecryptSession,
+  tokenAddresses: string[],
+  network: NetworkName,
+  options: { forceRefresh?: boolean } = {},
+): Promise<BalanceBatch> {
+  const values: Record<string, bigint> = {};
+  const errors: Record<string, unknown> = {};
+  const owner = session.address;
+  const handles = await Promise.all(
+    tokenAddresses.map(async (token) => {
+      try {
+        return { token, handle: await getEncryptedBalance(token, owner, network) };
+      } catch (err) {
+        errors[token.toLowerCase()] = err;
+        return null;
+      }
+    }),
+  );
+  const todo: Array<{ token: string; handle: bigint }> = [];
+  for (const h of handles) {
+    if (!h) continue;
+    const key = h.token.toLowerCase();
+    if (h.handle === 0n) {
+      values[key] = 0n;
+      continue;
+    }
+    const cached = options.forceRefresh
+      ? null
+      : getCachedBalance(owner, h.token, network, h.handle);
+    if (cached !== null) values[key] = cached;
+    else todo.push(h);
+  }
+  if (todo.length) {
+    let outcome: Awaited<ReturnType<DecryptSession['decrypt']>>;
+    try {
+      outcome = await session.decrypt(
+        todo.map((t) => ({ handle: normaliseHandle(t.handle), contractAddress: t.token })),
+        tokenAddresses,
+      );
+    } catch (err) {
+      // Signing failed (or the wallet was locked meanwhile): every pending token failed.
+      for (const t of todo) errors[t.token.toLowerCase()] = new DecryptionFailedError(err);
+      return { values, errors };
+    }
+    for (const t of todo) {
+      const key = t.token.toLowerCase();
+      const v = outcome.values.get(normaliseHandle(t.handle));
+      if (v === undefined) {
+        errors[key] = new DecryptionFailedError(outcome.errors.get(normaliseHandle(t.handle)));
+        continue;
+      }
+      values[key] = v;
+      bestEffort(() => setCachedBalance(owner, t.token, network, t.handle, v));
+    }
+  }
+  return { values, errors };
 }
 
 /** Optional progress callbacks for `PreparedTransfer.send`. Errors thrown in them are ignored. */
@@ -449,8 +549,11 @@ export async function prepareConfidentialTransfer(
   toAddress: string,
   amount: bigint,
   network: NetworkName,
+  opts: { session?: DecryptSession } = {},
 ): Promise<PreparedTransfer> {
   assertTransferAmount(amount);
+  // The session's signature covers the balance checks before and after the send.
+  const session = opts.session?.active ? opts.session : undefined;
   const chainId = network === 'mainnet' ? CHAIN_IDS.MAINNET : CHAIN_IDS.SEPOLIA;
 
   try {
@@ -473,7 +576,7 @@ export async function prepareConfidentialTransfer(
     // Decrypt first (cached while the encrypted handle is unchanged) and stop early.
     let tokenBalance: bigint;
     try {
-      tokenBalance = await getDecryptedBalance(tokenAddress, wallet, network);
+      tokenBalance = await getDecryptedBalance(tokenAddress, wallet, network, { session });
     } catch (err) {
       // Only the decrypt step becomes BALANCE_CHECK_FAILED. A failed contract read keeps
       // its own meaning (unreachable RPC, wrong chain, not an ERC-7984 token, a revert).
@@ -568,6 +671,7 @@ export async function prepareConfidentialTransfer(
         () =>
           getDecryptedBalance(tokenAddress, wallet, network, {
             forceRefresh: true,
+            session: session?.active ? session : undefined,
             // At (or after) the block that mined the transfer, never an older one.
             blockTag: result.receipt.blockNumber,
           }),
@@ -638,6 +742,8 @@ export interface WalletTransaction {
   tokenAddress: string;
   tokenSymbol: string;
   amount: string | null; // ETH transfers have amount, token transfers are encrypted
+  /** ConfidentialTransfer's indexed `amount` (topic 3): the euint64 handle of the amount. */
+  amountHandle?: string;
 }
 
 interface EtherscanLog {
@@ -794,6 +900,7 @@ export async function getWalletTransactions(
           tokenAddress: log.address,
           tokenSymbol: tokenInfo.symbol,
           amount: null, // Encrypted
+          amountHandle: log.topics[3],
         });
       }
     }
@@ -817,6 +924,7 @@ export async function getWalletTransactions(
           tokenAddress: log.address,
           tokenSymbol: tokenInfo.symbol,
           amount: null, // Encrypted
+          amountHandle: log.topics[3],
         });
       }
     }
@@ -979,6 +1087,7 @@ async function scanTransferLogs(
           tokenAddress: log.address,
           tokenSymbol: tokenInfo.symbol,
           amount: null, // Encrypted
+          amountHandle: log.topics[3],
         });
       }
     }
@@ -991,8 +1100,8 @@ async function scanTransferLogs(
 }
 
 /**
- * Allow `operator` to move this wallet's tokens until `untilUnixSeconds`.
- * ERC-7984 has no `approve`; operators replace allowances. Pass 0 to revoke.
+ * Allow `operator` to move this wallet's tokens until `untilUnixSeconds` (0 revokes):
+ * `prepareSetOperator` and send it at once, for callers without a review step.
  */
 export async function setOperator(
   wallet: Wallet | HDNodeWallet,
@@ -1001,40 +1110,14 @@ export async function setOperator(
   untilUnixSeconds: number,
   network: NetworkName,
 ): Promise<TransferResult> {
-  // uint48 holds timestamps far beyond any realistic expiry; reject nonsense early.
-  if (!Number.isInteger(untilUnixSeconds) || untilUnixSeconds < 0 || untilUnixSeconds >= 2 ** 48) {
-    throw new Error('Operator expiry must be a unix timestamp in seconds');
-  }
-  try {
-    const provider = getProvider(network);
-    const connectedWallet = wallet.connect(provider);
-    const contract = getTokenContract(tokenAddress, network, connectedWallet);
-    const fn = contract.getFunction('setOperator(address,uint48)');
-    // Simulate first so a revert is reported before anything is signed.
-    const estimate = await fn.estimateGas(operator, untilUnixSeconds);
-    const gasLimit = (estimate * (100n + GAS_BUFFER_PERCENT)) / 100n;
-    // Same sign-locally-then-broadcast flow as transfers, so a timed-out broadcast still
-    // reports the hash instead of "could not reach the network, try again".
-    const result = await signAndBroadcast({
-      signer: connectedWallet,
-      provider,
-      build: () => fn.populateTransaction(operator, untilUnixSeconds, { gasLimit }),
-      network,
-      action: 'operator change',
-    });
-    bestEffort(() =>
-      logEvent('OPERATOR_SET', {
-        token: tokenAddress,
-        operator,
-        until: String(untilUnixSeconds),
-        network,
-        txHash: result.txHash,
-      }),
-    );
-    return result;
-  } catch (err) {
-    throw translateTxError(err, { iface: ERC7984_INTERFACE, action: 'operator change' });
-  }
+  const prepared = await prepareSetOperator(
+    wallet,
+    tokenAddress,
+    operator,
+    untilUnixSeconds,
+    network,
+  );
+  return prepared.send();
 }
 
 /** Whether `spender` may currently move `holder`'s tokens. */
@@ -1054,4 +1137,247 @@ export async function isOperator(
 export function getTxExplorerUrl(txHash: string, network: NetworkName): string {
   const config = getNetworkConfig(network);
   return `${config.explorerUrl}/tx/${txHash}`;
+}
+
+/** A simulated, fee-checked contract call (operator change, disclosure) ready to sign. */
+export interface PreparedCall {
+  gasLimit: bigint;
+  feeWei: bigint;
+  ethBalanceWei: bigint;
+  /** Sign locally, broadcast, wait for one confirmation. Same error rules as transfers. */
+  send: (hooks?: SendHooks) => Promise<TransferResult>;
+}
+
+/** What `prepareTokenCall` sends. */
+interface TokenCallSpec {
+  /** Full function signature, e.g. `setOperator(address,uint48)`. */
+  fn: string;
+  args: unknown[];
+  /** For error titles: "operator change", "disclosure request", "disclosure". */
+  action: string;
+  /** Written to the audit log once confirmed. Never contains amounts. */
+  audit: { event: AuditEvent; details: Record<string, string> };
+}
+
+/**
+ * The send-safety flow for any token call that is not a transfer: check the RPC chain,
+ * simulate (estimateGas), price the fee and check the ETH balance. Nothing is signed
+ * until `send` is called; then it goes through `signAndBroadcast`, so after the
+ * broadcast every failure keeps its hash (SENT_UNCONFIRMED, TX_REVERTED, TX_REPLACED).
+ */
+async function prepareTokenCall(
+  wallet: Wallet | HDNodeWallet,
+  tokenAddress: string,
+  network: NetworkName,
+  spec: TokenCallSpec,
+): Promise<PreparedCall> {
+  const chainId = network === 'mainnet' ? CHAIN_IDS.MAINNET : CHAIN_IDS.SEPOLIA;
+  const translateOpts = { iface: ERC7984_INTERFACE, action: spec.action };
+  try {
+    const provider = getProvider(network);
+    const rpcChainId = BigInt((await provider.send('eth_chainId', [])) as string);
+    if (rpcChainId !== chainId) {
+      throw new WalletTxError(
+        'WRONG_CHAIN',
+        'Your RPC endpoint is on the wrong network.',
+        `It serves chain ${rpcChainId}, but ${network} is chain ${chainId}.`,
+        'Fix the RPC URL in Settings, or reset it to the default.',
+      );
+    }
+    const connectedWallet = wallet.connect(provider);
+    const contract = getTokenContract(tokenAddress, network, connectedWallet);
+    const fn = contract.getFunction(spec.fn);
+    // Simulate first: a revert here means the real transaction would fail too.
+    const estimate = await fn.estimateGas(...spec.args);
+    const gasLimit = (estimate * (100n + GAS_BUFFER_PERCENT)) / 100n;
+    const [feeData, ethBalanceWei] = await Promise.all([
+      provider.getFeeData(),
+      provider.getBalance(wallet.address),
+    ]);
+    const pricePerGas = feeData.maxFeePerGas ?? feeData.gasPrice;
+    if (pricePerGas == null) {
+      throw new WalletTxError(
+        'RPC_UNAVAILABLE',
+        'Could not get the current network fee.',
+        'The RPC endpoint did not return gas price information.',
+        'Try again, or use a different RPC endpoint in Settings.',
+      );
+    }
+    const feeWei = gasLimit * pricePerGas;
+    if (ethBalanceWei < feeWei) {
+      throw new WalletTxError(
+        'INSUFFICIENT_GAS_FUNDS',
+        'Not enough ETH to pay the network fee.',
+        'Every transaction needs a little ETH for gas.',
+        'Add ETH to this wallet (on Sepolia, use a faucet) and try again.',
+      );
+    }
+    const send = async (hooks: SendHooks = {}): Promise<TransferResult> => {
+      const result = await signAndBroadcast({
+        signer: connectedWallet,
+        provider,
+        build: () => fn.populateTransaction(...spec.args, { gasLimit }),
+        network,
+        action: spec.action,
+        onSigned: (txHash) => {
+          if (hooks.onSigned) bestEffort(() => hooks.onSigned!(txHash));
+        },
+        onBroadcast: (txHash) => {
+          if (hooks.onBroadcast) bestEffort(() => hooks.onBroadcast!(txHash));
+        },
+      });
+      bestEffort(() =>
+        logEvent(spec.audit.event, { ...spec.audit.details, txHash: result.txHash }),
+      );
+      return result;
+    };
+    return { gasLimit, feeWei, ethBalanceWei, send };
+  } catch (err) {
+    throw translateTxError(err, translateOpts);
+  }
+}
+
+/** Largest value a uint48 holds; `setOperator`'s expiry type. */
+export const MAX_UINT48 = 2 ** 48 - 1;
+
+/**
+ * Prepare `setOperator(operator, until)`: simulated and fee-checked, not signed.
+ * `until` is a unix time in seconds; 0 revokes. ERC-7984 has no `approve`: an operator
+ * can move *all* of the holder's tokens until `until`.
+ */
+export async function prepareSetOperator(
+  wallet: Wallet | HDNodeWallet,
+  tokenAddress: string,
+  operator: string,
+  untilUnixSeconds: number,
+  network: NetworkName,
+): Promise<PreparedCall> {
+  if (
+    !Number.isInteger(untilUnixSeconds) ||
+    untilUnixSeconds < 0 ||
+    untilUnixSeconds > MAX_UINT48
+  ) {
+    throw new Error('Operator expiry must be a unix timestamp in seconds');
+  }
+  return prepareTokenCall(wallet, tokenAddress, network, {
+    fn: 'setOperator(address,uint48)',
+    args: [operator, untilUnixSeconds],
+    action: 'operator change',
+    audit: {
+      event: 'OPERATOR_SET',
+      details: { token: tokenAddress, operator, until: String(untilUnixSeconds), network },
+    },
+  });
+}
+
+/**
+ * Prepare `requestDiscloseEncryptedAmount(handle)`: step 1 of disclosing an amount. The
+ * token checks the caller may use the handle (ACL) and makes it publicly decryptable.
+ */
+export async function prepareDiscloseRequest(
+  wallet: Wallet | HDNodeWallet,
+  tokenAddress: string,
+  handle: string,
+  network: NetworkName,
+): Promise<PreparedCall> {
+  return prepareTokenCall(wallet, tokenAddress, network, {
+    fn: 'requestDiscloseEncryptedAmount(bytes32)',
+    args: [normaliseHandle(handle)],
+    action: 'disclosure request',
+    audit: { event: 'DISCLOSE_REQUESTED', details: { token: tokenAddress, network } },
+  });
+}
+
+/**
+ * Prepare `discloseEncryptedAmount(handle, cleartext, proof)`: step 2. The contract
+ * verifies the KMS signatures (`FHE.checkSignatures`) and emits `AmountDisclosed`.
+ * The cleartext is public on-chain from then on, but it is still never written to the
+ * audit log.
+ */
+export async function prepareDiscloseAmount(
+  wallet: Wallet | HDNodeWallet,
+  tokenAddress: string,
+  handle: string,
+  cleartext: bigint,
+  proof: string,
+  network: NetworkName,
+): Promise<PreparedCall> {
+  if (cleartext < 0n || cleartext > MAX_EUINT64) throw new Error('Not a 64-bit amount');
+  return prepareTokenCall(wallet, tokenAddress, network, {
+    fn: 'discloseEncryptedAmount(bytes32,uint64,bytes)',
+    args: [normaliseHandle(handle), cleartext, proof],
+    action: 'disclosure',
+    audit: { event: 'AMOUNT_DISCLOSED', details: { token: tokenAddress, network } },
+  });
+}
+
+/** Minimal ACL ABI (Zama host contracts), the same calls the relayer SDK makes. */
+const ACL_ABI = [
+  'function persistAllowed(bytes32 handle, address account) view returns (bool)',
+  'function isAllowedForDecryption(bytes32 handle) view returns (bool)',
+];
+
+function aclContract(aclAddress: string, network: NetworkName): Contract {
+  return new Contract(aclAddress, ACL_ABI, getProvider(network));
+}
+
+/**
+ * Which handles `user` may user-decrypt: the SDK requires both the user and the token
+ * contract to be persistently allowed on the ACL, and would fail the whole batch for one
+ * bad handle. Checking first lets the wallet show "encrypted" for those quietly.
+ */
+export async function filterUserDecryptable(
+  aclAddress: string,
+  pairs: Array<{ handle: string; contractAddress: string }>,
+  user: string,
+  network: NetworkName,
+): Promise<Set<string>> {
+  const acl = aclContract(aclAddress, network);
+  const ok = new Set<string>();
+  await Promise.all(
+    pairs.map(async (p) => {
+      const h = normaliseHandle(p.handle);
+      const [u, c] = await Promise.all([
+        acl.persistAllowed(h, user) as Promise<boolean>,
+        acl.persistAllowed(h, p.contractAddress) as Promise<boolean>,
+      ]);
+      if (u && c) ok.add(h);
+    }),
+  );
+  return ok;
+}
+
+/** Whether a handle has been made publicly decryptable (disclosure step 1 done). */
+export async function isPubliclyDecryptable(
+  aclAddress: string,
+  handle: string,
+  network: NetworkName,
+): Promise<boolean> {
+  return Boolean(
+    await aclContract(aclAddress, network).isAllowedForDecryption(normaliseHandle(handle)),
+  );
+}
+
+/**
+ * Find the ConfidentialTransfer amount handle in a mined transaction, for a transfer
+ * from or to `wallet` on one of `tokens`. Null when there is none.
+ */
+export async function findTransferHandle(
+  txHash: string,
+  wallet: string,
+  tokens: string[],
+  network: NetworkName,
+): Promise<{ token: string; handle: string } | null> {
+  const receipt = await getProvider(network).getTransactionReceipt(txHash);
+  if (!receipt) return null;
+  const me = wallet.toLowerCase();
+  const tracked = new Set(tokens.map((t) => t.toLowerCase()));
+  for (const log of receipt.logs) {
+    if (log.topics[0] !== CONFIDENTIAL_TRANSFER_TOPIC || log.topics.length < 4) continue;
+    if (!tracked.has(log.address.toLowerCase())) continue;
+    const from = parseAddressFromTopic(log.topics[1]).toLowerCase();
+    const to = parseAddressFromTopic(log.topics[2]).toLowerCase();
+    if (from === me || to === me) return { token: log.address, handle: log.topics[3] };
+  }
+  return null;
 }

@@ -1,5 +1,5 @@
 import { Wallet } from 'ethers';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -138,5 +138,107 @@ describe('MockBackend', () => {
       chainId: 11155111n,
     });
     expect(process.env.SEPOLIA_RPC_URL).toBeUndefined();
+  });
+});
+
+describe('MockBackend: one-signature decrypt, history amounts, operators, disclosure', () => {
+  it('decrypts every tracked balance with one signature and one request', async () => {
+    const m = new MockBackend(instant);
+    const extra = [
+      '0x1111111111111111111111111111111111111111',
+      '0x2222222222222222222222222222222222222222',
+    ];
+    const tokens = [...m.catalogue('sepolia').map((t) => t.address), ...extra];
+    const w = Wallet.createRandom();
+    const sign = vi.spyOn(w, 'signTypedData');
+    const session = m.newDecryptSession(w, 'sepolia');
+    const batch = await m.decryptBalances(session, tokens);
+    expect(Object.keys(batch.values)).toHaveLength(4);
+    expect(batch.values[tokens[0].toLowerCase()]).toBe(1_250_000_000n);
+    expect(sign).toHaveBeenCalledTimes(1);
+    expect(m.userDecryptRequests).toBe(1);
+    // Unchanged handles come from the cache: no new request, no new signature.
+    await m.decryptBalances(session, tokens);
+    expect(m.userDecryptRequests).toBe(1);
+    await m.decryptBalances(session, tokens, { forceRefresh: true });
+    expect(m.userDecryptRequests).toBe(2);
+    expect(sign).toHaveBeenCalledTimes(1);
+  });
+
+  it('decrypts allowed history amounts and returns null for the others', async () => {
+    const m = new MockBackend(instant);
+    const t = m.catalogue('sepolia')[0];
+    await m.syncHistory(signer.address, 'sepolia', [
+      { ...t, network: 'sepolia', addedAt: '' },
+    ] as never);
+    const tx = listTransactions({ walletAddress: signer.address, network: 'sepolia' }).find(
+      (x) => x.amountHandle,
+    )!;
+    const foreign = m.registerHandle('0x' + 'ab'.repeat(30) + '0500', 7n, [RECIPIENT]);
+    const session = m.newDecryptSession(signer, 'sepolia');
+    const out = await m.decryptAmounts(
+      session,
+      [
+        { token: t.address, handle: tx.amountHandle! },
+        { token: t.address, handle: foreign },
+      ],
+      [t.address],
+    );
+    expect(out[tx.amountHandle!.toLowerCase()]).toBe(25_000_000n);
+    expect(out[foreign]).toBeNull();
+  });
+
+  it('grants and revokes an operator with the send-safety flow', async () => {
+    let now = 1_700_000_000_000;
+    const m = new MockBackend({ ...instant, now: () => now });
+    const t = m.catalogue('sepolia')[0].address;
+    const p = await m.prepareSetOperator(signer, t, RECIPIENT, 1_700_003_600, 'sepolia');
+    expect(p.feeWei).toBeGreaterThan(0n);
+    expect(await m.operatorStatus(t, signer.address, [RECIPIENT], 'sepolia')).toEqual({
+      [RECIPIENT.toLowerCase()]: false,
+    });
+    const r = await p.send();
+    expect(r.txHash).toMatch(/^0x[0-9a-f]{64}$/);
+    await expect(p.send()).rejects.toThrow(/already used/);
+    expect(
+      (await m.operatorStatus(t, signer.address, [RECIPIENT], 'sepolia'))[RECIPIENT.toLowerCase()],
+    ).toBe(true);
+    now += 2 * 3600_000; // expired
+    expect(
+      (await m.operatorStatus(t, signer.address, [RECIPIENT], 'sepolia'))[RECIPIENT.toLowerCase()],
+    ).toBe(false);
+    now -= 2 * 3600_000;
+    await (await m.prepareSetOperator(signer, t, RECIPIENT, 0, 'sepolia')).send();
+    expect(
+      (await m.operatorStatus(t, signer.address, [RECIPIENT], 'sepolia'))[RECIPIENT.toLowerCase()],
+    ).toBe(false);
+  });
+
+  it('keeps the hash when an operator change is not confirmed', async () => {
+    const m = new MockBackend({ ...instant, fail: 'unconfirmed' });
+    const t = m.catalogue('sepolia')[0].address;
+    const p = await m.prepareSetOperator(signer, t, RECIPIENT, 0, 'sepolia');
+    const err = (await p.send().catch((e) => e)) as WalletTxError;
+    expect(err.code).toBe('SENT_UNCONFIRMED');
+    expect(err.txHash).toMatch(/^0x/);
+  });
+
+  it('discloses in two steps: request, then publish the publicly decrypted value', async () => {
+    const m = new MockBackend(instant);
+    const t = m.catalogue('sepolia')[0];
+    const h = m.registerHandle('0x' + 'cd'.repeat(30) + '0500', 42n, [signer.address]);
+    expect(await m.discloseStage(t.address, h, 'sepolia')).toBe('private');
+    await expect(m.prepareDisclose(signer, t.address, h, 'sepolia')).rejects.toMatchObject({
+      code: 'PUBLIC_DECRYPT_PENDING',
+    });
+    await (await m.prepareDiscloseRequest(signer, t.address, h, 'sepolia')).send();
+    expect(await m.discloseStage(t.address, h, 'sepolia')).toBe('requested');
+    const d = await m.prepareDisclose(signer, t.address, h, 'sepolia');
+    expect(d.value).toBe(42n);
+    await d.send();
+    expect(await m.discloseStage(t.address, h, 'sepolia')).toBe('disclosed');
+    await expect(
+      m.prepareDiscloseRequest(Wallet.createRandom(), t.address, h, 'sepolia'),
+    ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
   });
 });

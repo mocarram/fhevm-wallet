@@ -62,6 +62,7 @@ export async function syncTransactions(
     from: tx.from,
     to: tx.to,
     amount: tx.amount, // ETH transfers have amount, token transfers are null
+    ...(tx.amountHandle ? { amountHandle: tx.amountHandle } : {}),
     network,
     blockNumber: tx.blockNumber,
     timestamp: new Date(tx.timestamp * 1000).toISOString(),

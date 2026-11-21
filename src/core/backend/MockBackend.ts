@@ -18,11 +18,28 @@
  * the real one under the data directory.
  */
 
-import { getAddress, id, parseEther } from 'ethers';
+import { getAddress, hexlify, id, parseEther, randomBytes, verifyTypedData } from 'ethers';
+import {
+  DecryptSession,
+  decryptDaysFromEnv,
+  handleBits,
+  MAX_BITS_PER_REQUEST,
+  MAX_CONTRACTS_PER_SIGNATURE,
+  normaliseHandle,
+  type DecryptAuthority,
+} from '../fhe/DecryptSession.js';
+import { getAmountEntry } from '../../storage/AmountCache.js';
+import { getTransactionByHash } from '../../storage/TransactionStore.js';
+import { getCachedBalance } from '../token/BalanceCache.js';
 import type { NetworkName } from '../network/NetworkConfig.js';
 import { NETWORK_CONFIGS } from '../network/NetworkConfig.js';
 import type { RpcProbe } from '../network/ProviderFactory.js';
-import { sentButUnconfirmed, translateTxError, WalletTxError } from '../token/txErrors.js';
+import {
+  pendingPublicDecryption,
+  sentButUnconfirmed,
+  translateTxError,
+  WalletTxError,
+} from '../token/txErrors.js';
 import { ERC7984_INTERFACE, type TokenInfo } from '../token/TokenService.js';
 import { setCachedBalance } from '../token/BalanceCache.js';
 import { assertTransferAmount } from '../token/TokenService.js';
@@ -32,10 +49,15 @@ import type { KnownToken } from '../token/tokenLists.js';
 import type { ScanOptions, ScanResult } from '../token/tokenScan.js';
 import { upsertTransactions } from '../../storage/TransactionStore.js';
 import type {
+  AmountRequest,
   Backend,
+  BalanceBatch,
+  DiscloseStage,
   HistorySyncResult,
+  PreparedDisclose,
   PreparedSend,
   RelayerCheck,
+  PreparedTx,
   RpcCheck,
   RpcEndpointCheck,
   SendResult,
@@ -54,6 +76,23 @@ export interface MockOptions {
   fail?: MockFailure;
   /** Wait function; tests pass one that resolves immediately. */
   sleep?: (ms: number) => Promise<void>;
+  /** Clock in ms (operator expiry, decrypt signatures); tests pass a fixed one. */
+  now?: () => number;
+}
+
+/** EIP-712 the mock asks wallets to sign for user decryption (shape of the real one). */
+const MOCK_DECRYPT_TYPES = {
+  UserDecryptRequestVerification: [
+    { name: 'publicKey', type: 'bytes' },
+    { name: 'contractAddresses', type: 'address[]' },
+    { name: 'startTimestamp', type: 'uint256' },
+    { name: 'durationDays', type: 'uint256' },
+  ],
+};
+
+/** A mock euint64 handle: 30 hash bytes, type byte 5 (euint64), version byte. */
+function mockHandle(label: string): string {
+  return '0x' + id(`fhew-mock-handle:${label}`).slice(2, 62) + '0500';
 }
 
 /** Gas a mock confidential transfer uses, and the mock gas price (1 gwei). */
@@ -145,10 +184,372 @@ export class MockBackend implements Backend {
   private readonly seeded = new Set<string>();
   private block = 7_000_000;
   private nonce = 0;
+  /** Ciphertext handles the mock "chain" knows: value and who may decrypt (lowercase). */
+  private readonly handles = new Map<string, { value: bigint; allowed: Set<string> }>();
+  /** operator expiry (unix s) per `${network}:${token}:${holder}:${operator}` (lowercase) */
+  private readonly operators = new Map<string, number>();
+  /** handles made publicly decryptable (disclosure step 1) */
+  private readonly publicHandles = new Set<string>();
+  /** handles disclosed on the mock chain (step 2) */
+  private readonly disclosedHandles = new Set<string>();
+  /** userDecrypt requests served, for tests that count batching */
+  userDecryptRequests = 0;
 
   constructor(opts: Partial<MockOptions> = {}) {
     this.opts = { ...mockOptionsFromEnv({}), ...opts };
     this.sleep = opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  }
+
+  private nowMs(): number {
+    return this.opts.now?.() ?? Date.now();
+  }
+
+  /** Register a handle on the mock chain, decryptable by `allowed` (addresses). */
+  registerHandle(handle: string, value: bigint, allowed: string[]): string {
+    const h = normaliseHandle(handle);
+    this.handles.set(h, { value, allowed: new Set(allowed.map((a) => a.toLowerCase())) });
+    return h;
+  }
+
+  /** The current balance handle of `wallet` (changes whenever the balance does). */
+  private balanceHandle(network: NetworkName, token: string, wallet: string): string {
+    const value = this.balanceOf(network, token, wallet);
+    const h = mockHandle(`bal:${this.balanceKey(network, token, wallet)}:${value}`);
+    return this.registerHandle(h, value, [wallet, token]);
+  }
+
+  /** Simulated relayer: real EIP-712 signatures from the wallet, the SDK's limits and ACL rule. */
+  private authority(network: NetworkName): DecryptAuthority {
+    const domain = {
+      name: 'MockDecryption',
+      version: '1',
+      chainId: Number(NETWORK_CONFIGS[network].chainId),
+      verifyingContract: mockAddress('kms-verifier'),
+    };
+    return {
+      authorize: async (signer, contracts, startTimestamp, durationDays) => {
+        const publicKey = hexlify(randomBytes(32));
+        const privateKey = hexlify(randomBytes(32));
+        const message = { publicKey, contractAddresses: contracts, startTimestamp, durationDays };
+        const signature = await signer.signTypedData(domain, MOCK_DECRYPT_TYPES, message);
+        return {
+          publicKey,
+          privateKey,
+          signature,
+          contracts,
+          userAddress: signer.address,
+          startTimestamp,
+          durationDays,
+        };
+      },
+      userDecrypt: async (auth, pairs) => {
+        await this.sleep(this.opts.latencyMs);
+        this.rpcFailure();
+        this.userDecryptRequests += 1;
+        // The same checks the SDK makes before it contacts the relayer.
+        if (auth.contracts.length > MAX_CONTRACTS_PER_SIGNATURE) {
+          throw new Error('contractAddresses max length of 10 exceeded');
+        }
+        if (pairs.reduce((n, p) => n + handleBits(p.handle), 0) > MAX_BITS_PER_REQUEST) {
+          throw new Error('Cannot decrypt more than 2048 encrypted bits in a single request');
+        }
+        const message = {
+          publicKey: auth.publicKey,
+          contractAddresses: auth.contracts,
+          startTimestamp: auth.startTimestamp,
+          durationDays: auth.durationDays,
+        };
+        const who = verifyTypedData(domain, MOCK_DECRYPT_TYPES, message, auth.signature);
+        if (who.toLowerCase() !== auth.userAddress.toLowerCase()) {
+          throw new Error('Invalid user decryption signature');
+        }
+        const user = auth.userAddress.toLowerCase();
+        const out: Record<string, bigint> = {};
+        for (const p of pairs) {
+          const h = normaliseHandle(p.handle);
+          const entry = this.handles.get(h);
+          const contract = p.contractAddress.toLowerCase();
+          if (!entry || !entry.allowed.has(user) || !auth.contracts.includes(contract)) {
+            throw new Error(
+              `User address ${auth.userAddress} is not authorized to user decrypt handle ${h}!`,
+            );
+          }
+          out[h] = entry.value;
+        }
+        return out;
+      },
+    };
+  }
+
+  newDecryptSession(signer: UnlockedSigner, network: NetworkName): DecryptSession {
+    return new DecryptSession(signer, network, this.authority(network), {
+      durationDays: decryptDaysFromEnv(),
+      now: () => this.nowMs(),
+    });
+  }
+
+  async decryptBalances(
+    session: DecryptSession,
+    tokens: string[],
+    opts: { forceRefresh?: boolean } = {},
+  ): Promise<BalanceBatch> {
+    const network = session.network;
+    const owner = session.address;
+    const values: Record<string, bigint> = {};
+    const errors: Record<string, unknown> = {};
+    const todo: Array<{ token: string; handle: string }> = [];
+    try {
+      await this.sleep(Math.min(this.opts.latencyMs, 100)); // the handle reads
+      this.rpcFailure();
+    } catch (err) {
+      for (const t of tokens) errors[t.toLowerCase()] = err;
+      return { values, errors };
+    }
+    for (const token of tokens) {
+      const handle = this.balanceHandle(network, token, owner);
+      const cached = opts.forceRefresh
+        ? null
+        : getCachedBalance(owner, token, network, BigInt(handle));
+      if (cached !== null) values[token.toLowerCase()] = cached;
+      else todo.push({ token, handle });
+    }
+    if (todo.length) {
+      let outcome;
+      try {
+        outcome = await session.decrypt(
+          todo.map((t) => ({ handle: t.handle, contractAddress: t.token })),
+          tokens,
+        );
+      } catch (err) {
+        for (const t of todo) errors[t.token.toLowerCase()] = err;
+        return { values, errors };
+      }
+      for (const t of todo) {
+        const v = outcome.values.get(t.handle);
+        if (v === undefined) {
+          errors[t.token.toLowerCase()] = outcome.errors.get(t.handle);
+          continue;
+        }
+        values[t.token.toLowerCase()] = v;
+        try {
+          setCachedBalance(owner, t.token, network, BigInt(t.handle), v);
+        } catch {
+          // the cache is an optimisation
+        }
+      }
+    }
+    return { values, errors };
+  }
+
+  async decryptAmounts(
+    session: DecryptSession,
+    requests: AmountRequest[],
+    contracts: string[],
+  ): Promise<Record<string, bigint | null>> {
+    const out: Record<string, bigint | null> = {};
+    const user = session.address.toLowerCase();
+    const allowed = requests
+      .map((r) => ({ handle: normaliseHandle(r.handle), contractAddress: r.token }))
+      .filter((p) => {
+        // The ACL pre-check the real backend makes: not allowed → null, no error.
+        const ok = this.handles.get(p.handle)?.allowed.has(user) ?? false;
+        if (!ok) out[p.handle] = null;
+        return ok;
+      });
+    const { values } = await session.decrypt(allowed, contracts);
+    for (const [h, v] of values) out[h] = v;
+    return out;
+  }
+
+  private operatorKey(network: NetworkName, token: string, holder: string, op: string): string {
+    return `${network}:${token}:${holder}:${op}`.toLowerCase();
+  }
+
+  async operatorStatus(
+    tokenAddress: string,
+    holder: string,
+    spenders: string[],
+    network: NetworkName,
+  ): Promise<Record<string, boolean>> {
+    await this.sleep(Math.min(this.opts.latencyMs, 100));
+    this.rpcFailure();
+    const now = Math.floor(this.nowMs() / 1000);
+    return Object.fromEntries(
+      spenders.map((sp) => [
+        sp.toLowerCase(),
+        (this.operators.get(this.operatorKey(network, tokenAddress, holder, sp)) ?? 0) >= now,
+      ]),
+    );
+  }
+
+  /** Shared pre-flight for non-transfer calls: latency, injected failures, fee and ETH. */
+  private async prepareCall(
+    from: string,
+    network: NetworkName,
+    label: string,
+    onConfirmed: () => void,
+  ): Promise<PreparedTx> {
+    await this.sleep(this.opts.latencyMs);
+    this.rpcFailure();
+    if (this.opts.fail === 'simulate') {
+      throw translateTxError(
+        Object.assign(new Error(`missing revert data (mock: estimateGas ${label})`), {
+          code: 'CALL_EXCEPTION',
+          action: 'estimateGas',
+          data: null,
+        }),
+        { iface: ERC7984_INTERFACE, action: label },
+      );
+    }
+    const feeWei = (MOCK_GAS / 3n) * MOCK_GAS_PRICE;
+    const ethBalanceWei = this.ethOf(from);
+    if (ethBalanceWei < feeWei) {
+      throw new WalletTxError(
+        'INSUFFICIENT_GAS_FUNDS',
+        'Not enough ETH to pay the network fee.',
+        'Every transaction needs a little ETH for gas.',
+        'Add ETH to this wallet (on Sepolia, use a faucet) and try again.',
+      );
+    }
+    let used = false;
+    return {
+      feeWei,
+      ethBalanceWei,
+      send: async (hooks = {}) => {
+        if (used) throw new Error('This prepared transaction was already used.');
+        used = true;
+        const r = await this.broadcastMock(network, from, label, feeWei, hooks);
+        onConfirmed();
+        return r;
+      },
+    };
+  }
+
+  async prepareSetOperator(
+    signer: UnlockedSigner,
+    tokenAddress: string,
+    operator: string,
+    untilUnixSeconds: number,
+    network: NetworkName,
+  ): Promise<PreparedTx> {
+    if (
+      !Number.isInteger(untilUnixSeconds) ||
+      untilUnixSeconds < 0 ||
+      untilUnixSeconds >= 2 ** 48
+    ) {
+      throw new Error('Operator expiry must be a unix timestamp in seconds');
+    }
+    const key = this.operatorKey(network, tokenAddress, signer.address, operator);
+    return this.prepareCall(signer.address, network, 'operator change', () =>
+      this.operators.set(key, untilUnixSeconds),
+    );
+  }
+
+  async discloseStage(
+    _tokenAddress: string,
+    handle: string,
+    network: NetworkName,
+  ): Promise<DiscloseStage> {
+    const h = normaliseHandle(handle);
+    if (this.disclosedHandles.has(h) || getAmountEntry(network, h)?.disclosed) return 'disclosed';
+    return this.publicHandles.has(h) ? 'requested' : 'private';
+  }
+
+  async prepareDiscloseRequest(
+    signer: UnlockedSigner,
+    _tokenAddress: string,
+    handle: string,
+    network: NetworkName,
+  ): Promise<PreparedTx> {
+    const h = normaliseHandle(handle);
+    if (!this.handles.get(h)?.allowed.has(signer.address.toLowerCase())) {
+      // What ERC7984UnauthorizedUseOfEncryptedAmount looks like after translation.
+      throw new WalletTxError(
+        'UNAUTHORIZED',
+        'This wallet may not disclose that amount.',
+        'Only the sender and the recipient of a transfer can use its encrypted amount.',
+        'Pick a transfer you sent or received.',
+      );
+    }
+    return this.prepareCall(signer.address, network, 'disclosure request', () =>
+      this.publicHandles.add(h),
+    );
+  }
+
+  async prepareDisclose(
+    signer: UnlockedSigner,
+    _tokenAddress: string,
+    handle: string,
+    network: NetworkName,
+  ): Promise<PreparedDisclose> {
+    const h = normaliseHandle(handle);
+    await this.sleep(this.opts.latencyMs); // the public decryption round trip
+    if (!this.publicHandles.has(h)) throw pendingPublicDecryption();
+    const value = this.handles.get(h)!.value;
+    const prepared = await this.prepareCall(signer.address, network, 'disclosure', () =>
+      this.disclosedHandles.add(h),
+    );
+    return { ...prepared, value };
+  }
+
+  async findTransferHandle(txHash: string): Promise<AmountRequest | null> {
+    // No receipts on the mock chain: only transfers already in local history are known.
+    const tx = getTransactionByHash(txHash);
+    return tx?.amountHandle ? { token: tx.tokenAddress, handle: tx.amountHandle } : null;
+  }
+
+  /**
+   * Simulated broadcast + confirmation shared by transfers and other calls, with the
+   * injected failure modes translated exactly like real ones.
+   */
+  private async broadcastMock(
+    network: NetworkName,
+    from: string,
+    label: string,
+    feeWei: bigint,
+    hooks: { onSigned?: (h: string) => void; onBroadcast?: (h: string) => void },
+  ): Promise<{ txHash: string; blockNumber: number }> {
+    const txHash = id(`fhew-mock-tx:${network}:${from}:${label}:${this.nonce++}`);
+    const explorer = this.explorerTxUrl(txHash, network);
+    safe(() => hooks.onSigned?.(txHash));
+    safe(() => hooks.onBroadcast?.(txHash));
+    await this.sleep(this.opts.confirmMs);
+    const blockNumber = ++this.block;
+    if (this.opts.fail === 'unconfirmed') {
+      throw sentButUnconfirmed(
+        Object.assign(new Error('timeout (mock)'), { code: 'TIMEOUT' }),
+        txHash,
+        explorer,
+      );
+    }
+    if (this.opts.fail === 'reverted') {
+      this.eth.set(from.toLowerCase(), this.ethOf(from) - feeWei); // gas is paid anyway
+      throw sentButUnconfirmed(
+        Object.assign(new Error('transaction execution reverted (mock)'), {
+          code: 'CALL_EXCEPTION',
+          action: 'sendTransaction',
+          receipt: { hash: txHash, status: 0 },
+        }),
+        txHash,
+        explorer,
+      );
+    }
+    if (this.opts.fail === 'replaced') {
+      const other = id(`fhew-mock-replacement:${txHash}`);
+      throw sentButUnconfirmed(
+        Object.assign(new Error('transaction was replaced (mock)'), {
+          code: 'TRANSACTION_REPLACED',
+          reason: 'replaced',
+          hash: other,
+          replacement: { hash: other },
+          receipt: { hash: other, status: 1 },
+        }),
+        txHash,
+        explorer,
+      );
+    }
+    this.eth.set(from.toLowerCase(), this.ethOf(from) - feeWei);
+    return { txHash, blockNumber };
   }
 
   /** The token catalogue for `network` (exposed for tests and first-run setup). */
@@ -268,9 +669,10 @@ export class MockBackend implements Backend {
     await this.sleep(this.opts.latencyMs);
     this.rpcFailure();
     const value = this.balanceOf(network, tokenAddress, signer.address);
+    const handle = this.balanceHandle(network, tokenAddress, signer.address);
     // Keep the real cache in step so Home can show "cached 2m ago" after a restart.
     try {
-      setCachedBalance(signer.address, tokenAddress, network, BigInt(id(`h:${value}`)), value);
+      setCachedBalance(signer.address, tokenAddress, network, BigInt(handle), value);
     } catch {
       // Cache is an optimisation; ignore disk errors like the real path does.
     }
@@ -327,53 +729,18 @@ export class MockBackend implements Backend {
       // A prepared transfer is single-use, like a signed transaction with one nonce.
       if (used) throw new Error('This prepared send was already used.');
       used = true;
-      const txHash = id(`fhew-mock-tx:${network}:${from}:${to}:${amount}:${this.nonce++}`);
-      const explorer = this.explorerTxUrl(txHash, network);
-      safe(() => hooks.onSigned?.(txHash));
-      safe(() => hooks.onBroadcast?.(txHash));
-      await this.sleep(this.opts.confirmMs);
-      const blockNumber = ++this.block;
-
-      if (this.opts.fail === 'unconfirmed') {
-        throw sentButUnconfirmed(
-          Object.assign(new Error('timeout (mock)'), { code: 'TIMEOUT' }),
-          txHash,
-          explorer,
-        );
-      }
-      if (this.opts.fail === 'reverted') {
-        this.eth.set(from.toLowerCase(), this.ethOf(from) - feeWei); // gas is paid anyway
-        throw sentButUnconfirmed(
-          Object.assign(new Error('transaction execution reverted (mock)'), {
-            code: 'CALL_EXCEPTION',
-            action: 'sendTransaction',
-            receipt: { hash: txHash, status: 0 },
-          }),
-          txHash,
-          explorer,
-        );
-      }
-      if (this.opts.fail === 'replaced') {
-        const other = id(`fhew-mock-replacement:${txHash}`);
-        throw sentButUnconfirmed(
-          Object.assign(new Error('transaction was replaced (mock)'), {
-            code: 'TRANSACTION_REPLACED',
-            reason: 'replaced',
-            hash: other,
-            replacement: { hash: other },
-            receipt: { hash: other, status: 1 },
-          }),
-          txHash,
-          explorer,
-        );
-      }
-
-      // Confirmed: move the tokens, pay the fee, credit the recipient.
+      const { txHash, blockNumber } = await this.broadcastMock(
+        network,
+        from,
+        `transfer:${to}:${amount}`,
+        feeWei,
+        hooks,
+      );
+      // Confirmed: move the tokens and credit the recipient (the fee is already paid).
       const after = this.balanceOf(network, tokenAddress, from) - amount;
       this.balances.set(this.balanceKey(network, tokenAddress, from), after);
       const toKey = this.balanceKey(network, tokenAddress, to);
       this.balances.set(toKey, this.balanceOf(network, tokenAddress, to) + amount);
-      this.eth.set(from.toLowerCase(), this.ethOf(from) - feeWei);
       const result: SendResult = {
         txHash,
         blockNumber,
@@ -396,6 +763,13 @@ export class MockBackend implements Backend {
     const key = `${network}:${address}`.toLowerCase();
     if (this.seeded.has(key) || tokens.length === 0) return { newCount: 0, method: 'mock' };
     this.seeded.add(key);
+    // The incoming transfer's amount: 25 tokens, decryptable by both parties (as
+    // OpenZeppelin's ERC7984 allows sender and recipient on the ACL).
+    const amountHandle = this.registerHandle(
+      mockHandle(`amt:${key}`),
+      25n * 10n ** BigInt(tokens[0].decimals),
+      [address, mockAddress('sender'), tokens[0].address],
+    );
     // One incoming confidential transfer (amount encrypted, as the chain shows it) and one
     // incoming ETH transfer, at fixed blocks and times so output is stable.
     const faucet = mockAddress('faucet');
@@ -409,6 +783,7 @@ export class MockBackend implements Backend {
         from: sender,
         to: address,
         amount: null,
+        amountHandle,
         network,
         blockNumber: 6_999_000,
         timestamp: '2026-11-18T09:40:00.000Z',

@@ -13,10 +13,13 @@ import type { HDNodeWallet, Wallet } from 'ethers';
 import type { NetworkName } from '../network/NetworkConfig.js';
 import type { RpcProbe } from '../network/ProviderFactory.js';
 import type { TokenEntry } from '../token/TokenRegistry.js';
-import type { SendHooks, TokenInfo, TransferResult } from '../token/TokenService.js';
 import type { TokenCheck } from '../token/erc7984Check.js';
 import type { KnownToken } from '../token/tokenLists.js';
 import type { ScanOptions, ScanResult } from '../token/tokenScan.js';
+import type { BalanceBatch, SendHooks, TokenInfo, TransferResult } from '../token/TokenService.js';
+import type { DecryptSession } from '../fhe/DecryptSession.js';
+
+export type { BalanceBatch } from '../token/TokenService.js';
 
 /** Which implementation is running. The UI shows a MOCK badge for 'mock'. */
 export type BackendKind = 'real' | 'mock';
@@ -46,6 +49,33 @@ export interface PreparedSend {
    * broadcast every error carries the hash (SENT_UNCONFIRMED, TX_REVERTED, TX_REPLACED).
    */
   send: (hooks?: SendHooks) => Promise<SendResult>;
+}
+
+/** A simulated, fee-checked contract call (operator change, disclosure) ready to sign. */
+export interface PreparedTx {
+  feeWei: bigint;
+  ethBalanceWei: bigint;
+  /** Same rules as `PreparedSend.send`: after the broadcast every error keeps its hash. */
+  send: (hooks?: SendHooks) => Promise<{ txHash: string; blockNumber: number }>;
+}
+
+/** A transfer amount to decrypt: its handle and the token contract that holds it. */
+export interface AmountRequest {
+  token: string;
+  handle: string;
+}
+
+/**
+ * Where a transfer amount is in the disclosure flow:
+ * - private: only the parties can decrypt it
+ * - requested: made publicly decryptable on-chain (step 1 done), not published yet
+ * - disclosed: published on-chain with its KMS proof (this wallet did it)
+ */
+export type DiscloseStage = 'private' | 'requested' | 'disclosed';
+
+/** A prepared step 2 of a disclosure: the publicly decrypted value and its transaction. */
+export interface PreparedDisclose extends PreparedTx {
+  value: bigint;
 }
 
 /** Result of checking the configured RPC endpoint. */
@@ -116,8 +146,39 @@ export interface Backend {
   ): Promise<bigint>;
 
   /**
+   * A user-decrypt session for `signer` on `network`: signs once (EIP-712) for every
+   * tracked token and is reused until the token set changes or it expires. Memory only;
+   * the caller clears it when the wallet locks.
+   */
+  newDecryptSession(signer: UnlockedSigner, network: NetworkName): DecryptSession;
+
+  /**
+   * Decrypt the session wallet's balances of `tokens` with as few signatures and relayer
+   * requests as possible. Unchanged handles come from the local cache unless
+   * `forceRefresh`. Per-token failures are in `errors`; this only throws on bugs.
+   */
+  decryptBalances(
+    session: DecryptSession,
+    tokens: string[],
+    opts?: { forceRefresh?: boolean },
+  ): Promise<BalanceBatch>;
+
+  /**
+   * Decrypt transfer amounts with the session. Result by lowercase handle: the value,
+   * or null when this wallet is not allowed to decrypt it (shown as "encrypted").
+   * Handles missing from the result failed for another reason and may be retried.
+   * `contracts` is the full tracked token list, so the session's signature is reused.
+   */
+  decryptAmounts(
+    session: DecryptSession,
+    requests: AmountRequest[],
+    contracts: string[],
+  ): Promise<Record<string, bigint | null>>;
+
+  /**
    * Encrypt the amount, check chain, balance and gas, and simulate the transfer. Nothing is
-   * signed. Throws `WalletTxError` with a plain-English title, cause and hint.
+   * signed. Throws `WalletTxError` with a plain-English title, cause and hint. With a
+   * session, the balance checks before and after reuse its signature.
    */
   prepareTransfer(
     signer: UnlockedSigner,
@@ -125,7 +186,56 @@ export interface Backend {
     to: string,
     amount: bigint,
     network: NetworkName,
+    opts?: { session?: DecryptSession },
   ): Promise<PreparedSend>;
+
+  /** Which of `spenders` are operators for `holder` on a token right now (by lowercase address). */
+  operatorStatus(
+    tokenAddress: string,
+    holder: string,
+    spenders: string[],
+    network: NetworkName,
+  ): Promise<Record<string, boolean>>;
+
+  /** Simulate `setOperator(operator, until)` (0 revokes) and price it. Nothing is signed. */
+  prepareSetOperator(
+    signer: UnlockedSigner,
+    tokenAddress: string,
+    operator: string,
+    untilUnixSeconds: number,
+    network: NetworkName,
+  ): Promise<PreparedTx>;
+
+  /** Where an amount handle is in the disclosure flow. */
+  discloseStage(tokenAddress: string, handle: string, network: NetworkName): Promise<DiscloseStage>;
+
+  /** Step 1: simulate `requestDiscloseEncryptedAmount(handle)`. Nothing is signed. */
+  prepareDiscloseRequest(
+    signer: UnlockedSigner,
+    tokenAddress: string,
+    handle: string,
+    network: NetworkName,
+  ): Promise<PreparedTx>;
+
+  /**
+   * Step 2: publicly decrypt the handle through the relayer (throws
+   * `PUBLIC_DECRYPT_PENDING` while that is not possible yet), then simulate
+   * `discloseEncryptedAmount(handle, value, proof)`. Nothing is signed.
+   */
+  prepareDisclose(
+    signer: UnlockedSigner,
+    tokenAddress: string,
+    handle: string,
+    network: NetworkName,
+  ): Promise<PreparedDisclose>;
+
+  /** The ConfidentialTransfer amount handle in a transaction from or to `wallet`, if any. */
+  findTransferHandle(
+    txHash: string,
+    wallet: string,
+    tokens: string[],
+    network: NetworkName,
+  ): Promise<AmountRequest | null>;
 
   /** Pull new transfers for `address` into the local transaction store. */
   syncHistory(
