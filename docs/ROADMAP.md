@@ -122,16 +122,16 @@ contains a private key, phrase or API key.
 
 Matches `docs/ui-design.md`.
 
-- [ ] `@inquirer/prompts` replaces `inquirer`
-- [ ] Router with a back-stack; Esc = back one step, Ctrl+C = home, second Ctrl+C on Home quits
-- [ ] Status bar: breadcrumb, network badge (red on mainnet), wallet, lock state, ETH, pending
-- [ ] Results shown inline above the menu; no "Press Enter to continue"
-- [ ] Send wizard (Token → Recipient → Amount → Review → Sign) with step-back that keeps input
-- [ ] Number keys 1-9, `0` quits, letter shortcuts on Home, stable numbering
-- [ ] Sticky defaults (last token / recipient per network)
-- [ ] `?` help for the current screen
-- [ ] `:` command bar (`send bob 25 cusdc`, `balances`, `doctor`, `lock`, …)
-- [ ] `interactive.ts` split into one module per screen; shared flows with subcommands
+- [x] `@inquirer/prompts` replaces `inquirer`
+- [x] Router with a back-stack; Esc = back one step, Ctrl+C = home, second Ctrl+C on Home quits
+- [x] Status bar: breadcrumb, network badge (red on mainnet), wallet, lock state, ETH, pending
+- [x] Results shown inline above the menu; no "Press Enter to continue"
+- [x] Send wizard (Token → Recipient → Amount → Review → Sign) with step-back that keeps input
+- [x] Number keys 1-9, `0` quits, letter shortcuts on Home, stable numbering
+- [x] Sticky defaults (last token / recipient per network)
+- [x] `?` help for the current screen
+- [x] `:` command bar (`send bob 25 cusdc`, `balances`, `doctor`, `lock`, …)
+- [x] `interactive.ts` split into one module per screen; shared flows with subcommands
 
 Acceptance: e2e test drives Home → Send → Esc back through each step → Ctrl+C → Home in a
 pseudo-terminal against the mock backend.
@@ -147,15 +147,15 @@ pseudo-terminal against the mock backend.
 - [ ] Disclose a transfer amount
 - [ ] `--json` output on non-interactive commands
 - [ ] Receive screen with terminal QR code
-- [ ] First-run setup (wallet → network → token → gas)
-- [ ] Repeat last send (`.`), friendlier amounts (`max`, `half`, `1k`, `1,250.50`)
-- [ ] "Next time: fhew send …" hint after interactive sends
+- [x] First-run setup (wallet → network → token → gas) (done with the Phase 3 TUI)
+- [x] Repeat last send (`.`), friendlier amounts (`max`, `half`, `1k`, `1,250.50`) (done with the Phase 3 TUI)
+- [x] "Next time: fhew send …" hint after interactive sends (done with the Phase 3 TUI)
 - [ ] Cached balances on Home with age; background re-decrypt
-- [ ] Non-blocking sends with pending indicator
-- [ ] Recipient checks: first-time note, look-alike stop, save-contact offer
-- [ ] Cancellable send countdown (configurable; always on for mainnet)
-- [ ] Low-gas nudge
-- [ ] Lock now (`L`) and auto-lock timer
+- [x] Non-blocking sends with pending indicator (done with the Phase 3 TUI)
+- [x] Recipient checks: first-time note, look-alike stop, save-contact offer (done with the Phase 3 TUI)
+- [x] Cancellable send countdown (configurable; always on for mainnet) (done with the Phase 3 TUI)
+- [x] Low-gas nudge (done with the Phase 3 TUI)
+- [x] Lock now (`L`) and auto-lock timer (done with the Phase 3 TUI)
 
 Acceptance: e2e covers first-run, a full send with countdown cancel and resend, look-alike
 warning, lock/unlock, doctor output and `--json`.

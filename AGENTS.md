@@ -37,14 +37,15 @@ npm run verify         # everything above, in order; must pass before any merge
 src/
   index.ts                 entry; loads env, starts commander
   cli/                     commander subcommands (non-interactive: fhew send, fhew balance …)
-  cli/commands/interactive.ts   interactive menu (being replaced by src/tui, Phase 3)
-  tui/                     [planned, Phase 3] router, screens, status bar, keymap
+  cli/commands/interactive.ts   thin launcher for the TUI (`fhew`, `fhew interactive`)
+  tui/                     interactive terminal UI (see "Terminal UI" below)
   core/
     network/               RPC config, provider factory (timeouts, fallbacks), chain checks
     fhe/                   relayer SDK instance, encryption, decryption
     token/                 ERC-7984 calls (TokenService), registry, balance cache
     wallet/                keystore encryption and wallet loading
-    backend/               [planned, Phase 3] Backend interface + real and mock implementations
+    backend/               Backend interface + RealBackend and offline MockBackend
+    send/                  friendly amounts, address checks, recipient/token resolution
   storage/                 JSON stores under the data dir (owner-only permissions)
   utils/                   validation, formatting, amount parsing
 tests/                     vitest; mirrors src/
@@ -63,11 +64,45 @@ tests/e2e/                 end-to-end runs of dist/index.js in a throwaway HOME
   decrypted balance before sending and confirm it moved afterwards.
 - Encrypted inputs are bound to `(contract, sender)`. The sender must be `msg.sender`.
 
-## Offline mock backend (planned, Phase 3)
+## Offline mock backend
 
 `FHEW_BACKEND=mock` swaps the chain + relayer for an in-memory simulation
 (`src/core/backend/MockBackend.ts`). Use it for e2e tests and demos. It must never be the
-default and must print a visible `MOCK` badge in the status bar.
+default and must print a visible `MOCK` badge in the status bar. Knobs:
+`FHEW_MOCK_LATENCY_MS`, `FHEW_MOCK_CONFIRM_MS`, `FHEW_MOCK_ETH` and
+`FHEW_MOCK_FAIL=simulate|unconfirmed|reverted|replaced|rpc` (failures go through the real
+error translation). Keystores, contacts, tokens and settings always use the real storage.
+
+## Terminal UI (src/tui)
+
+The approved design is `docs/ui-design.md`. Layout of the code:
+
+```
+tui/
+  app.ts          pure core: handleKey(state, key) and tick(state, now) → effects;
+                  render(state, size) → styled lines. Key precedence is documented here.
+  state.ts        AppState, router/back-stack (push, back, goHome), lock helpers
+  screen.ts       ScreenDef / ScreenView / menu Item types, stable numbering
+  screens/        one module per screen; registry.ts maps ids to modules
+  flows/          logic shared by screens (send, wallet, data, manage); no drawing
+  components/     reusable menu and multi-select list (Space, a, Enter)
+  effects.ts      Effect = described I/O, run by the shell with Deps (backend, …)
+  errors.ts       describeError: the ONLY way a TUI error reaches the screen
+  statusBar.ts, commandParser.ts, text.ts (styled segments → ANSI), keys.ts
+  shell.ts        thin I/O: alternate screen, raw keys, resize, timer, restore on
+                  quit/crash/signals, drops the key and destroys providers on exit
+  index.ts        runTui(): picks the backend and network, starts the shell
+```
+
+Rules: screens never do I/O in `view` (they render from `state.data`, a snapshot
+reloaded by effects); every user-visible error goes through `describeError`; secret text
+fields are listed in `SECRET_FIELDS` and cleared on Esc/Ctrl+C; no ora spinners or
+`console.log` while the TUI owns the screen.
+
+Testing: `tests/tui/harness.ts` drives the real core with the MockBackend and no delays
+(press keys, `settle()` effects, `text()` the frame). `tests/e2e/tui.e2e.test.ts` runs the
+built binary in a pty via `tests/e2e/pty_driver.py` (Python stdlib). To try it by hand:
+`FHEW_BACKEND=mock FHEVM_WALLET_HOME=$(mktemp -d) node dist/index.js`.
 
 The sandboxed cloud environment usually cannot reach Ethereum RPCs. When you cannot test
 on-chain, say so explicitly in your report and list what the user should run by hand.

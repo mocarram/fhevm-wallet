@@ -39,7 +39,10 @@ This file is the text reference agents build against.
 | : | Command bar | not in text fields |
 | ? | Help for this screen | not in text fields |
 | L | Lock now | not in text fields |
-| / | Filter list | long lists |
+| / | Filter list (planned, Phase 4) | long lists |
+| e | What happened to the last send | Home, after a failed send |
+| p | Paste an address | Send › Recipient |
+| Space / a | Select one / all | multi-select lists (Remove tokens, Find tokens) |
 
 ## Home
 
@@ -52,14 +55,26 @@ Wallets, Tokens, Address book, Settings, Doctor, `0` Quit.
 Token → Recipient → Amount → Review → Sign, with a stepper line. Amount accepts
 `25`, `1,250.50`, `1k`, `half`, `max` and shows the exact value. Review shows the fee
 estimate and three checks (simulation, balance, ERC-7984). If unlocked, Sign is skipped.
-Then a cancellable countdown (default 5 s), broadcast, and return to Home with
-`1 pending` in the status bar. On confirmation: balance re-decrypt, success notice with
+If locked, Sign asks for the password and then returns to Review, now with the fee
+and the three checks (they need the decrypted key), so nothing is broadcast that the
+user has not seen checked. On Mainnet the amount is retyped before the countdown.
+Then a cancellable countdown (default 5 s; at least 5 s on Mainnet), broadcast, and
+return to Home with `1 pending` in the status bar. On confirmation: balance re-decrypt, success notice with
 the matching `fhew send …` command, and an offer to save new addresses.
+
+## Settings, Tokens
+
+Settings › Network opens a two-item picker (Sepolia / Mainnet) rather than toggling on
+Enter, so Mainnet is never one accidental key press away. "Stay unlocked for" and
+"Send countdown" cycle through their choices on Enter. Tokens has "Remove tokens" (a
+multi-select list) and a disabled "Find tokens (coming soon)" slot for Phase 4.
 
 ## Errors
 
 Simulation failures stop before signing and show: what happened, likely cause, what to
-try, and "Show technical details" for the raw error.
+try, and "Show technical details" for the raw error. Failures after the broadcast
+(may have been sent, reverted, replaced) show the hash and explorer link and say not
+to send again until it is checked; they never offer "try again".
 
 ## Secrets
 

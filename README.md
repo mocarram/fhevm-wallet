@@ -4,7 +4,7 @@ A CLI wallet for managing encrypted ERC-7984 tokens using Zama's Fully Homomorph
 
 ## Features
 
-- **Interactive Mode** - Menu-driven terminal interface with keyboard navigation
+- **Interactive terminal UI** - Status bar, numbered menus, a send wizard with safety checks, `?` help and a `:` command bar
 - **Wallet Management** - Create new wallets or import existing ones via mnemonic phrase or private key
 - **Confidential Token Tracking** - Add and manage ERC-7984 compliant tokens
 - **Encrypted Balance Viewing** - Decrypt and view your confidential token balances
@@ -16,7 +16,7 @@ A CLI wallet for managing encrypted ERC-7984 tokens using Zama's Fully Homomorph
 
 ## Installation
 
-Requires Node.js >= 22.
+Requires Node.js >= 24.11.
 
 ```bash
 # npm
@@ -34,10 +34,38 @@ bun add -g fhevm-wallet
 
 ## Usage
 
-Run `fhevm-wallet` or the shorter alias `fhew` to start the interactive mode:
+Run `fhevm-wallet` or the shorter alias `fhew` to start the interactive terminal UI
+(`fhew interactive` does the same):
 
 ```bash
 fhew
+```
+
+The first start walks you through setup: wallet, network, a token and ETH for gas.
+Then, on any screen:
+
+| Key | Action |
+| --- | --- |
+| ↑ ↓ / k j, Enter | Move and select |
+| 1-9, 0 | Jump to a numbered item; 0 quits from Home |
+| b s r h d | Balances, Send, Receive, History, Doctor (on Home) |
+| . | Repeat your last send (stops on Review) |
+| Esc | Back one step, keeping what you typed; stops a send countdown |
+| Ctrl+C | Back to Home; twice on Home quits |
+| : | Command bar: `send bob 25 cusdc`, `balances`, `doctor`, `lock`, `help`, … |
+| ? | Help for the current screen |
+| L | Lock now (the decrypted key is only ever held in memory) |
+
+Sends go Token → Recipient → Amount → Review → Sign. Amounts accept `25`, `1,250.50`,
+`1k`, `half` and `max` and show the exact value. A pasted address that looks like a saved
+contact stops the send; a first-time address is flagged; after the send you can save it.
+On Mainnet you retype the amount and a countdown always runs before broadcasting.
+
+Try the UI without any network or funds against the offline simulation (a `MOCK` badge is
+shown). Use a throwaway data folder so simulated tokens and history stay out of your real one:
+
+```bash
+FHEW_BACKEND=mock FHEVM_WALLET_HOME=$(mktemp -d) fhew
 ```
 
 ### Wallet Commands
