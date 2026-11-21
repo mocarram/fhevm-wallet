@@ -129,6 +129,11 @@ export function planWrapAmount(
   };
 }
 
+/** True for the friendly amounts that are a share of the balance (`max`, `all`, `half`). */
+function usesBalance(input: string): boolean {
+  return /^(max|all|half)$/i.test(input.trim());
+}
+
 /** Parse what the user typed (`25`, `1k`, `max`, `half`) and check it as a wrap. */
 export function planWrap(
   input: string,
@@ -137,10 +142,11 @@ export function planWrap(
 ): WrapPlan | AmountProblem {
   const parsed = parseFriendlyAmount(input, {
     decimals: sides.underlying.decimals,
-    balance: opts.balance,
+    // Only `max` / `half` need the balance here; the over-balance check (with the
+    // token's symbol) is planWrapAmount's.
+    balance: usesBalance(input) ? opts.balance : undefined,
     // The euint64 bound applies to `amount / rate`, checked below.
     limit: null,
-    overBalanceHint: `Only public ${sides.underlying.symbol} can be wrapped. Enter a smaller amount.`,
   });
   if (!parsed.ok) return parsed;
   return planWrapAmount(parsed.value, sides, { ...opts, meaning: parsed.meaning });
@@ -155,11 +161,17 @@ export function planUnwrap(
   sides: WrapSides,
   opts: { balance?: bigint } = {},
 ): UnwrapPlan | AmountProblem {
-  const parsed = parseFriendlyAmount(input, { decimals: sides.decimals, balance: opts.balance });
-  if (!parsed.ok) {
-    return parsed.hint.startsWith('ERC-7984 would send 0')
-      ? { ...parsed, hint: 'ERC-7984 would burn 0 instead of failing, so this is blocked here.' }
-      : parsed;
+  const parsed = parseFriendlyAmount(input, {
+    decimals: sides.decimals,
+    balance: usesBalance(input) ? opts.balance : undefined,
+  });
+  if (!parsed.ok) return parsed;
+  if (opts.balance !== undefined && parsed.value > opts.balance) {
+    return {
+      ok: false,
+      error: `That's more than your ${formatExactAmount(opts.balance, sides.decimals)} ${sides.symbol}.`,
+      hint: 'ERC-7984 would burn 0 instead of failing, so this is blocked here.',
+    };
   }
   return {
     ok: true,

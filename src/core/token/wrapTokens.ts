@@ -24,8 +24,10 @@ export async function loadWrappers(
   opts: { refresh?: boolean } = {},
 ): Promise<WrapperMap> {
   const out: WrapperMap = {};
-  await Promise.all(
-    tokens.map(async (t) => {
+  // One token at a time: each check is several reads, and parallel checks would make
+  // JSON-RPC batches larger than some public RPCs accept.
+  for (const t of tokens) {
+    await (async () => {
       const key = t.address.toLowerCase();
       const cached = opts.refresh ? undefined : safeCached(network, t.address);
       if (cached !== undefined) {
@@ -43,8 +45,8 @@ export async function loadWrappers(
       } catch {
         // unknown for now; the caller may say "could not check"
       }
-    }),
-  );
+    })();
+  }
   return out;
 }
 

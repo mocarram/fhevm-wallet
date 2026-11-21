@@ -93,7 +93,7 @@ describe('RealWrapOps.prepareWrap', () => {
     expect(p.steps).toEqual(['approve', 'wrap']);
     expect(p.feeEstimated).toBe(true);
     // approval simulated + wrap estimated at the same price (10 wei/gas, +20%)
-    expect(p.feeWei).toBe(100_000n * 10n + (400_000n * 10n * 12n) / 10n);
+    expect(p.feeWei).toBe(100_000n * 10n + (900_000n * 10n * 12n) / 10n);
     expect(calls).toEqual(['prepare approve 2000000000000000000']);
     const r = await p.send();
     expect(calls).toEqual([

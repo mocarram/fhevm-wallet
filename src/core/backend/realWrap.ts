@@ -51,12 +51,13 @@ import type {
 } from './wrapTypes.js';
 
 /**
- * Gas a step that cannot be simulated yet is priced at (measured on Sepolia: wrap mints
- * with FHE operations; finalize checks the KMS signatures, 410k–545k). Only for the fee
+ * Gas a step that cannot be simulated yet is priced at (measured on Sepolia, 2026-11-21:
+ * cZAMA wrap 807k with its FHE operations, ZAMA approve 128k, finalize 410k–545k for the
+ * KMS signature check). Only for the fee
  * shown before and the ETH check; the real limit comes from the simulation later.
  */
-export const WRAP_GAS_ESTIMATE = 400_000n;
-export const APPROVE_GAS_ESTIMATE = 70_000n;
+export const WRAP_GAS_ESTIMATE = 900_000n;
+export const APPROVE_GAS_ESTIMATE = 150_000n;
 export const FINALIZE_GAS_ESTIMATE = 650_000n;
 
 /** The Zama ACL contract for a network. */

@@ -31,8 +31,6 @@ export interface ParseAmountOptions {
    * wrapper's rate (wrapMath.ts), so it passes `null` here.
    */
   limit?: bigint | null;
-  /** Hint under the over-balance error (default: the ERC-7984 "would send 0" reason). */
-  overBalanceHint?: string;
 }
 
 const HINT = 'Numbers like 25 or 1,250.50, or 1k, half, max.';
@@ -107,9 +105,7 @@ export function parseFriendlyAmount(input: string, opts: ParseAmountOptions): Am
     return {
       ok: false,
       error: `That's more than your ${formatExactAmount(balance, decimals)}.`,
-      hint:
-        opts.overBalanceHint ??
-        'ERC-7984 would send 0 instead of failing, so this is blocked here.',
+      hint: 'ERC-7984 would send 0 instead of failing, so this is blocked here.',
     };
   }
   return { ok: true, value, meaning };

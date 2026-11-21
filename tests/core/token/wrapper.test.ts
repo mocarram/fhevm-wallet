@@ -151,3 +151,42 @@ describe('requestIdFromLogs', () => {
     );
   });
 });
+
+describe('readWrapperInfo and dropped batches', () => {
+  it('a "missing response" (an RPC that dropped the batch) is a failure, not "not a wrapper"', async () => {
+    // What ethers throws when the node answers a JSON-RPC batch with fewer responses.
+    const dropped = async () => {
+      throw Object.assign(new Error('missing response for request'), {
+        code: 'BAD_DATA',
+        shortMessage: 'missing response for request',
+      });
+    };
+    await expect(readWrapperInfo(dropped, WRAPPER)).rejects.toThrow(/missing response/);
+    // `0x` back (no such function) still means "not a wrapper".
+    const empty = async () => {
+      throw Object.assign(new Error('could not decode result data (value="0x")'), {
+        code: 'BAD_DATA',
+        shortMessage: 'could not decode result data',
+      });
+    };
+    expect(await readWrapperInfo(empty, WRAPPER)).toBeNull();
+  });
+
+  it('never has more than 4 reads in flight', async () => {
+    let inFlight = 0;
+    let most = 0;
+    const base = fakeChain(CZAMA_CHAIN);
+    const counting = async (to: string, data: string) => {
+      inFlight++;
+      most = Math.max(most, inFlight);
+      await new Promise((r) => setTimeout(r, 1));
+      try {
+        return await base(to, data);
+      } finally {
+        inFlight--;
+      }
+    };
+    expect(await readWrapperInfo(counting, WRAPPER)).not.toBeNull();
+    expect(most).toBeLessThanOrEqual(4);
+  });
+});

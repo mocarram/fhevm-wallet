@@ -118,11 +118,20 @@ export interface WrapState {
   supplyRoom?: bigint;
 }
 
-/** True for an error that means "the contract did not answer", not "the RPC failed". */
+/**
+ * True for an error that means "the contract did not answer", not "the RPC failed".
+ * BAD_DATA only counts when the node returned `0x` ("could not decode result data"):
+ * ethers also reports a batch the node dropped ("missing response for request", e.g.
+ * an RPC that limits batch sizes) as BAD_DATA, and that must never read as "not a
+ * wrapper".
+ */
 function isContractNoAnswer(err: unknown): boolean {
-  const code = (err as { code?: unknown })?.code;
-  if (code === 'BAD_DATA') return true;
-  return code === 'CALL_EXCEPTION' && rpcErrorOf(err) === null;
+  const e = (err ?? {}) as { code?: unknown; shortMessage?: unknown; message?: unknown };
+  if (e.code === 'BAD_DATA') {
+    const text = `${String(e.shortMessage ?? '')} ${String(e.message ?? '')}`;
+    return /could not decode result data/i.test(text) && !/missing response/i.test(text);
+  }
+  return e.code === 'CALL_EXCEPTION' && rpcErrorOf(err) === null;
 }
 
 /** Decode `fn`'s single return value, or null when it does not decode. */
@@ -181,14 +190,18 @@ export async function readWrapperInfo(call: EthCall, wrapper: string): Promise<W
   if (!underlyingRaw || rate === null || rate <= 0n) return null;
   const underlying = getAddress(underlyingRaw);
   if (underlying === ZeroAddress) return null;
-  const [decimals, name, symbol, uDecimals, uName, uSymbol, requester] = await Promise.all([
+  // A few reads at a time: some public RPCs refuse JSON-RPC batches above 10 requests,
+  // and ethers batches whatever is sent in the same tick.
+  const [decimals, name, symbol, requester] = await Promise.all([
     read<bigint>(call, WRAPPER_ABI, address, 'decimals'),
     readText(call, address, 'name'),
     readText(call, address, 'symbol'),
+    read<string>(call, WRAPPER_ABI, address, 'unwrapRequester', [`0x${'00'.repeat(31)}01`]),
+  ]);
+  const [uDecimals, uName, uSymbol] = await Promise.all([
     read<bigint>(call, ERC20_ABI, underlying, 'decimals'),
     readText(call, underlying, 'name'),
     readText(call, underlying, 'symbol'),
-    read<string>(call, WRAPPER_ABI, address, 'unwrapRequester', [`0x${'00'.repeat(31)}01`]),
   ]);
   if (decimals === null || decimals > 36n) return null;
   // The wrapper derives rate = 10^(underlying decimals − its decimals); a token without
