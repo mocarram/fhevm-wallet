@@ -223,17 +223,78 @@ async function signAndBroadcast(opts: SignAndBroadcastOptions): Promise<Transfer
 
   let receipt: TransactionReceipt | null;
   try {
-    // ethers v6 wait() throws CALL_EXCEPTION (action "sendTransaction") on a status-0
-    // receipt, and TRANSACTION_REPLACED if another tx took the nonce; sentButUnconfirmed
-    // maps those to TX_REVERTED and TX_REPLACED.
-    // Bounded wait: past it the user gets SENT_UNCONFIRMED with the hash to check,
-    // rather than a spinner that never ends.
-    receipt = await tx.wait(1, CONFIRMATION_TIMEOUT_MS);
-    if (!receipt) throw new Error('No receipt returned'); // only with confirmations=0
+    receipt = await waitForReceipt(tx, provider, txHash);
   } catch (err) {
     throw sentButUnconfirmed(err, txHash, explorerUrl, translateOpts);
   }
   return { txHash, receipt };
+}
+
+/**
+ * How often `waitForReceipt` asks for the receipt after wait() failed, and the waits
+ * before re-reading the balance after a confirmed transfer when a read fails. Mutable
+ * for tests.
+ */
+export const confirmationTiming = {
+  pollMs: 3_000,
+  balanceRecheckMs: [2_000, 5_000] as readonly number[],
+};
+
+/** wait() outcomes that are the answer, not a failure of the RPC: revert, replaced, timeout. */
+function isFinalWaitError(err: unknown): boolean {
+  const e = (err ?? {}) as { code?: unknown; receipt?: unknown };
+  return (
+    e.code === 'TRANSACTION_REPLACED' ||
+    e.code === 'TIMEOUT' ||
+    (e.code === 'CALL_EXCEPTION' && e.receipt !== undefined && e.receipt !== null)
+  );
+}
+
+/**
+ * Wait for one confirmation, bounded by `CONFIRMATION_TIMEOUT_MS`.
+ *
+ * ethers' wait() throws CALL_EXCEPTION (action "sendTransaction") on a status-0 receipt
+ * and TRANSACTION_REPLACED when another transaction took the nonce; sentButUnconfirmed
+ * maps those to TX_REVERTED and TX_REPLACED. To spot replacements, wait() also reads
+ * full blocks (eth_getBlockByNumber with transactions), which some endpoints refuse:
+ * nodies answers "Method not available on this plan with fullTransactions=true", and
+ * every send through it ended SENT_UNCONFIRMED although it was mined. When wait() fails
+ * for such an RPC reason, keep asking for the receipt itself until the deadline.
+ */
+async function waitForReceipt(
+  tx: { wait: (confirms?: number, timeout?: number) => Promise<TransactionReceipt | null> },
+  provider: JsonRpcProvider,
+  txHash: string,
+): Promise<TransactionReceipt> {
+  const deadline = Date.now() + CONFIRMATION_TIMEOUT_MS;
+  let lastError: unknown;
+  try {
+    const receipt = await tx.wait(1, CONFIRMATION_TIMEOUT_MS);
+    if (receipt) return receipt;
+    lastError = new Error('No receipt returned'); // only with confirmations=0
+  } catch (err) {
+    if (isFinalWaitError(err)) throw err;
+    lastError = err;
+  }
+  while (Date.now() < deadline) {
+    let receipt: TransactionReceipt | null = null;
+    try {
+      receipt = await provider.getTransactionReceipt(txHash);
+    } catch (err) {
+      lastError = err;
+    }
+    // Only an explicit status decides (see the NONCE_EXPIRED branch above).
+    if (receipt?.status === 1) return receipt;
+    if (receipt?.status === 0) {
+      throw Object.assign(new Error('transaction execution reverted'), {
+        code: 'CALL_EXCEPTION',
+        action: 'sendTransaction',
+        receipt,
+      });
+    }
+    await new Promise((r) => setTimeout(r, confirmationTiming.pollMs));
+  }
+  throw lastError ?? Object.assign(new Error('timeout'), { code: 'TIMEOUT' });
 }
 
 /** Outcome of re-decrypting the sender's balance after a confirmed transfer. */
@@ -251,12 +312,18 @@ export async function checkBalanceAfter(
   readBalance: () => Promise<bigint>,
   balanceBefore: bigint,
   amount: bigint,
+  retryDelaysMs: readonly number[] = confirmationTiming.balanceRecheckMs,
 ): Promise<BalanceAfterCheck> {
-  let balanceAfter: bigint;
-  try {
-    balanceAfter = await readBalance();
-  } catch {
-    return { balanceCheck: 'unknown' };
+  let balanceAfter: bigint | undefined;
+  // Right after the receipt, a load-balanced RPC may serve the read from a node that has
+  // not seen the block yet, or the relayer may not have the new handle: try a few times.
+  for (let attempt = 0; balanceAfter === undefined; attempt++) {
+    try {
+      balanceAfter = await readBalance();
+    } catch {
+      if (attempt >= retryDelaysMs.length) return { balanceCheck: 'unknown' };
+      await new Promise((r) => setTimeout(r, retryDelaysMs[attempt]));
+    }
   }
   if (balanceAfter === balanceBefore - amount) return { balanceCheck: 'moved', balanceAfter };
   if (balanceAfter === balanceBefore) return { balanceCheck: 'unchanged', balanceAfter };

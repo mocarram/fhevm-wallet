@@ -65,8 +65,11 @@ vi.mock('../../../src/core/fhe/DecryptionService.js', () => ({
   decryptBalance: vi.fn(async () => 9_999n),
 }));
 
-beforeEach(() => {
+beforeEach(async () => {
   wipeTestDataDir();
+  const { confirmationTiming } = await import('../../../src/core/token/TokenService.js');
+  confirmationTiming.pollMs = 0;
+  confirmationTiming.balanceRecheckMs = [0, 0];
   Object.values(contractStubs).forEach((fn) => fn.mockReset());
   contractStubs.confidentialTransfer.estimateGas.mockReset();
   contractStubs.confidentialTransfer.populateTransaction.mockReset();
@@ -423,12 +426,59 @@ describe('TokenService.confidentialTransfer', () => {
     const decryption = await import('../../../src/core/fhe/DecryptionService.js');
     vi.mocked(decryption.decryptBalance)
       .mockResolvedValueOnce(9_999n)
+      .mockRejectedValueOnce(new Error('relayer busy'))
+      .mockRejectedValueOnce(new Error('relayer busy'))
       .mockRejectedValueOnce(new Error('relayer busy'));
     const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
     const res = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
     expect(res.txHash).toBe(SIGNED_HASH);
     expect(res.balanceCheck).toBe('unknown');
     expect(res.balanceAfter).toBeUndefined();
+  });
+
+  it('re-reads the balance when the first read after confirmation fails (lagging node)', async () => {
+    broadcastWith(async () => ({ status: 1, blockNumber: 1 }));
+    const decryption = await import('../../../src/core/fhe/DecryptionService.js');
+    vi.mocked(decryption.decryptBalance)
+      .mockResolvedValueOnce(9_999n)
+      .mockRejectedValueOnce(new Error('header not found'))
+      .mockResolvedValueOnce(9_994n);
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const res = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
+    expect(res.balanceCheck).toBe('moved');
+  });
+
+  it('a mined send stays a success when wait() fails on a refused full-block read', async () => {
+    // nodies: "Method not available on this plan with fullTransactions=true".
+    broadcastWith(async () => {
+      throw ethersError('UNKNOWN_ERROR', 'could not coalesce error', {
+        error: {
+          code: -32601,
+          message: 'Method not available on this plan with fullTransactions=true',
+        },
+      });
+    });
+    fakeProvider.getTransactionReceipt
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ hash: SIGNED_HASH, status: 1, blockNumber: 9 });
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const res = await confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
+    expect(res.txHash).toBe(SIGNED_HASH);
+    expect(res.receipt.blockNumber).toBe(9);
+  });
+
+  it('a receipt polled after a failed wait() that says reverted is TX_REVERTED', async () => {
+    broadcastWith(async () => {
+      throw ethersError('UNKNOWN_ERROR', 'could not coalesce error', {
+        error: { code: -32601, message: 'Method not available on this plan' },
+      });
+    });
+    fakeProvider.getTransactionReceipt.mockResolvedValueOnce({ hash: SIGNED_HASH, status: 0 });
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    await expect(confidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia')).rejects.toMatchObject({
+      code: 'TX_REVERTED',
+      txHash: SIGNED_HASH,
+    });
   });
 
   it('reports the fee and ETH balance before anything is signed', async () => {
@@ -853,7 +903,6 @@ describe('TokenService: an RPC error is not "not a token"', () => {
     contractStubs.name.mockRejectedValueOnce(empty());
     await expect(getTokenInfo(TOKEN, 'sepolia')).rejects.toMatchObject({ code: 'NOT_A_TOKEN' });
   });
-
 });
 
 describe('TokenService batch decrypt and disclosure calls', () => {
