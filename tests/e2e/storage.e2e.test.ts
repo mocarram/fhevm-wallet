@@ -113,6 +113,32 @@ describe.skipIf(process.platform === 'win32')('wallet data storage', () => {
     expect(res.stderr).not.toMatch(/\n\s+at /);
   });
 
+  it('an existing data folder it may not write to gets the same sentence', () => {
+    const t = tempHome();
+    cleanup = t.cleanup;
+    const dataDir = join(t.home, 'readonly-data');
+    mkdirSync(dataDir, { mode: 0o755 });
+    const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+    if (asRoot) chmodSync(t.home, 0o755);
+    else chmodSync(dataDir, 0o500);
+    const res = spawnSync(process.execPath, [CLI, '--version'], {
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: t.home,
+        NO_COLOR: '1',
+        FHEVM_WALLET_HOME: dataDir,
+      },
+      encoding: 'utf-8',
+      timeout: 30_000,
+      // As root, run as "nobody": the folder is root's and 0755, so not writable for it.
+      ...(asRoot ? { uid: 65534, gid: 65534 } : {}),
+    });
+    if (!asRoot) chmodSync(dataDir, 0o700);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toMatch(/^Cannot use the wallet data folder .*: permission denied\./);
+    expect(res.stderr).not.toMatch(/EACCES/);
+  });
+
   it('refuses a key that would inject another setting', () => {
     const t = tempHome();
     cleanup = t.cleanup;

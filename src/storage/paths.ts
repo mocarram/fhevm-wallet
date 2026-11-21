@@ -2,7 +2,7 @@
  * Centralized path configuration and the user's private `.env` file.
  */
 
-import { existsSync, readFileSync, statSync } from 'fs';
+import { accessSync, constants as fsConstants, existsSync, readFileSync, statSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
 import { config as dotenvConfig, parse as dotenvParse } from 'dotenv';
@@ -127,6 +127,9 @@ export function loadEnv(cwdEnvPath = resolve('.env')): LoadEnvResult {
   }
 
   ensureDataDir();
+  // An existing folder we may not write to (another user's, or read-only) would only
+  // fail later, mid-command, with a raw EACCES. Fail now, so startup can say it plainly.
+  accessSync(DATA_DIR, fsConstants.R_OK | fsConstants.W_OK | fsConstants.X_OK);
   if (existsSync(ENV_FILE_PATH)) {
     // quiet: dotenv 17+ otherwise prints a promotional line to stdout.
     dotenvConfig({ path: ENV_FILE_PATH, override: true, quiet: true });
