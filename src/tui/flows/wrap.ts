@@ -37,7 +37,7 @@ import { formatAmount, formatEth, shortHash } from '../format.js';
 import { open, openFromRoot, openInstead } from '../nav.js';
 import type { Item } from '../screen.js';
 import { type AppState, type TxAction } from '../state.js';
-import { dimLine, line, seg, type Line } from '../text.js';
+import { dimLine, line, link, seg, type Line } from '../text.js';
 import { decryptAll, reload, sessionOf } from './data.js';
 import { txChecks } from './tx.js';
 
@@ -177,6 +177,14 @@ function finishNotice(entry: UnwrapEntry, text: string, style: string, extra: Li
   ];
 }
 
+/** A mined request without an unwrap in it: tokens may be burnt, the explorer tells. */
+function unclearNotice(deps: Deps, entry: UnwrapEntry, label: string, reason: string): Line[] {
+  return [
+    line('  ', seg(`! ${label}: ${reason}`, 'yellow bold')),
+    line('    ', link(deps.backend.explorerTxUrl(entry.requestTxHash, entry.network), 'dim')),
+  ];
+}
+
 /**
  * Try step 2 of an unwrap in the background: reconcile, wait for the public decryption
  * (a few tries), then send it. Never throws: the notice says where it stands.
@@ -195,6 +203,7 @@ async function finishInBackground(
       entry = r.entry;
       if (r.next.kind === 'done')
         return finishNotice(entry, `✔ Unwrap finished: ${label}`, 'green bold');
+      if (r.next.kind === 'unclear') return unclearNotice(deps, entry, label, r.next.reason);
       if (r.next.kind !== 'finalize') break;
       const prepared = await prepareFinish(deps.backend, signer, entry);
       const done = await sendFinish(prepared, entry);
@@ -513,6 +522,9 @@ export function finishPending(s: AppState, id: string): Effect[] {
             break;
           case 'failed':
             message = [line('  ', seg(`✗ ${label}: ${r.next.reason}`, 'red'))];
+            break;
+          case 'unclear':
+            message = unclearNotice(deps, r.entry, label, r.next.reason);
             break;
           case 'wait-request':
             message = [

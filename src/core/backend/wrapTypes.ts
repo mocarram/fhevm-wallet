@@ -138,6 +138,13 @@ export interface WrapBackend {
   /** What the chain says about one of this wallet's transactions. */
   txOutcome(txHash: string, network: NetworkName): Promise<TxOutcome>;
 
+  /**
+   * How many transactions of `address` are mined (its `latest` transaction count). A
+   * signed transaction whose nonce is below this and that has no receipt can never be
+   * mined: another transaction took its nonce.
+   */
+  minedNonce(address: string, network: NetworkName): Promise<number>;
+
   /** The request id in a mined request transaction for `receiver`, or null. */
   unwrapRequestId(
     info: WrapperInfo,

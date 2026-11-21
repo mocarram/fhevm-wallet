@@ -292,13 +292,13 @@ export class RealBackend implements Backend {
       send: (hooks) =>
         tx.send({
           ...hooks,
-          onSigned: (txHash) => {
+          onSigned: (txHash, meta) => {
             try {
               setCachedAmounts(network, [{ handle: h, value: pub.value, discloseTx: txHash }]);
             } catch {
               /* bookkeeping only */
             }
-            hooks?.onSigned?.(txHash);
+            hooks?.onSigned?.(txHash, meta);
           },
         }),
     };
@@ -454,6 +454,7 @@ export class RealBackend implements Backend {
   unwrapRequestStatus: RealWrapOps['unwrapRequestStatus'] = (...a) =>
     this.wrapOps.unwrapRequestStatus(...a);
   txOutcome: RealWrapOps['txOutcome'] = (...a) => this.wrapOps.txOutcome(...a);
+  minedNonce: RealWrapOps['minedNonce'] = (...a) => this.wrapOps.minedNonce(...a);
   unwrapRequestId: RealWrapOps['unwrapRequestId'] = (...a) => this.wrapOps.unwrapRequestId(...a);
   prepareFinalizeUnwrap: RealWrapOps['prepareFinalizeUnwrap'] = (...a) =>
     this.wrapOps.prepareFinalizeUnwrap(...a);

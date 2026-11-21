@@ -28,6 +28,7 @@ import { formatExactAmount } from '../../core/send/amount.js';
 import { listTokens, type TokenEntry } from '../../core/token/TokenRegistry.js';
 import { formatTxError, translateTxError, type WalletTxError } from '../../core/token/txErrors.js';
 import {
+  checkForget,
   describeUnwrapState,
   entryInfo,
   prepareFinish,
@@ -50,6 +51,7 @@ import type { WrapperInfo } from '../../core/token/wrapper.js';
 import {
   assertUnwrapStoreWritable,
   findUnwrap,
+  isOpenUnwrap,
   listUnwraps,
   removeUnwrap,
   type UnwrapEntry,
@@ -604,12 +606,18 @@ async function finishOne(
         };
       case 'failed':
         return { entry, status: 'failed', message: `✗ ${label}: ${next.reason}` };
+      case 'unclear':
+        return {
+          entry,
+          status: 'failed',
+          message: `! ${label}: ${next.reason} ${backend.explorerTxUrl(entry.requestTxHash, entry.network)}`,
+        };
       case 'wait-request':
         return {
           entry,
           status: 'waiting',
           message: next.missing
-            ? `! ${label}: the network does not know the request ${entry.requestTxHash} yet. Not sent again. If it never appears it was dropped and nothing was burnt (then \`fhew unwrap --forget ${entry.id.slice(0, 12)}\`).`
+            ? `! ${label}: the network does not know the request ${entry.requestTxHash} yet. Not sent again: it may still be mined. Any later transaction from this wallet settles it; \`fhew unwrap --forget ${entry.id.slice(0, 12)}\` removes it once it can no longer be mined.`
             : `! ${label}: the request ${entry.requestTxHash} is not mined yet. Not sent again; try later.`,
         };
       case 'wait-finalize':
@@ -799,7 +807,10 @@ async function listCommand(options: UnwrapOptions): Promise<void> {
   if (!network) return;
   const walletRef = pickWallet(options.wallet);
   if (!walletRef) return;
-  const entries = listUnwraps({ network, wallet: walletRef.address, open: !options.all });
+  // Without --all: the open ones and the unclear ones (they need a look at the explorer).
+  const entries = listUnwraps({ network, wallet: walletRef.address }).filter(
+    (e) => options.all || isOpenUnwrap(e) || e.state === 'unclear',
+  );
   if (options.json) {
     return printJson({
       mock: mockJson(),
@@ -821,7 +832,7 @@ async function listCommand(options: UnwrapOptions): Promise<void> {
       `${bold(amt(BigInt(e.amount), e.decimals, e.symbol))} → ${e.underlying.symbol}  ${describeUnwrapState(e)}  ${chalk.dim(`id ${e.id.slice(0, 12)}… · ${e.createdAt.slice(0, 16).replace('T', ' ')}`)}`,
     );
   }
-  if (entries.some((e) => e.state !== 'finished' && e.state !== 'failed')) {
+  if (entries.some(isOpenUnwrap)) {
     console.log(chalk.dim('Finish them with: fhew unwrap --resume'));
   }
 }
@@ -909,34 +920,24 @@ async function forgetCommand(ref: string, options: UnwrapOptions): Promise<void>
   if (!walletRef) return;
   const found = pickEntries(ref, network, walletRef.address, false);
   if (!found) return;
-  let e = found[0];
-  if (e.state === 'requested' || e.state === 'finalizing') {
-    return fail(
-      'This unwrap is waiting for step 2: its tokens are burnt and the ERC-20 has not been sent yet. Finish it with `fhew unwrap --resume` instead.',
-      'UNWRAP_STILL_OPEN',
-    );
+  // Only what can no longer burn tokens, or what the user checked (unclear), goes.
+  const backend = createBackend();
+  const check = await checkForget(backend, found[0]);
+  if (!check.ok) {
+    return fail(check.message, check.code, { requestTxHash: check.entry.requestTxHash });
   }
-  if (e.state === 'signed') {
-    // Only a request the chain does not know (dropped) may be forgotten.
-    const backend = createBackend();
-    const r = await reconcileUnwrap(backend, e);
-    e = r.entry;
-    if (
-      !(r.next.kind === 'wait-request' && r.next.missing) &&
-      r.next.kind !== 'failed' &&
-      r.next.kind !== 'done'
-    ) {
-      return fail(
-        'The network knows this request, so it may still be mined or is already waiting for step 2. Run `fhew unwrap --resume` instead.',
-        'UNWRAP_STILL_OPEN',
-      );
-    }
-  }
+  const e = check.entry;
+  const warn = check.warning
+    ? `${check.warning} ${backend.explorerTxUrl(e.requestTxHash, e.network)}`
+    : undefined;
+  if (warn && !options.json) console.log(warning(warn));
   if (!options.yes) {
     if (!process.stdin.isTTY)
       return fail('Pass --yes to remove it without asking.', 'PROMPT_NOT_ALLOWED');
     const ok = await prompts.confirm({
-      message: `Remove the unwrap ${e.id.slice(0, 12)}… from the list?`,
+      message: warn
+        ? `Tokens may have been burnt. Remove the unwrap ${e.id.slice(0, 12)}… anyway?`
+        : `Remove the unwrap ${e.id.slice(0, 12)}… from the list?`,
       default: false,
     });
     if (!ok) return void console.log('Kept.');
@@ -948,6 +949,7 @@ async function forgetCommand(ref: string, options: UnwrapOptions): Promise<void>
       network,
       wallet: walletJson(walletRef.address, walletRef.name),
       removed: entryJson(e),
+      ...(warn ? { warning: warn } : {}),
     });
   }
   console.log(success(`Removed ${e.id.slice(0, 12)}… from the list.`));

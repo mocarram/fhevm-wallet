@@ -201,9 +201,15 @@ describe('fhew unwrap', () => {
     // Still unconfirmed: resume waits and sends nothing.
     const waiting = await run('unwrap', '--resume', ...yes);
     expect(waiting.results[0]).toMatchObject({ status: 'waiting', state: 'signed' });
-    // A forget is refused while the network might still mine it? Here the node does not
-    // know it (dropped), so it may be removed.
-    const forgot = await run('unwrap', '--forget', first.error.txHash.slice(0, 14), '--yes');
+    // The node does not know it, but it may still be mined (another node may have it):
+    // forgetting is refused until a later transaction of the wallet took its nonce.
+    const ref = first.error.txHash.slice(0, 14);
+    const refused = await run('unwrap', '--forget', ref, '--yes');
+    expect(refused.error.code).toBe('UNWRAP_STILL_OPEN');
+    expect(refused.error.message).toMatch(/can still be mined/);
+    expect(listUnwraps({ open: true })).toHaveLength(1);
+    vi.spyOn(backend, 'minedNonce').mockResolvedValue(5);
+    const forgot = await run('unwrap', '--forget', ref, '--yes');
     expect(forgot.removed.id).toBe(first.error.txHash);
   });
 

@@ -54,7 +54,22 @@ export type UnwrapNext =
   /** The underlying tokens were sent. */
   | { kind: 'done' }
   /** The request reverted: nothing was burnt. */
-  | { kind: 'failed'; reason: string };
+  | { kind: 'failed'; reason: string }
+  /**
+   * The request was mined, but no unwrap request of this wallet was found in it. Tokens
+   * may have been burnt: never say "nothing burnt"; the user checks the explorer.
+   */
+  | { kind: 'unclear'; reason: string };
+
+/** Why an `unclear` entry needs a look at the explorer. */
+export const UNCLEAR_REASON =
+  'The request was mined, but the wallet found no unwrap request in it. Tokens may have been burnt: check the transaction on the explorer.';
+
+/**
+ * A recorded request without a nonce (from before nonces were recorded) that the network
+ * does not know may be forgotten only after this long: it cannot be proven dead.
+ */
+export const FORGET_LEGACY_MIN_AGE_MS = 30 * 60_000;
 
 /** The WrapperInfo an entry was made for (no network call). */
 export function entryInfo(e: UnwrapEntry): WrapperInfo {
@@ -111,9 +126,10 @@ export async function sendUnwrapRequest(
   function sendRequest(): Promise<UnwrapRequestResult> {
     return prepared.send({
       ...hooks,
-      onSigned: (txHash) => {
+      onSigned: (txHash, meta) => {
         entry = addUnwrap({
           id: txHash,
+          ...(meta ? { requestNonce: meta.nonce } : {}),
           network: ctx.network,
           wallet: ctx.wallet,
           token: info.address,
@@ -129,7 +145,7 @@ export async function sendUnwrapRequest(
           amount: ctx.amount.toString(),
           requestTxHash: txHash,
         });
-        hooks.onSigned?.(txHash);
+        hooks.onSigned?.(txHash, meta);
       },
     });
   }
@@ -189,6 +205,7 @@ export async function reconcileUnwrap(
   if (e.state === 'failed') {
     return { entry: e, next: { kind: 'failed', reason: 'The request reverted.' } };
   }
+  if (e.state === 'unclear') return { entry: e, next: { kind: 'unclear', reason: UNCLEAR_REASON } };
 
   if (e.state === 'signed') {
     const o = await backend.txOutcome(e.requestTxHash, network);
@@ -203,14 +220,10 @@ export async function reconcileUnwrap(
     }
     const id = await backend.unwrapRequestId(info, e.requestTxHash, e.wallet, network);
     if (!id) {
-      e = updateUnwrap(e.id, { state: 'failed', requestBlock: o.blockNumber });
-      return {
-        entry: e,
-        next: {
-          kind: 'failed',
-          reason: 'The request was mined, but the wrapper reported no unwrap request in it.',
-        },
-      };
+      // Not "failed": the burn may have happened (an unexpected wrapper, or a receipt
+      // without its logs). Only the explorer can tell, so say that and keep it apart.
+      e = updateUnwrap(e.id, { state: 'unclear', requestBlock: o.blockNumber });
+      return { entry: e, next: { kind: 'unclear', reason: UNCLEAR_REASON } };
     }
     e = updateUnwrap(e.id, { state: 'requested', requestId: id, requestBlock: o.blockNumber });
   }
@@ -322,5 +335,89 @@ export function describeUnwrapState(e: UnwrapEntry): string {
       return e.finishedBy === 'other' ? 'finished (by another account)' : 'finished';
     case 'failed':
       return 'request reverted, nothing burnt';
+    case 'unclear':
+      return 'request mined, no unwrap found in it: check the explorer';
   }
+}
+
+/** Whether `fhew unwrap --forget` may remove an entry, after checking the chain. */
+export type ForgetCheck =
+  /** `warning`: shown before the user confirms (tokens may have been burnt). */
+  | { ok: true; entry: UnwrapEntry; warning?: string }
+  | { ok: false; entry: UnwrapEntry; code: 'UNWRAP_STILL_OPEN'; message: string };
+
+/**
+ * Decide whether an entry may be forgotten. Never sends anything; network failures are
+ * thrown (nothing is removed then).
+ *
+ * A request the RPC does not know (no receipt, no transaction) is not proof that it was
+ * dropped: behind a load-balanced endpoint it may sit in another node's mempool and be
+ * mined later, burning the tokens with no entry left to finish the unwrap. So a `signed`
+ * request is only forgettable once its nonce is provably taken: the account's mined
+ * nonce is past it and our hash still has no receipt (read in that order, so a request
+ * mined in between is seen). Entries from before nonces were recorded need an age
+ * instead (`FORGET_LEGACY_MIN_AGE_MS`).
+ */
+export async function checkForget(
+  backend: Backend,
+  start: UnwrapEntry,
+  now = Date.now(),
+  depth = 0,
+): Promise<ForgetCheck> {
+  const open = (entry: UnwrapEntry, message: string): ForgetCheck => ({
+    ok: false,
+    entry,
+    code: 'UNWRAP_STILL_OPEN',
+    message,
+  });
+  const waitingForStep2 =
+    'This unwrap is waiting for step 2: its tokens are burnt and the ERC-20 has not been sent yet. Finish it with `fhew unwrap --resume` instead.';
+  if (start.state === 'requested' || start.state === 'finalizing')
+    return open(start, waitingForStep2);
+  if (start.state === 'finished' || start.state === 'failed') return { ok: true, entry: start };
+  if (start.state === 'unclear') return { ok: true, entry: start, warning: UNCLEAR_REASON };
+
+  const { entry, next } = await reconcileUnwrap(backend, start, now);
+  switch (next.kind) {
+    case 'done':
+    case 'failed':
+      return { ok: true, entry };
+    case 'unclear':
+      return { ok: true, entry, warning: UNCLEAR_REASON };
+    case 'finalize':
+    case 'wait-finalize':
+      return open(entry, waitingForStep2);
+    case 'wait-request':
+      if (!next.missing) {
+        return open(
+          entry,
+          'The network has this request and has not mined it yet, so it may still burn the tokens. Wait for it, then run `fhew unwrap --resume`.',
+        );
+      }
+  }
+  if (entry.requestNonce === undefined) {
+    const age = now - Date.parse(entry.createdAt);
+    if (age < FORGET_LEGACY_MIN_AGE_MS) {
+      const mins = Math.ceil((FORGET_LEGACY_MIN_AGE_MS - age) / 60_000);
+      return open(
+        entry,
+        `The network does not know this request, but it may still be mined (another node may have it). Try again in ${mins} minute${mins === 1 ? '' : 's'}; send any transaction from this wallet first to be sure.`,
+      );
+    }
+    return { ok: true, entry };
+  }
+  const mined = await backend.minedNonce(entry.wallet, entry.network);
+  if (mined <= entry.requestNonce) {
+    return open(
+      entry,
+      `The network does not know this request, but it can still be mined: its nonce (${entry.requestNonce}) is not used yet. Wait; any later transaction from this wallet settles it, then check again.`,
+    );
+  }
+  // The nonce is taken. Our hash may be what took it (mined since the first look).
+  const o = await backend.txOutcome(entry.requestTxHash, entry.network);
+  if (o.status === 'missing') return { ok: true, entry };
+  if (depth > 0) {
+    return open(entry, 'The network gives changing answers about this request. Try again later.');
+  }
+  return checkForget(backend, entry, now, depth + 1);
 }

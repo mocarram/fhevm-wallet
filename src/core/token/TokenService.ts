@@ -192,7 +192,7 @@ interface SignAndBroadcastOptions {
   /** Decodes the contract's custom errors (default: ERC-7984's). */
   iface?: Interface;
   /** Best-effort hooks for the audit log. Never given amounts. */
-  onSigned?: (txHash: string) => void;
+  onSigned?: (txHash: string, meta: SignedMeta) => void;
   onBroadcast?: (txHash: string) => void;
 }
 
@@ -221,9 +221,12 @@ async function signAndBroadcast(opts: SignAndBroadcastOptions): Promise<Transfer
   // The hash is known before broadcasting. From here on, *every* failure must carry it
   // and must not say "try again" unless the node provably refused it: a broadcast that
   // timed out may still be in the mempool, and resending would pay twice.
-  const txHash = Transaction.from(signed).hash!;
+  const parsed = Transaction.from(signed);
+  const txHash = parsed.hash!;
   const explorerUrl = getTxExplorerUrl(txHash, network);
-  if (opts.onSigned) bestEffort(() => opts.onSigned!(txHash));
+  // The nonce tells later whether a transaction the RPC cannot find may still be mined:
+  // once the account's mined nonce is past it, it never can (see unwrapPending.ts).
+  if (opts.onSigned) bestEffort(() => opts.onSigned!(txHash, { nonce: parsed.nonce }));
 
   let tx: Awaited<ReturnType<JsonRpcProvider['broadcastTransaction']>>;
   try {
@@ -613,10 +616,19 @@ export async function decryptBalancesWithSession(
   return { values, errors };
 }
 
+/** What is known about a transaction once it is signed (before the broadcast). */
+export interface SignedMeta {
+  /** The account nonce it was signed with. */
+  nonce: number;
+}
+
 /** Optional progress callbacks for `PreparedTransfer.send`. Errors thrown in them are ignored. */
 export interface SendHooks {
-  /** The transaction is signed locally; nothing has left the machine yet. */
-  onSigned?: (txHash: string) => void;
+  /**
+   * The transaction is signed locally; nothing has left the machine yet. `meta` is
+   * missing only where a backend cannot tell (older mocks).
+   */
+  onSigned?: (txHash: string, meta?: SignedMeta) => void;
   /** The node accepted the transaction; it is now waiting to be mined. */
   onBroadcast?: (txHash: string) => void;
 }
@@ -766,9 +778,9 @@ export async function prepareConfidentialTransfer(
         action: 'send',
         // Signed is not sent: TRANSFER_SIGNED without TRANSFER_BROADCAST means the
         // broadcast failed or its answer was lost.
-        onSigned: (txHash) => {
+        onSigned: (txHash, meta) => {
           bestEffort(() => logEvent('TRANSFER_SIGNED', { ...audit, txHash }));
-          if (hooks.onSigned) bestEffort(() => hooks.onSigned!(txHash));
+          if (hooks.onSigned) bestEffort(() => hooks.onSigned!(txHash, meta));
         },
         onBroadcast: (txHash) => {
           bestEffort(() => logEvent('TRANSFER_BROADCAST', { ...audit, txHash }));
@@ -971,8 +983,8 @@ export async function prepareTokenCall(
         network,
         action: spec.action,
         iface,
-        onSigned: (txHash) => {
-          if (hooks.onSigned) bestEffort(() => hooks.onSigned!(txHash));
+        onSigned: (txHash, meta) => {
+          if (hooks.onSigned) bestEffort(() => hooks.onSigned!(txHash, meta));
         },
         onBroadcast: (txHash) => {
           if (hooks.onBroadcast) bestEffort(() => hooks.onBroadcast!(txHash));

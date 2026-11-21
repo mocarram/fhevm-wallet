@@ -30,8 +30,17 @@ const UINT = z.string().regex(/^\d{1,78}$/);
  * - finalizing: finalize signed (and maybe broadcast), not seen mined yet
  * - finished: the underlying tokens were sent (by our finalize or anyone's)
  * - failed: the request reverted (nothing was burnt)
+ * - unclear: the request was mined, but no unwrap request of this wallet was found in
+ *   it. Tokens may be burnt; the user checks the explorer. Never pruned.
  */
-export const UNWRAP_STATES = ['signed', 'requested', 'finalizing', 'finished', 'failed'] as const;
+export const UNWRAP_STATES = [
+  'signed',
+  'requested',
+  'finalizing',
+  'finished',
+  'failed',
+  'unclear',
+] as const;
 export type UnwrapStateName = (typeof UNWRAP_STATES)[number];
 
 const EntrySchema = z.object({
@@ -53,6 +62,12 @@ const EntrySchema = z.object({
   amount: UINT,
   state: z.enum(UNWRAP_STATES),
   requestTxHash: HASH,
+  /**
+   * The nonce the request was signed with (missing on entries from before it was
+   * recorded). Once the account's mined nonce is past it and the request has no
+   * receipt, the request can never be mined, so the entry may be forgotten.
+   */
+  requestNonce: z.number().int().nonnegative().optional(),
   requestBlock: z.number().int().nonnegative().optional(),
   requestId: HASH.optional(),
   finalizeTxHash: HASH.optional(),

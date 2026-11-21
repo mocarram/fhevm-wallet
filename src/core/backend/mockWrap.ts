@@ -102,7 +102,8 @@ interface MockRequest {
 }
 
 /** In-memory wrapper simulation. */
-export class MockWrapOps implements WrapBackend {
+// minedNonce is account-level: MockBackend answers it from its own nonces.
+export class MockWrapOps implements Omit<WrapBackend, 'minedNonce'> {
   /** ERC-20 balances by `${network}:${underlying}:${wallet}` (lowercase). */
   private readonly erc20 = new Map<string, bigint>();
   /** Allowances by `${network}:${underlying}:${owner}:${spender}` (lowercase). */
@@ -191,9 +192,9 @@ export class MockWrapOps implements WrapBackend {
         try {
           return await p.send({
             ...hooks,
-            onSigned: (h) => {
+            onSigned: (h, meta) => {
               hash = h;
-              hooks.onSigned?.(h);
+              hooks.onSigned?.(h, meta);
             },
           });
         } catch (err) {

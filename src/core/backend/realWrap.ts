@@ -25,6 +25,7 @@ import {
 import { translateTxError, WalletTxError } from '../token/txErrors.js';
 import { approvalPlan, needsReset } from '../token/wrapMath.js';
 import {
+  getMinedNonce,
   getTxOutcome,
   getUnderlyingBalance,
   getUnwrapRequestStatus,
@@ -260,6 +261,10 @@ export class RealWrapOps implements WrapBackend {
 
   txOutcome(txHash: string, network: NetworkName) {
     return getTxOutcome(txHash, network);
+  }
+
+  minedNonce(address: string, network: NetworkName) {
+    return getMinedNonce(address, network);
   }
 
   async unwrapRequestId(

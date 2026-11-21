@@ -203,6 +203,13 @@ export class MockBackend implements Backend {
   private readonly seeded = new Set<string>();
   private block = 7_000_000;
   private nonce = 0;
+  /**
+   * Per-account nonces (`${network}:${address}`, lowercase): the next one to sign with,
+   * and the next one not yet taken by a mined transaction. A transaction lost as
+   * `unconfirmed` keeps its nonce open until a later one of the account is mined.
+   */
+  private readonly accountNonces = new Map<string, number>();
+  private readonly minedNonces = new Map<string, number>();
   /** Ciphertext handles the mock "chain" knows: value and who may decrypt (lowercase). */
   private readonly handles = new Map<string, { value: bigint; allowed: Set<string> }>();
   /** operator expiry (unix s) per `${network}:${token}:${holder}:${operator}` (lowercase) */
@@ -562,14 +569,24 @@ export class MockBackend implements Backend {
     from: string,
     label: string,
     feeWei: bigint,
-    hooks: { onSigned?: (h: string) => void; onBroadcast?: (h: string) => void },
+    hooks: {
+      onSigned?: (h: string, meta?: { nonce: number }) => void;
+      onBroadcast?: (h: string) => void;
+    },
   ): Promise<{ txHash: string; blockNumber: number }> {
     const txHash = id(`fhew-mock-tx:${network}:${from}:${label}:${this.nonce++}`);
+    const account = `${network}:${from}`.toLowerCase();
+    const nonce = this.accountNonces.get(account) ?? 0;
+    this.accountNonces.set(account, nonce + 1);
     const explorer = this.explorerTxUrl(txHash, network);
-    safe(() => hooks.onSigned?.(txHash));
+    safe(() => hooks.onSigned?.(txHash, { nonce }));
     safe(() => hooks.onBroadcast?.(txHash));
     await this.sleep(this.opts.confirmMs);
     const blockNumber = ++this.block;
+    // Mined (a revert or a replacement takes the nonce too), unless confirmations are lost.
+    if (this.opts.fail !== 'unconfirmed') {
+      this.minedNonces.set(account, Math.max(this.minedNonces.get(account) ?? 0, nonce + 1));
+    }
     if (this.opts.fail === 'unconfirmed') {
       throw sentButUnconfirmed(
         Object.assign(new Error('timeout (mock)'), { code: 'TIMEOUT' }),
@@ -990,6 +1007,13 @@ export class MockBackend implements Backend {
   unwrapRequestStatus: MockWrapOps['unwrapRequestStatus'] = (...a) =>
     this.wrapOps.unwrapRequestStatus(...a);
   txOutcome: MockWrapOps['txOutcome'] = (...a) => this.wrapOps.txOutcome(...a);
+
+  /** Mined transactions of `address` on `network` (its next nonce on the mock chain). */
+  async minedNonce(address: string, network: NetworkName): Promise<number> {
+    await this.sleep(Math.min(this.opts.latencyMs, 100));
+    this.rpcFailure();
+    return this.minedNonces.get(`${network}:${address}`.toLowerCase()) ?? 0;
+  }
   unwrapRequestId: MockWrapOps['unwrapRequestId'] = (...a) => this.wrapOps.unwrapRequestId(...a);
   prepareFinalizeUnwrap: MockWrapOps['prepareFinalizeUnwrap'] = (...a) =>
     this.wrapOps.prepareFinalizeUnwrap(...a);

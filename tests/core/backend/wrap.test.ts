@@ -1,9 +1,11 @@
 import { Wallet } from 'ethers';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MockBackend } from '../../../src/core/backend/MockBackend.js';
 import { mockRequestId, mockUnderlyingAddress } from '../../../src/core/backend/mockWrap.js';
 import { WalletTxError } from '../../../src/core/token/txErrors.js';
 import {
+  checkForget,
+  FORGET_LEGACY_MIN_AGE_MS,
   prepareFinish,
   reconcileUnwrap,
   sendFinish,
@@ -11,7 +13,7 @@ import {
   unconfirmedRequest,
 } from '../../../src/core/token/unwrapPending.js';
 import { planWrap } from '../../../src/core/token/wrapMath.js';
-import { listUnwraps, updateUnwrap } from '../../../src/storage/UnwrapStore.js';
+import { addUnwrap, listUnwraps, updateUnwrap } from '../../../src/storage/UnwrapStore.js';
 import { wipeTestDataDir } from '../../helpers/dataDir.js';
 
 const instant = { latencyMs: 0, confirmMs: 0, sleep: async () => {} };
@@ -222,5 +224,126 @@ describe('unwrap and the pending state machine', () => {
     const done = await sendFinish(await prepareFinish(b, signer, entry), entry);
     const later = new MockBackend(instant);
     expect((await reconcileUnwrap(later, done.entry)).next.kind).toBe('done');
+  });
+
+  it('records the nonce a request was signed with', async () => {
+    const { b, cusdc } = setup();
+    const first = await requestOne(b, cusdc.address);
+    const second = await requestOne(b, cusdc.address, 1n);
+    expect(first.entry.requestNonce).toBe(0);
+    expect(second.entry.requestNonce).toBe(1);
+  });
+
+  it('marks a mined request without an UnwrapRequested log unclear, never "nothing burnt"', async () => {
+    const { b, cusdc } = setup({ fail: 'unconfirmed' });
+    const info = (await b.wrapperInfo(cusdc.address, 'sepolia'))!;
+    const p = await b.prepareUnwrap(signer, info, 1n, 'sepolia');
+    await expect(
+      sendUnwrapRequest(p, { network: 'sepolia', wallet: signer.address, info, amount: 1n }),
+    ).rejects.toMatchObject({ code: 'SENT_UNCONFIRMED' });
+    const later = new MockBackend(instant); // sees it mined
+    vi.spyOn(later, 'unwrapRequestId').mockResolvedValue(null);
+    const rec = await reconcileUnwrap(later, listUnwraps()[0]);
+    expect(rec.next.kind).toBe('unclear');
+    expect(rec.entry.state).toBe('unclear');
+    expect(JSON.stringify(rec.next)).not.toMatch(/nothing (was )?burnt/);
+    expect(JSON.stringify(rec.next)).toMatch(/may have been burnt.*explorer/);
+    // Forgetting it is possible, but only with the warning shown first.
+    const f = await checkForget(later, rec.entry);
+    expect(f).toMatchObject({ ok: true, warning: expect.stringMatching(/may have been burnt/) });
+  });
+});
+
+describe('forgetting an unwrap (S1: an unknown request may still be mined)', () => {
+  async function unconfirmed() {
+    const b = new MockBackend({ ...instant, fail: 'unconfirmed' });
+    const [cusdc] = b.catalogue('sepolia');
+    const info = (await b.wrapperInfo(cusdc.address, 'sepolia'))!;
+    const p = await b.prepareUnwrap(signer, info, 1n, 'sepolia');
+    await sendUnwrapRequest(p, {
+      network: 'sepolia',
+      wallet: signer.address,
+      info,
+      amount: 1n,
+    }).catch(() => {});
+    return { b, entry: listUnwraps()[0] };
+  }
+
+  it('refuses while the nonce of the unknown request is not used yet', async () => {
+    const { b, entry } = await unconfirmed();
+    expect(entry).toMatchObject({ state: 'signed', requestNonce: 0 });
+    const f = await checkForget(b, entry);
+    expect(f).toMatchObject({ ok: false, code: 'UNWRAP_STILL_OPEN' });
+    expect(!f.ok && f.message).toMatch(/can still be mined.*later transaction/);
+  });
+
+  it('allows it once a later transaction took the nonce and ours has no receipt', async () => {
+    const { b, entry } = await unconfirmed();
+    vi.spyOn(b, 'minedNonce').mockResolvedValue(1);
+    expect(await checkForget(b, entry)).toMatchObject({ ok: true });
+  });
+
+  it('reads the receipt after the nonce: a request seen in between is not forgettable', async () => {
+    const { b, entry } = await unconfirmed();
+    const calls: string[] = [];
+    vi.spyOn(b, 'minedNonce').mockImplementation(async () => {
+      calls.push('nonce');
+      return 1;
+    });
+    let n = 0;
+    vi.spyOn(b, 'txOutcome').mockImplementation(async () => {
+      calls.push('receipt');
+      // Unknown at first; seen by the time it is looked at again after the nonce.
+      return n++ === 0 ? { status: 'missing' } : { status: 'pending' };
+    });
+    const f = await checkForget(b, entry);
+    expect(calls.slice(0, 3)).toEqual(['receipt', 'nonce', 'receipt']);
+    expect(f.ok).toBe(false);
+  });
+
+  it('refuses a request the node has pending', async () => {
+    const { b, entry } = await unconfirmed();
+    vi.spyOn(b, 'txOutcome').mockResolvedValue({ status: 'pending' });
+    expect(await checkForget(b, entry)).toMatchObject({ ok: false });
+  });
+
+  it('needs a minimum age for entries recorded before nonces were', async () => {
+    const b = new MockBackend({ ...instant, fail: 'unconfirmed' });
+    const [cusdc] = b.catalogue('sepolia');
+    const info = (await b.wrapperInfo(cusdc.address, 'sepolia'))!;
+    const legacy = addUnwrap({
+      id: '0x' + '77'.repeat(32),
+      network: 'sepolia',
+      wallet: signer.address,
+      token: info.address,
+      symbol: info.symbol,
+      decimals: info.decimals,
+      rate: info.rate.toString(),
+      underlying: info.underlying,
+      hasRequester: info.hasRequester,
+      amount: '1',
+      requestTxHash: '0x' + '77'.repeat(32),
+    });
+    const spy = vi.spyOn(b, 'minedNonce');
+    const soon = await checkForget(b, legacy);
+    expect(soon).toMatchObject({ ok: false });
+    expect(!soon.ok && soon.message).toMatch(/Try again in 30 minutes/);
+    const later = Date.parse(legacy.createdAt) + FORGET_LEGACY_MIN_AGE_MS + 1;
+    expect(await checkForget(b, legacy, later)).toMatchObject({ ok: true });
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('keeps refusing entries waiting for step 2', async () => {
+    const b = new MockBackend({ ...instant, fail: 'public-pending' });
+    const [cusdc] = b.catalogue('sepolia');
+    const info = (await b.wrapperInfo(cusdc.address, 'sepolia'))!;
+    const p = await b.prepareUnwrap(signer, info, 1n, 'sepolia');
+    const { entry } = await sendUnwrapRequest(p, {
+      network: 'sepolia',
+      wallet: signer.address,
+      info,
+      amount: 1n,
+    });
+    expect(await checkForget(b, entry)).toMatchObject({ ok: false, code: 'UNWRAP_STILL_OPEN' });
   });
 });

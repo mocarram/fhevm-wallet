@@ -292,13 +292,17 @@ describe('TokenService.confidentialTransfer', () => {
     const prepared = await prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
     const seen: string[] = [];
     await prepared.send({
-      onSigned: (h) => seen.push(`signed:${h}`),
+      onSigned: (h, meta) => seen.push(`signed:${h}:nonce ${meta?.nonce}`),
       onBroadcast: (h) => {
         seen.push(`broadcast:${h}`);
         throw new Error('a broken UI callback must not fail the send');
       },
     });
-    expect(seen).toEqual([`signed:${SIGNED_HASH}`, `broadcast:${SIGNED_HASH}`]);
+    // The nonce comes with the hash: an unwrap records it (S1, unwrapPending.ts).
+    expect(seen).toEqual([
+      `signed:${SIGNED_HASH}:nonce ${Transaction.from(SIGNED).nonce}`,
+      `broadcast:${SIGNED_HASH}`,
+    ]);
   });
 
   it('refuses when the RPC serves a different chain', async () => {
