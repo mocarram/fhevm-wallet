@@ -651,6 +651,27 @@ describe('TokenService.confidentialTransfer', () => {
     expect(Object.keys(spy.mock.calls[0][1]).sort()).toEqual(['network', 'to', 'token', 'txHash']);
   });
 
+  it('a TUI send through RealBackend writes the TRANSFER_* audit trail, never the amount', async () => {
+    broadcastWith(async () => ({ status: 1, blockNumber: 7 }));
+    const audit = await import('../../../src/storage/AuditLog.js');
+    const spy = vi.spyOn(audit, 'logEvent');
+    const { RealBackend } = await import('../../../src/core/backend/RealBackend.js');
+    const prepared = await new RealBackend().prepareTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia');
+    const onBroadcast = vi.fn();
+    const res = await prepared.send({ onBroadcast });
+    expect(res.txHash).toBe(SIGNED_HASH);
+    expect(onBroadcast).toHaveBeenCalledWith(SIGNED_HASH);
+    expect(spy.mock.calls.map((c) => c[0])).toEqual([
+      'TRANSFER_SIGNED',
+      'TRANSFER_BROADCAST',
+      'TRANSFER',
+    ]);
+    for (const [, details] of spy.mock.calls) {
+      expect(Object.keys(details as object)).not.toContain('amount');
+      expect(JSON.stringify(details)).not.toMatch(/"5"|:5[,}]/);
+    }
+  });
+
   it('refuses to guess a zero fee when the RPC returns no gas price', async () => {
     fakeProvider.getFeeData.mockResolvedValue({ maxFeePerGas: null, gasPrice: null });
     const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
