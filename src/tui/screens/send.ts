@@ -312,7 +312,7 @@ export const sendReviewScreen: ScreenDef = {
       ),
       line(
         '  Amount    ',
-        seg(`${formatExactAmount(s.send.value, t.decimals)} ${t.symbol}`, 'yellow bold'),
+        seg(`${formatAmount(s.send.value, t.decimals)} ${t.symbol}`, 'yellow bold'),
         seg('   encrypted on-chain', 'dim'),
       ),
       // The same amount ungrouped and in base units, so "1,500" cannot be misread.

@@ -195,7 +195,7 @@ describe('command bar send', () => {
     await h.keys(':send bob 25 cusdc{enter}');
     expect(h.screen).toBe('send-review');
     expect(h.text()).toMatch(/From the command bar/);
-    expect(h.text()).toMatch(/Amount +25 cUSDC/);
+    expect(h.text()).toMatch(/Amount +25\.00 cUSDC/);
     await h.keys('{escape}');
     expect(h.screen).toBe('send-amount');
     expect(h.s.inputs.amount).toBe('25');
