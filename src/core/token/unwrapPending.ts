@@ -226,6 +226,15 @@ export async function reconcileUnwrap(
       return { entry: e, next: { kind: 'unclear', reason: UNCLEAR_REASON } };
     }
     e = updateUnwrap(e.id, { state: 'requested', requestId: id, requestBlock: o.blockNumber });
+    // The process that sent it may have ended before the receipt (killed, closed): put
+    // the burn into local history now. Keyed by hash, so a second record only updates it
+    // (and turns an "unconfirmed" one confirmed).
+    recordWrapHistory(
+      'unwrap',
+      { network, wallet: e.wallet, info, amount: BigInt(e.amount) },
+      e.requestTxHash,
+      o.blockNumber,
+    );
   }
 
   if (e.state === 'finalizing' && e.finalizeTxHash) {

@@ -14,6 +14,7 @@ import {
 } from '../../../src/core/token/unwrapPending.js';
 import { planWrap } from '../../../src/core/token/wrapMath.js';
 import { addUnwrap, listUnwraps, updateUnwrap } from '../../../src/storage/UnwrapStore.js';
+import { listTransactions } from '../../../src/storage/TransactionStore.js';
 import { wipeTestDataDir } from '../../helpers/dataDir.js';
 
 const instant = { latencyMs: 0, confirmMs: 0, sleep: async () => {} };
@@ -251,6 +252,42 @@ describe('unwrap and the pending state machine', () => {
     // Forgetting it is possible, but only with the warning shown first.
     const f = await checkForget(later, rec.entry);
     expect(f).toMatchObject({ ok: true, warning: expect.stringMatching(/may have been burnt/) });
+  });
+});
+
+describe('history of a request learnt later (V3)', () => {
+  it('records the burn once when a resume learns the receipt of a request killed before it', async () => {
+    const b = new MockBackend(instant);
+    const [cusdc] = b.catalogue('sepolia');
+    const info = (await b.wrapperInfo(cusdc.address, 'sepolia'))!;
+    // The process ended right after signing: an entry, but no history.
+    const hash = '0x' + '5a'.repeat(32);
+    const entry = addUnwrap({
+      id: hash,
+      network: 'sepolia',
+      wallet: signer.address,
+      token: info.address,
+      symbol: info.symbol,
+      decimals: info.decimals,
+      rate: info.rate.toString(),
+      underlying: info.underlying,
+      hasRequester: info.hasRequester,
+      amount: '3000000',
+      requestTxHash: hash,
+      requestNonce: 0,
+    });
+    const burns = () =>
+      listTransactions({ walletAddress: signer.address, network: 'sepolia', limit: 100 }).filter(
+        (t) => t.txHash === hash,
+      );
+    expect(burns()).toEqual([]);
+    const rec = await reconcileUnwrap(b, entry);
+    expect(rec.entry.state).toBe('requested');
+    expect(burns()).toHaveLength(1);
+    expect(burns()[0]).toMatchObject({ type: 'burn', amount: '3', tokenSymbol: info.symbol });
+    expect(burns()[0].blockNumber).toBeGreaterThan(0);
+    await reconcileUnwrap(b, rec.entry);
+    expect(burns()).toHaveLength(1);
   });
 });
 
