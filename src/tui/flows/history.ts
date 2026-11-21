@@ -17,7 +17,19 @@ import { effect, type Effect } from '../effects.js';
 import { isUnlocked, type AppState, type HistoryRow } from '../state.js';
 import { dimLine, line, seg } from '../text.js';
 import { sessionOf } from './data.js';
-import { shortWhen } from './manage.js';
+
+// Lives here, not in manage.ts: manage.ts imports this module, and a shared helper in
+// manage.ts made the two import each other.
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "Nov 19 14:02" in local time. */
+export function shortWhen(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${MONTHS[d.getMonth()]} ${d.getDate()} ${hh}:${mm}`;
+}
 
 /** How many transfers History shows. */
 export const HISTORY_LIMIT = 50;

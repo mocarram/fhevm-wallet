@@ -405,17 +405,6 @@ export function resetRpc(s: AppState): Effect[] {
   ];
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** "Nov 19 14:02" in local time. */
-export function shortWhen(iso: string): string {
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${MONTHS[d.getMonth()]} ${d.getDate()} ${hh}:${mm}`;
-}
-
 /** Load history: show local rows at once, then sync through the backend. */
 export function loadHistory(s: AppState): Effect[] {
   const wallet = s.wallet;
