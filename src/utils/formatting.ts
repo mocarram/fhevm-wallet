@@ -18,12 +18,20 @@ export function applyNoColor(env: NodeJS.ProcessEnv = process.env): void {
   if (noColorRequested(env)) chalk.level = 0;
 }
 
-/** cli-table3 `style`: cyan headings and grey borders, or none with NO_COLOR. */
-export function tableStyle(env: NodeJS.ProcessEnv = process.env): {
+/**
+ * cli-table3 `style`: cyan headings and grey borders on a colour terminal; none with
+ * NO_COLOR or when stdout is a file or a pipe (cli-table3 colours by itself and would
+ * write escape codes into the file).
+ */
+export function tableStyle(
+  env: NodeJS.ProcessEnv = process.env,
+  out: { isTTY?: boolean } = process.stdout,
+): {
   head: string[];
   border: string[];
 } {
-  return noColorRequested(env) ? { head: [], border: [] } : { head: ['cyan'], border: ['grey'] };
+  const plain = noColorRequested(env) || !out.isTTY || chalk.level === 0;
+  return plain ? { head: [], border: [] } : { head: ['cyan'], border: ['grey'] };
 }
 
 /**
@@ -81,7 +89,7 @@ export function formatDate(dateStr: string): string {
  * Success message
  */
 export function success(message: string): string {
-  return chalk.green(`✓ ${message}`);
+  return chalk.green(`✔ ${message}`);
 }
 
 /**
@@ -95,7 +103,7 @@ export function error(message: string): string {
  * Warning message
  */
 export function warning(message: string): string {
-  return chalk.yellow(`⚠ ${message}`);
+  return chalk.yellow(`! ${message}`);
 }
 
 /**

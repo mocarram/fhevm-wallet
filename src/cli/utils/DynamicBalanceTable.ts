@@ -30,6 +30,8 @@ export class DynamicBalanceTable {
   private intervalId: NodeJS.Timeout | null = null;
   private header: string;
   private ethBalance?: string;
+  /** Redraw in place only on a terminal. */
+  private readonly live = Boolean(process.stdout.isTTY);
 
   constructor(options: DynamicBalanceTableOptions) {
     this.tokens = options.tokens.map((t) => ({ token: t, status: 'pending' }));
@@ -37,7 +39,12 @@ export class DynamicBalanceTable {
     this.ethBalance = options.ethBalance;
   }
 
+  /**
+   * Animate on a terminal. Into a file or a pipe nothing is drawn until `stop()`, which
+   * prints the final table once: log-update's cursor moves would land in the file.
+   */
   start(): void {
+    if (!this.live) return;
     // Start spinner animation interval (80ms per frame)
     this.intervalId = setInterval(() => {
       this.frameIndex = (this.frameIndex + 1) % SPINNER_FRAMES.length;
@@ -65,6 +72,10 @@ export class DynamicBalanceTable {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
+    if (!this.live) {
+      console.log(this.header + '\n' + this.table());
+      return;
+    }
     this.render(); // Final render
     logUpdate.done(); // Persist output
   }
@@ -83,6 +94,10 @@ export class DynamicBalanceTable {
   }
 
   private render(): void {
+    logUpdate(this.header + '\n' + this.table());
+  }
+
+  private table(): string {
     const table = new Table({
       head: ['', 'Token', 'Balance', 'Address'],
       style: tableStyle(),
@@ -111,6 +126,6 @@ export class DynamicBalanceTable {
       table.push([icon, ts.token.symbol, balance, formatAddress(ts.token.address)]);
     }
 
-    logUpdate(this.header + '\n' + table.toString());
+    return table.toString();
   }
 }

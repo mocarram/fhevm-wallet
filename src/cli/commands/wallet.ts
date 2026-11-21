@@ -5,7 +5,7 @@
 import { Command } from 'commander';
 import { mockJson, printJson } from '../utils/json.js';
 import chalk from 'chalk';
-import ora from 'ora';
+import { spinner as ora } from '../utils/spinner.js';
 import { formatPhrase, showSecretScreen } from '../utils/secretScreen.js';
 import Table from 'cli-table3';
 import { prompts, SECRET_MASK } from '../utils/prompts.js';

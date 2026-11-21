@@ -4,7 +4,7 @@
 
 import { Command } from 'commander';
 import { prompts } from '../utils/prompts.js';
-import ora from 'ora';
+import { spinner as ora } from '../utils/spinner.js';
 import Table from 'cli-table3';
 import {
   addTokenWithInfo,

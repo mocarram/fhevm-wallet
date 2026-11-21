@@ -5,7 +5,7 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import ora from 'ora';
+import { spinner as ora } from '../utils/spinner.js';
 import Table from 'cli-table3';
 import { createBackend } from '../../core/backend/select.js';
 import type { NetworkName } from '../../core/network/NetworkConfig.js';

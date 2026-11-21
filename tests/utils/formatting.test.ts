@@ -40,8 +40,16 @@ describe('NO_COLOR', () => {
     const { default: Table } = await import('cli-table3');
     const { default: chalk } = await import('chalk');
     const { applyNoColor, tableStyle } = await import('../../src/utils/formatting.js');
-    expect(tableStyle({})).toEqual({ head: ['cyan'], border: ['grey'] });
-    expect(tableStyle({ NO_COLOR: '' }).head).toEqual(['cyan']);
+    const level0 = chalk.level;
+    chalk.level = 1;
+    try {
+      expect(tableStyle({}, { isTTY: true })).toEqual({ head: ['cyan'], border: ['grey'] });
+      expect(tableStyle({ NO_COLOR: '' }, { isTTY: true }).head).toEqual(['cyan']);
+      // Into a file or a pipe: no colours (cli-table3 would write escape codes there).
+      expect(tableStyle({}, { isTTY: false })).toEqual({ head: [], border: [] });
+    } finally {
+      chalk.level = level0;
+    }
     const t = new Table({ head: ['Symbol'], style: tableStyle({ NO_COLOR: '1' }) });
     t.push(['cUSDC']);
     // eslint-disable-next-line no-control-regex
@@ -54,5 +62,25 @@ describe('NO_COLOR', () => {
     } finally {
       chalk.level = level;
     }
+  });
+});
+
+describe('spinner marks', () => {
+  it('are the TUI marks, uncoloured when the stream is not a terminal', async () => {
+    const { PassThrough } = await import('stream');
+    const { spinner } = await import('../../src/cli/utils/spinner.js');
+    const out = new PassThrough();
+    let text = '';
+    out.on('data', (c) => (text += c.toString()));
+    const s = spinner({ text: 'Working', stream: out as unknown as NodeJS.WriteStream });
+    s.start();
+    s.succeed('Done');
+    s.fail('Nope');
+    s.warn('Hmm');
+    expect(text).toContain('✔ Done');
+    expect(text).toContain('✗ Nope');
+    expect(text).toContain('! Hmm');
+    // eslint-disable-next-line no-control-regex
+    expect(text).not.toMatch(/\x1b\[/);
   });
 });

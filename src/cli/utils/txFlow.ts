@@ -10,7 +10,7 @@
  */
 
 import { formatEther } from 'ethers';
-import ora from 'ora';
+import { spinner as ora } from './spinner.js';
 import type { Backend, PreparedTx, UnlockedSigner } from '../../core/backend/types.js';
 import type { NetworkName } from '../../core/network/NetworkConfig.js';
 import { resolveToken } from '../../core/send/resolve.js';

@@ -99,6 +99,15 @@ describe('fhew token find and add (mock)', () => {
     expect(yes.code).toBe(0);
     expect(yes.stdout).toMatch(/Added anyway/);
   });
+
+  it('tables and marks piped into a file carry no escape codes (colour not turned off)', () => {
+    runCli(['token', 'add', PLAIN, '--force'], t.home, env);
+    for (const args of [['token', 'list'], ['token', 'add', PLAIN, '--force'], ['doctor']]) {
+      const r = runCli(args, t.home, { ...env, NO_COLOR: '' });
+      // eslint-disable-next-line no-control-regex
+      expect(r.stdout + r.stderr, args.join(' ')).not.toMatch(/\x1b\[/);
+    }
+  });
 });
 
 describe('--json on other commands', () => {

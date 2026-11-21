@@ -18,7 +18,7 @@ import { describeError } from '../utils/userError.js';
 import { failJson, printJson, printJsonError } from '../utils/json.js';
 
 const MARKS: Record<DoctorRow['status'], string> = {
-  ok: chalk.green('✓'),
+  ok: chalk.green('✔'),
   warn: chalk.yellow('!'),
   fail: chalk.red('✗'),
   info: chalk.dim('·'),

@@ -10,7 +10,7 @@ import {
   wrongPasswordMessage,
 } from '../utils/passwordInput.js';
 import { prompts } from '../utils/prompts.js';
-import ora from 'ora';
+import { spinner as ora } from '../utils/spinner.js';
 import chalk from 'chalk';
 import { loadWallet, listWallets, hasWallet } from '../../core/wallet/index.js';
 import { listTokens, getToken, TokenEntry } from '../../core/token/TokenRegistry.js';

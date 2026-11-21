@@ -3,7 +3,7 @@
  */
 
 import { Command } from 'commander';
-import ora from 'ora';
+import { spinner as ora } from '../utils/spinner.js';
 import Table from 'cli-table3';
 import chalk from 'chalk';
 import { prompts, SECRET_MASK } from '../utils/prompts.js';
@@ -193,7 +193,7 @@ async function handleSyncError(
       return false;
     }
     loadEnv();
-    console.log(chalk.green('✓ API key saved'));
+    console.log(chalk.green('✔ API key saved'));
 
     // Retry with Etherscan
     const retrySpinner = ora('Retrying sync with Etherscan...').start();
@@ -231,7 +231,7 @@ async function handleSyncError(
       return false;
     }
     clearProviderCache();
-    console.log(chalk.green(`✓ ${network} RPC URL saved`));
+    console.log(chalk.green(`✔ ${network} RPC URL saved`));
 
     // Retry with new RPC
     const retrySpinner = ora('Retrying sync with new RPC...').start();

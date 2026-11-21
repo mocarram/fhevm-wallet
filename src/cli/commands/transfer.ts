@@ -14,7 +14,7 @@
 
 import { Command } from 'commander';
 import { formatEther } from 'ethers';
-import ora from 'ora';
+import { spinner as ora } from '../utils/spinner.js';
 import {
   isWrongPassword,
   PASSWORD_STDIN_HELP,
