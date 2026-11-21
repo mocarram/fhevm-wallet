@@ -4,15 +4,17 @@
 
 import {
   accessSync,
+  chmodSync,
   constants as fsConstants,
   existsSync,
   lstatSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   statSync,
 } from 'fs';
-import { join, resolve } from 'path';
-import { homedir } from 'os';
+import { dirname, join, resolve } from 'path';
+import { homedir, userInfo } from 'os';
 import { parse as dotenvParse } from 'dotenv';
 import {
   ensureSecureDir,
@@ -112,22 +114,114 @@ export class UntrustedDataDirError extends Error {
 
 /** Group and other write bits: someone else could change the file or folder. */
 const OTHERS_WRITE = 0o022;
+const GROUP_WRITE = 0o020;
+const WORLD_WRITE = 0o002;
+const STICKY = 0o1000;
+
+/**
+ * The first folder above `path` (up to /) that any local user can write to without the
+ * sticky bit, or null. Like sshd's StrictModes: whoever can write to a parent can rename
+ * the data dir away and put their own in its place, keystores and RPC settings included.
+ * A sticky folder such as /tmp is fine: others cannot rename what they do not own.
+ */
+export function untrustedAncestor(
+  path: string,
+  stat: (p: string) => { mode: number } = statSync,
+): string | null {
+  let dir: string;
+  try {
+    dir = realpathSync(path);
+  } catch {
+    dir = resolve(path); // not created yet: its parents are what matters
+  }
+  for (;;) {
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+    let mode: number;
+    try {
+      mode = stat(dir).mode;
+    } catch {
+      continue; // a parent that does not exist yet is created by the wallet, owner-only
+    }
+    if ((mode & WORLD_WRITE) !== 0 && (mode & STICKY) === 0) return dir;
+  }
+}
+
+/** Where `isPrivateGroup` reads the account databases (tests pass their own text). */
+export interface AccountFiles {
+  group?: string;
+  passwd?: string;
+  username?: string;
+}
+
+function readOr(path: string): string {
+  try {
+    return readFileSync(path, 'utf-8');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * True when `gid` is the user's private group: named like the user, with no listed
+ * members other than the user, and no other account using it as its primary group.
+ * Many systems give each user such a group with a umask of 002, so older wallet files
+ * could be group-writable without anyone else being able to write them. Unknown
+ * (no /etc/group entry, say) is false: the wallet then keeps refusing.
+ */
+export function isPrivateGroup(gid: number, uid: number, files: AccountFiles = {}): boolean {
+  let username = files.username;
+  if (username === undefined) {
+    try {
+      username = userInfo().username;
+    } catch {
+      return false;
+    }
+  }
+  const group = files.group ?? readOr('/etc/group');
+  const passwd = files.passwd ?? readOr('/etc/passwd');
+  const entry = group
+    .split('\n')
+    .map((l) => l.split(':'))
+    .find((f) => f.length >= 4 && Number(f[2]) === gid && f[2] !== '');
+  if (!entry || entry[0] !== username) return false;
+  const members = entry[3].split(',').filter(Boolean);
+  if (members.some((m) => m !== username)) return false;
+  const others = passwd
+    .split('\n')
+    .map((l) => l.split(':'))
+    .filter((f) => f.length >= 4 && Number(f[3]) === gid && Number(f[2]) !== uid);
+  return others.length === 0;
+}
 
 /**
  * Throw UntrustedDataDirError unless the data dir, `wallets/`, the keystores in it and
  * the wallet's own files (`WALLET_DATA_ENTRIES`) are all owned by the current user and
- * not writable by group or others, and none of them is a symbolic link.
+ * not writable by group or others, none of them is a symbolic link, and no folder above
+ * the data dir is writable by everyone without the sticky bit.
  *
  * Checked before anything is tightened or read: a folder that *was* writable by others
  * may already hold a planted keystore or a `.env` pointing at an attacker's RPC, and
  * fixing the mode afterwards would hide that. The user checks and fixes it once.
+ * The one exception: a group-writable item (not world-writable) owned by the user whose
+ * group is the user's private group (see `isPrivateGroup`). Nobody else could have
+ * written it, so its group write bit is removed and the path is returned.
  * Windows has no POSIX owners or modes, so there is nothing to check there.
  */
-export function assertTrustedDataDir(): void {
-  if (process.platform === 'win32' || typeof process.getuid !== 'function') return;
+export function assertTrustedDataDir(files: AccountFiles = {}): string[] {
+  if (process.platform === 'win32' || typeof process.getuid !== 'function') return [];
   const me = process.getuid();
   const fixMode = `chmod -R go-w ${DATA_DIR}`;
   const fixOwner = `sudo chown -R ${me} ${DATA_DIR}`;
+  const ancestor = untrustedAncestor(DATA_DIR);
+  if (ancestor) {
+    throw new UntrustedDataDirError(
+      `Any user can rename or replace folders inside ${ancestor}, which holds the wallet data folder ${DATA_DIR}, so the wallet will not load keys or settings from it. Move the data folder somewhere private (set FHEVM_WALLET_HOME), or remove that access with: chmod o-w ${ancestor} (or make it sticky with chmod +t).`,
+    );
+  }
+  const tightened: string[] = [];
+  const privateGroups = new Map<number, boolean>();
   const check = (path: string, isDataDir: boolean) => {
     let st;
     try {
@@ -150,6 +244,16 @@ export function assertTrustedDataDir(): void {
       );
     }
     if ((st.mode & OTHERS_WRITE) !== 0) {
+      const onlyGroup = (st.mode & WORLD_WRITE) === 0 && (st.mode & GROUP_WRITE) !== 0;
+      if (onlyGroup) {
+        if (!privateGroups.has(st.gid))
+          privateGroups.set(st.gid, isPrivateGroup(st.gid, me, files));
+        if (privateGroups.get(st.gid)) {
+          chmodSync(path, st.mode & 0o7777 & ~GROUP_WRITE);
+          tightened.push(path);
+          return;
+        }
+      }
       throw new UntrustedDataDirError(
         `Other users can change ${path}, so the wallet will not load keys or settings from ${DATA_DIR}. Check that nothing in it was added or changed by someone else, then remove that access with: ${fixMode}`,
       );
@@ -165,6 +269,7 @@ export function assertTrustedDataDir(): void {
     /* no wallets yet */
   }
   for (const child of children) check(join(walletsDir, child), false);
+  return tightened;
 }
 
 /**
@@ -202,8 +307,9 @@ export function secureExistingData(): DataDirSecurity {
   const policy = getDataDirPolicy();
   // Refuse first, before ensureDataDir's chmod: never tighten (and so hide) what other
   // users could have changed.
+  let fixedGroupWrite: string[];
   try {
-    assertTrustedDataDir();
+    fixedGroupWrite = assertTrustedDataDir();
   } catch (err) {
     // Say first why the wallet would not have changed the folder itself.
     if (err instanceof UntrustedDataDirError && policy.reason) {
@@ -214,9 +320,10 @@ export function secureExistingData(): DataDirSecurity {
   ensureDataDir();
   // Only read bits are left to fix here (0644 files and 0755 folders from older versions).
   const tightened =
-    policy.ours || policy.sharedWithOtherFiles
+    fixedGroupWrite.length +
+    (policy.ours || policy.sharedWithOtherFiles
       ? tightenPermissions(DATA_DIR, WALLET_DATA_ENTRIES, { includeRoot: policy.ours }).length
-      : 0;
+      : 0);
   return { tightened, warning: policy.reason };
 }
 

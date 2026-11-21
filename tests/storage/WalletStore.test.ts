@@ -7,7 +7,9 @@ import {
   saveWalletKeystore,
   walletExists,
 } from '../../src/storage/WalletStore.js';
-import { wipeTestDataDir } from '../helpers/dataDir.js';
+import { wipeTestDataDir, getTestDataDir } from '../helpers/dataDir.js';
+import { chmodSync } from 'fs';
+import { join } from 'path';
 
 const FAKE_KEYSTORE_JSON = JSON.stringify({ version: 3, id: 'fake' });
 const FAKE_ADDRESS = '0x52908400098527886E0F7030069857D2E4169EE7';
@@ -20,6 +22,21 @@ describe('WalletStore', () => {
   it('walletExists returns false for unknown name', () => {
     expect(walletExists('ghost')).toBe(false);
   });
+
+  it.skipIf(process.platform === 'win32')(
+    're-checks folder trust before reading a keystore (regression)',
+    () => {
+      saveWalletKeystore('main', FAKE_KEYSTORE_JSON, FAKE_ADDRESS);
+      const wallets = join(getTestDataDir(), 'wallets');
+      chmodSync(wallets, 0o777);
+      try {
+        expect(() => loadWalletKeystore('main')).toThrow(/Other users can change/);
+      } finally {
+        chmodSync(wallets, 0o700);
+      }
+      expect(loadWalletKeystore('main')).toBe(FAKE_KEYSTORE_JSON);
+    },
+  );
 
   it('saves and loads keystore + metadata', () => {
     saveWalletKeystore('main', FAKE_KEYSTORE_JSON, FAKE_ADDRESS);

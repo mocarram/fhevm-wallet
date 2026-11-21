@@ -9,10 +9,20 @@ import {
   settingSource,
   assertTrustedDataDir,
   ensureDataDir,
+  isPrivateGroup,
+  untrustedAncestor,
 } from '../../src/storage/paths.js';
 import { wipeTestDataDir } from '../helpers/dataDir.js';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'fs';
-import { tmpdir } from 'os';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'fs';
+import { tmpdir, userInfo } from 'os';
 import { join } from 'path';
 
 beforeEach(() => {
@@ -179,4 +189,71 @@ describe('env file CRUD', () => {
   it('ENV_FILE_PATH lives under the test home', () => {
     expect(ENV_FILE_PATH).toMatch(/\.fhevm-wallet[/\\]\.env$/);
   });
+});
+
+describe('data dir trust: ancestors and private groups', () => {
+  it.skipIf(process.platform === 'win32')(
+    'refuses a data dir under a world-writable, non-sticky folder',
+    () => {
+      const base = mkdtempSync(join(tmpdir(), 'fhew-anc-'));
+      try {
+        const open = join(base, 'open');
+        mkdirSync(join(open, 'inner'), { recursive: true });
+        chmodSync(open, 0o777);
+        expect(untrustedAncestor(join(open, 'inner', 'data'))).toBe(open);
+        chmodSync(open, 0o1777); // sticky, like /tmp: fine
+        expect(untrustedAncestor(join(open, 'inner', 'data'))).toBeNull();
+        chmodSync(open, 0o755);
+        expect(untrustedAncestor(join(open, 'inner'))).toBeNull();
+      } finally {
+        rmSync(base, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it('isPrivateGroup: own-named group with no other members or primary users', () => {
+    const group = 'root:x:0:\nalice:x:1000:\nstaff:x:50:alice,bob\nshared:x:1001:bob\n';
+    const passwd = 'alice:x:1000:1000::/home/alice:/bin/sh\nbob:x:1001:1001::/home/bob:/bin/sh\n';
+    const files = { group, passwd, username: 'alice' };
+    expect(isPrivateGroup(1000, 1000, files)).toBe(true);
+    expect(isPrivateGroup(50, 1000, files)).toBe(false); // named differently, shared
+    expect(isPrivateGroup(1001, 1000, files)).toBe(false);
+    expect(isPrivateGroup(4242, 1000, files)).toBe(false); // unknown group
+    // Another account with it as primary group: not private.
+    const passwd2 = passwd + 'carol:x:1002:1000::/home/carol:/bin/sh\n';
+    expect(isPrivateGroup(1000, 1000, { ...files, passwd: passwd2 })).toBe(false);
+    // A listed member other than the user: not private.
+    const group2 = group.replace('alice:x:1000:', 'alice:x:1000:dave');
+    expect(isPrivateGroup(1000, 1000, { ...files, group: group2 })).toBe(false);
+  });
+
+  it.skipIf(process.platform === 'win32')(
+    'tightens a group-writable file in the private group, refuses otherwise',
+    () => {
+      wipeTestDataDir();
+      const dataDir = join(ENV_FILE_PATH, '..');
+      mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+      writeFileSync(ENV_FILE_PATH, 'ETHERSCAN_API_KEY=x\n', { mode: 0o600 });
+      chmodSync(ENV_FILE_PATH, 0o620);
+      const gid = statSync(ENV_FILE_PATH).gid;
+      const user = userInfo().username;
+      const uid = process.getuid!();
+      const priv = {
+        group: `${user}:x:${gid}:\n`,
+        passwd: `${user}:x:${uid}:${gid}::/h:/bin/sh\n`,
+        username: user,
+      };
+      expect(assertTrustedDataDir(priv)).toEqual([ENV_FILE_PATH]);
+      expect(statSync(ENV_FILE_PATH).mode & 0o777).toBe(0o600);
+      // A shared group: still refused, nothing changed.
+      chmodSync(ENV_FILE_PATH, 0o620);
+      const shared = { ...priv, group: `${user}:x:${gid}:someone\n` };
+      expect(() => assertTrustedDataDir(shared)).toThrow(/Other users can change/);
+      expect(statSync(ENV_FILE_PATH).mode & 0o777).toBe(0o620);
+      // World-writable: always refused.
+      chmodSync(ENV_FILE_PATH, 0o622);
+      expect(() => assertTrustedDataDir(priv)).toThrow(/Other users can change/);
+      chmodSync(ENV_FILE_PATH, 0o600);
+    },
+  );
 });

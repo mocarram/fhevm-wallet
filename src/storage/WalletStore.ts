@@ -5,7 +5,7 @@
 import { existsSync, readdirSync, readFileSync, unlinkSync } from 'fs';
 import { ensureSecureDir, writeSecureFile } from './secureFs.js';
 import { join } from 'path';
-import { DATA_DIR } from './paths.js';
+import { assertTrustedDataDir, DATA_DIR } from './paths.js';
 
 const WALLETS_DIR = join(DATA_DIR, 'wallets');
 
@@ -83,6 +83,10 @@ export function saveWalletKeystore(name: string, keystore: string, address: stri
  * Load wallet keystore
  */
 export function loadWalletKeystore(name: string): string {
+  // Checked again here, not only at startup: the TUI stays open for hours, and a folder
+  // that became writable by others since then may now hold a planted keystore. Before
+  // walletExists, whose ensureSecureDir would quietly re-tighten (and so hide) it.
+  assertTrustedDataDir();
   if (!walletExists(name)) {
     throw new Error(`Wallet "${name}" not found`);
   }
