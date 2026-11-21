@@ -124,7 +124,9 @@ export function txChecks(s: AppState): Effect[] {
   return [
     effect('tx-prepare', async (deps) => {
       try {
-        const problem = a.kind === 'operator' ? null : deps.backend.readinessProblem(network);
+        // Custom actions (wrap, unwrap) check what they need themselves.
+        const problem =
+          a.kind === 'operator' || a.custom ? null : deps.backend.readinessProblem(network);
         if (problem) {
           throw new WalletTxError(
             'UNKNOWN',
@@ -133,8 +135,9 @@ export function txChecks(s: AppState): Effect[] {
             'Open Settings to add what is missing.',
           );
         }
-        const prepared =
-          a.kind === 'operator'
+        const prepared = a.custom
+          ? await a.custom.prepare(deps, signer, network)
+          : a.kind === 'operator'
             ? await deps.backend.prepareSetOperator(signer, a.token, a.operator!, a.until!, network)
             : a.kind === 'disclose-request'
               ? await deps.backend.prepareDiscloseRequest(signer, a.token, a.handle!, network)
@@ -218,13 +221,26 @@ export function broadcastTx(s: AppState): Effect[] {
   return [
     effect('tx-broadcast', async (deps) => {
       try {
-        const result = await prepared.send({
-          onBroadcast: (txHash) =>
+        const hooks = {
+          onBroadcast: (txHash: string) =>
             deps.dispatch((st) => {
               const p = st.pending.find((x) => x.id === id);
               if (p) p.txHash = txHash;
             }),
-        });
+        };
+        const result = a.custom?.send
+          ? await a.custom.send(prepared, hooks)
+          : await prepared.send(hooks);
+        if (a.custom) {
+          const out = await a.custom.done(deps, result, prepared);
+          return (st) => {
+            st.pending = st.pending.filter((p) => p.id !== id);
+            st.notice = out.notice;
+            if (st.stack.length === 1) st.flash = null;
+            const more = out.update?.(st) ?? [];
+            return [refreshEth(st), ...more];
+          };
+        }
         let doneText: string;
         if (a.kind === 'operator') {
           try {
@@ -289,6 +305,11 @@ export function broadcastTx(s: AppState): Effect[] {
           st.pending = st.pending.filter((p) => p.id !== id);
           st.lastSendError = { error, afterBroadcast, showRaw: false, explorerUrl };
           if (st.stack.length === 1) st.flash = null;
+          const special = a.custom?.failNotice?.(error);
+          if (special) {
+            st.notice = special;
+            return [refreshEth(st)];
+          }
           st.notice = [
             line(
               '  ',

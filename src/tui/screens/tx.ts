@@ -36,6 +36,7 @@ export const txReviewScreen: ScreenDef = {
       line('  Network   ', seg(s.network === 'mainnet' ? 'Mainnet · real funds' : 'Sepolia', '')),
     );
     if (a.operator) body.push(line('  Operator  ', seg(a.operator, 'bold')));
+    if (a.details) body.push(...a.details(a.prepared));
     if (a.prepared) {
       body.push(
         // The same wording as the send Review.

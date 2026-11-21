@@ -13,6 +13,7 @@ import { dimLine, line, lineWidth, seg, type Line } from '../text.js';
 import { lastSendSummary, repeatLastSend, startSend } from '../flows/send.js';
 import { shortAddress } from '../../core/send/recipient.js';
 import { SEP } from './common.js';
+import { pendingUnwrapItems } from '../flows/wrap.js';
 
 /** Most rows of balances on Home; the rest are counted ("+12 more") and on Balances. */
 const HOME_BALANCE_ROWS = 2;
@@ -144,6 +145,8 @@ export const homeScreen: ScreenDef = {
         },
       });
     }
+    // Unwraps waiting for step 2 (Phase 5): unnumbered, so the menu numbers stay put.
+    items.push(...pendingUnwrapItems(s));
     const last = lastSendSummary(s);
     if (last) {
       items.push({
@@ -176,6 +179,7 @@ export const homeScreen: ScreenDef = {
         ['b s r h d', 'Balances, Send, Receive, History, Doctor'],
         ['.', 'Repeat your last send'],
         ['a', 'Save the last new address (when offered)'],
+        ['u', 'Finish an unwrap that is waiting (when shown)'],
         ['0 / q', 'Quit'],
       ],
     };

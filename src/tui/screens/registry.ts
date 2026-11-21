@@ -59,6 +59,7 @@ import {
   operatorTokenScreen,
 } from './operators.js';
 import { discloseScreen, disclosePickScreen } from './disclose.js';
+import { unwrapScreen, wrapPickScreen, wrapScreen } from './wrap.js';
 import {
   exportConfirmScreen,
   exportKeystoreScreen,
@@ -124,6 +125,9 @@ export const SCREENS: Record<string, ScreenDef> = {
   'tx-count': txCountScreen,
   'disclose-pick': disclosePickScreen,
   disclose: discloseScreen,
+  'wrap-pick': wrapPickScreen,
+  wrap: wrapScreen,
+  unwrap: unwrapScreen,
 
   contacts: contactsScreen,
   'contact-name': contactNameScreen,

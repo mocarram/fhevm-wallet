@@ -23,6 +23,7 @@ import {
 import { QUIT, type Effect } from './effects.js';
 import { broadcast, commandSend } from './flows/send.js';
 import { broadcastTx } from './flows/tx.js';
+import { commandWrap } from './flows/wrap.js';
 import { decryptAll, lockNow, refreshEth, reload } from './flows/data.js';
 import { loadHistory } from './flows/manage.js';
 import { findBusy } from './flows/find.js';
@@ -127,6 +128,12 @@ function runCommand(s: AppState, text: string): Effect[] {
         return [];
       }
       return commandSend(s, cmd);
+    case 'wrap':
+      if (inSetup(s)) {
+        s.flash = flashLine('Finish setup first.', 'yellow');
+        return [];
+      }
+      return commandWrap(s, cmd);
   }
 }
 
@@ -476,6 +483,7 @@ export function isAnimating(s: AppState): boolean {
     s.txAction?.checking ||
     s.operators?.loading ||
     s.disclose?.loading ||
+    s.wrap.loading ||
     (top(s).id === 'doctor' && !s.doctor) ||
     findBusy(s) ||
     (top(s).id === 'setup-gas' && (!s.doctor || !s.eth)),

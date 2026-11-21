@@ -7,6 +7,7 @@ import { age, formatAmount, formatEth, isLowGas } from '../format.js';
 import { decryptAll } from '../flows/data.js';
 import { startSend } from '../flows/send.js';
 import { unlock } from '../flows/wallet.js';
+import { loadWrapData, openWrap, pendingUnwrapItems, wrapRowNote } from '../flows/wrap.js';
 import { open } from '../nav.js';
 import type { ScreenDef } from '../screen.js';
 import { isUnlocked, top, type AppState } from '../state.js';
@@ -21,7 +22,7 @@ function unlockMinutesText(s: AppState): string {
 export const balancesScreen: ScreenDef = {
   crumb: ['Balances'],
   // Opening Balances while unlocked refreshes them (the cache skips unchanged handles).
-  onEnter: (s) => decryptAll(s),
+  onEnter: (s) => [...decryptAll(s), ...loadWrapData(s)],
   view: (s) => {
     const body: Line[] = [
       dimLine('  Token      Balance             Contract'),
@@ -49,6 +50,8 @@ export const balancesScreen: ScreenDef = {
           seg(shortAddress(t.address), 'dim'),
         ),
       );
+      const note = wrapRowNote(s, t.address);
+      if (note) body.push(note);
     }
     if (s.data.tokens.length === 0) body.push(dimLine('  No tokens tracked. Add one in Tokens.'));
     // Notes after the token rows stay on screen while a long list scrolls.
@@ -71,10 +74,20 @@ export const balancesScreen: ScreenDef = {
         ),
       );
     }
+    const wrapItem = {
+      label: 'Wrap or unwrap',
+      key: 'w',
+      // Unnumbered, so the numbers of the other items stay what they were.
+      nonum: true,
+      note: 'ERC-20 ⇄ confidential',
+      act: (st: AppState) => openWrap(st, 'wrap'),
+    };
     const items = isUnlocked(s)
       ? [
           { label: 'Refresh', act: (st: AppState) => decryptAll(st, true) },
           { label: 'Send from this wallet', act: startSend },
+          wrapItem,
+          ...pendingUnwrapItems(s),
           backItem(),
         ]
       : [
@@ -85,6 +98,8 @@ export const balancesScreen: ScreenDef = {
               return open(st, 'unlock');
             },
           },
+          wrapItem,
+          ...pendingUnwrapItems(s),
           backItem(),
         ];
     return {
@@ -93,7 +108,11 @@ export const balancesScreen: ScreenDef = {
       after,
       items,
       hint: '↑↓ move · enter select · esc back',
-      help: [['enter', 'Refresh, or unlock to decrypt']],
+      help: [
+        ['enter', 'Refresh, or unlock to decrypt'],
+        ['w', 'Wrap or unwrap a wrapper token (ERC-20 ⇄ confidential)'],
+        ['u', 'Finish an unwrap that is waiting (when shown)'],
+      ],
     };
   },
 };

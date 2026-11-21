@@ -14,6 +14,9 @@ import { listTransactions } from '../storage/TransactionStore.js';
 import { loadUiPrefs, type UiPrefs } from '../storage/UiPrefsStore.js';
 import { RPC_ENV_KEYS } from '../core/network/rpcSettings.js';
 import { stripUnsafeChars } from '../utils/text.js';
+import { cachedWrappers } from '../storage/WrapperCache.js';
+import { listUnwrapsSafe, type UnwrapEntry } from '../storage/UnwrapStore.js';
+import type { WrapperInfo } from '../core/token/wrapper.js';
 
 /** What the screens need from local storage. */
 export interface Snapshot {
@@ -32,6 +35,10 @@ export interface Snapshot {
   /** Every other address in this wallet's history (sent to or received from), for look-alikes. */
   counterparties?: string[];
   dataDir: string;
+  /** Tracked tokens known to be ERC-20 wrappers (wrappers.json), by lowercase address. */
+  wrappers: Record<string, WrapperInfo>;
+  /** Unwraps of this wallet on this network that are not finished (unwraps.json). */
+  unwraps: UnwrapEntry[];
 }
 
 /** Read the snapshot for `network` and the given wallet address (for history-based facts). */
@@ -60,5 +67,16 @@ export function loadSnapshot(network: NetworkName, walletAddress?: string): Snap
     knownRecipients,
     counterparties,
     dataDir: DATA_DIR,
+    wrappers: safe(() => cachedWrappers(network), {}),
+    unwraps: walletAddress ? listUnwrapsSafe({ network, wallet: walletAddress, open: true }) : [],
   };
+}
+
+/** A cache read that must never stop the TUI from drawing. */
+function safe<T>(fn: () => T, fallback: T): T {
+  try {
+    return fn();
+  } catch {
+    return fallback;
+  }
 }

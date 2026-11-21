@@ -18,6 +18,7 @@ import {
   type MultiOption,
 } from '../components/list.js';
 import { open } from '../nav.js';
+import { openWrap } from '../flows/wrap.js';
 import type { Item, ScreenDef } from '../screen.js';
 import { back, top, type AppState } from '../state.js';
 import { dimLine, line, pad, seg, type Line } from '../text.js';
@@ -74,6 +75,13 @@ export const tokensScreen: ScreenDef = {
           label: 'Operators',
           note: 'who may move your tokens',
           act: (st) => open(st, 'operators'),
+        },
+        {
+          label: 'Wrap or unwrap',
+          key: 'w',
+          nonum: true,
+          note: 'ERC-20 ⇄ confidential',
+          act: (st) => openWrap(st, 'wrap'),
         },
         backItem(),
       ],

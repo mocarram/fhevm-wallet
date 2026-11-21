@@ -21,6 +21,9 @@ import type { TokenCheck } from '../core/token/erc7984Check.js';
 import type { FindResult } from '../core/token/findTokens.js';
 import type { ScanProgress } from '../core/token/tokenScan.js';
 import type { ShownError } from './errors.js';
+import type { Deps, Updater } from './effects.js';
+import type { NetworkName as Net } from '../core/network/NetworkConfig.js';
+import { emptyWrapView, type WrapView } from './wrapState.js';
 import type { Snapshot } from './snapshot.js';
 import type { Line } from './text.js';
 
@@ -79,7 +82,7 @@ export interface PendingSend {
  * through the same review → countdown → sign-and-broadcast flow as a send.
  */
 export interface TxAction {
-  kind: 'operator' | 'disclose-request' | 'disclose';
+  kind: 'operator' | 'disclose-request' | 'disclose' | 'wrap' | 'unwrap' | 'unwrap-finish';
   /** Token contract address. */
   token: string;
   /** What will happen, in one line, e.g. "Let bob move your cUSDC until 22 Nov 14:05". */
@@ -94,7 +97,36 @@ export interface TxAction {
   prepared?: PreparedTx | PreparedDisclose;
   checking?: boolean;
   /** Screen to return to once broadcast. */
-  then: 'operators' | 'history';
+  then: 'operators' | 'history' | 'balances';
+  /** Extra Review lines (wrap/unwrap: what you give, get, the steps), from the checks. */
+  details?: (prepared?: PreparedTx) => Line[];
+  /**
+   * Actions defined outside flows/tx.ts (wrap, unwrap: flows/wrap.ts) bring their own
+   * check, send and follow-up; the Review, countdown and error handling stay shared.
+   */
+  custom?: CustomTx;
+}
+
+/** How a custom TxAction is checked, sent and reported. */
+export interface CustomTx {
+  /** The checks (simulation, fee): like `prepareSetOperator`. Nothing is signed. */
+  prepare: (deps: Deps, signer: UnlockedSigner, network: Net) => Promise<PreparedTx>;
+  /** Sign and broadcast (default: `prepared.send`). */
+  send?: (
+    prepared: PreparedTx,
+    hooks: { onBroadcast?: (txHash: string) => void },
+  ) => Promise<{ txHash: string; blockNumber: number }>;
+  /**
+   * After the confirmation, inside the broadcast effect (may do I/O and take a while,
+   * e.g. finish an unwrap): the notice for Home and a state update.
+   */
+  done: (
+    deps: Deps,
+    result: { txHash: string; blockNumber: number },
+    prepared: PreparedTx,
+  ) => Promise<{ notice: Line[]; update?: Updater }>;
+  /** Notice lines for a failure this action explains better than the generic ones. */
+  failNotice?: (error: ShownError) => Line[] | null;
 }
 
 /** Operator status of one address for the selected token. */
@@ -179,6 +211,8 @@ export interface AppState {
     error?: string;
   } | null;
   operators: { token: string; rows: OperatorRow[]; loading: boolean; error?: string } | null;
+  /** Wrap / Unwrap screens (wrapState.ts). */
+  wrap: WrapView;
   pending: PendingSend[];
   nextPendingId: number;
   errorView: ErrorView | null;
@@ -277,6 +311,7 @@ export function initialState(opts: {
     txAction: null,
     disclose: null,
     operators: null,
+    wrap: emptyWrapView(),
     pending: [],
     nextPendingId: 1,
     errorView: null,

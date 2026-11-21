@@ -35,6 +35,7 @@ export const GO_TARGETS: Record<string, string> = {
 /** A parsed command. */
 export type Command =
   | { type: 'send'; to?: string; amount?: string; token?: string }
+  | { type: 'wrap'; mode: 'wrap' | 'unwrap'; amount?: string; token?: string }
   | { type: 'go'; screen: string }
   | { type: 'lock' }
   | { type: 'help' }
@@ -75,6 +76,15 @@ export function parseCommand(input: string): Command {
       return { type: 'error', message: 'Use: send <contact or address> <amount> [token]' };
     }
     return { type: 'send', to: args[0], amount: args[1], token: args[2] };
+  }
+
+  // `wrap [amount] [token]` / `unwrap [amount] [token]` (Phase 5).
+  if (verb === 'wrap' || verb === 'unwrap') {
+    const args = words.slice(1);
+    if (args.length > 2) {
+      return { type: 'error', message: `Use: ${verb} [amount] [token]` };
+    }
+    return { type: 'wrap', mode: verb, amount: args[0], token: args[1] };
   }
 
   const lower = text.toLowerCase();
