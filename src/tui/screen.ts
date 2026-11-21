@@ -57,6 +57,11 @@ export interface ScreenView {
   /** Extra rows for the `?` help overlay: [keys, description]. */
   help?: Array<[string, string]>;
   input?: InputSpec;
+  /**
+   * The list on this screen can be filtered with `/`: the text field id that holds the
+   * filter. The screen itself applies `s.inputs[filter]` to its rows (`matchesFilter`).
+   */
+  filter?: string;
   /** Full-screen view without a menu (countdown). */
   bare?: boolean;
   /** Handle keys before the generic keymap. Return true when the key was used. */

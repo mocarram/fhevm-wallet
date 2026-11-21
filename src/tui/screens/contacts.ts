@@ -10,15 +10,24 @@ import type { Item, ScreenDef } from '../screen.js';
 import { top } from '../state.js';
 import { dimLine, line, pad, seg } from '../text.js';
 import { backItem, BLANK, inputLine, SEP } from './common.js';
+import { matchesFilter } from '../components/list.js';
+
+const CONTACTS_FILTER = 'filter.contacts';
 
 export const contactsScreen: ScreenDef = {
   crumb: ['Address book'],
   view: (s) => ({
-    body: s.data.contacts.length
-      ? s.data.contacts.map((c) =>
+    filter: CONTACTS_FILTER,
+    body: (() => {
+      const q = s.inputs[CONTACTS_FILTER];
+      const shown = s.data.contacts.filter((c) => matchesFilter(`${c.name} ${c.address}`, q));
+      if (shown.length) {
+        return shown.map((c) =>
           line('  ', seg(pad(c.name, 14), 'bold'), ' ', seg(c.address, 'dim')),
-        )
-      : [dimLine('  No contacts yet.')],
+        );
+      }
+      return [dimLine(q ? '  No contact matches the filter.' : '  No contacts yet.')];
+    })(),
     items: [
       {
         label: 'Add contact',
@@ -31,7 +40,7 @@ export const contactsScreen: ScreenDef = {
       { label: 'Remove contact', act: (st) => open(st, 'contact-remove') },
       backItem(),
     ],
-    hint: '↑↓ move · enter select · esc back',
+    hint: '↑↓ move · enter select · / filter · esc back',
   }),
 };
 

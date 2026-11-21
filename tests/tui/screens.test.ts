@@ -404,3 +404,38 @@ describe('first-run setup', () => {
     expect(h.text()).toMatch(/cUSDC 1,250\.00/);
   });
 });
+
+describe('List filter (/)', () => {
+  it('filters tokens and the Find tokens list; Esc clears, Enter keeps', async () => {
+    const h = new Harness({ seed: false });
+    await h.keys('6', '3');
+    await h.keys('/', 'gift');
+    let text = h.text(120, 50);
+    expect(text).toMatch(/\/ gift/);
+    expect(text).toMatch(/cGIFT/);
+    expect(text).not.toMatch(/\[x\] cDAI/);
+    // While typing, letters are text, not shortcuts ("a" did not select all).
+    expect(h.s.inputs['filter.find']).toBe('gift');
+    await h.keys('{enter}', '{space}');
+    expect(h.s.filtering).toBeNull();
+    await h.keys('/', '{escape}');
+    text = h.text(120, 50);
+    expect(text).toMatch(/cDAI/);
+    expect(h.screen).toBe('token-find');
+    await h.keys('{enter}');
+    expect(listTokens('sepolia').map((t) => t.symbol).sort()).toEqual(['cDAI', 'cGIFT', 'cUSDC']);
+    // The Tokens screen filters its rows too.
+    await h.keys('/', 'dai', '{enter}');
+    text = h.text(120, 50);
+    expect(text).toMatch(/cDAI +Confidential DAI/);
+    expect(text).not.toMatch(/cGIFT +Gift Token/);
+  });
+
+  it('filters contacts', async () => {
+    const h = new Harness();
+    await h.keys('7', '/', 'zzz');
+    expect(h.text()).toMatch(/No contact matches the filter/);
+    await h.keys('{backspace}{backspace}{backspace}', 'bo');
+    expect(h.text()).toMatch(/bob/);
+  });
+});

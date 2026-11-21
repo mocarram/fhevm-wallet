@@ -8,6 +8,9 @@ import { spinner } from '../format.js';
 import type { ScreenDef } from '../screen.js';
 import { dimLine, line, pad, seg, type Line } from '../text.js';
 import { backItem, BLANK } from './common.js';
+import { matchesFilter } from '../components/list.js';
+
+const HISTORY_FILTER = 'filter.history';
 
 export const historyScreen: ScreenDef = {
   crumb: ['History'],
@@ -32,7 +35,13 @@ export const historyScreen: ScreenDef = {
         ),
       );
     }
-    const rows = s.history?.rows ?? [];
+    // `/` filter (Phase 4a): kind, token, counterparty, amount or hash.
+    const rows = (s.history?.rows ?? []).filter((r) =>
+      matchesFilter(
+        `${r.kind} ${r.token} ${r.counterparty} ${r.amount} ${r.txHash}`,
+        s.inputs[HISTORY_FILTER],
+      ),
+    );
     for (const r of rows) {
       body.push(
         line(
@@ -65,6 +74,7 @@ export const historyScreen: ScreenDef = {
     );
     return {
       body,
+      filter: HISTORY_FILTER,
       items: [
         {
           label: 'Show latest in explorer',

@@ -104,6 +104,8 @@ export interface AppState {
   /** Longer-lived message for Home (e.g. a confirmed send). */
   notice: Line[] | null;
   help: boolean;
+  /** The list filter being typed (`/`): its field id, or null. */
+  filtering: string | null;
   /** Command bar text, or null when the bar is closed. */
   cmd: string | null;
   quitArmed: boolean;
@@ -175,6 +177,7 @@ export function initialState(opts: {
     notice: null,
     help: false,
     cmd: null,
+    filtering: null,
     quitArmed: false,
     busy: null,
     send: {},
@@ -228,6 +231,7 @@ export function clearSecrets(s: AppState): void {
 
 /** Open a screen on top of the current one. */
 export function push(s: AppState, id: string, params: Record<string, string> = {}): void {
+  s.filtering = null;
   if (top(s).id === 'home') s.notice = null;
   s.flash = null;
   s.fieldError = null;
@@ -238,6 +242,7 @@ export function push(s: AppState, id: string, params: Record<string, string> = {
 
 /** Replace the current screen (used where Esc should skip it, e.g. the look-alike stop). */
 export function replace(s: AppState, id: string, params: Record<string, string> = {}): void {
+  s.filtering = null;
   s.flash = null;
   s.fieldError = null;
   s.busy = null;
@@ -246,6 +251,7 @@ export function replace(s: AppState, id: string, params: Record<string, string> 
 
 /** Go back one screen, keeping entered text (except secrets). */
 export function back(s: AppState): void {
+  s.filtering = null;
   s.fieldError = null;
   s.busy = null;
   s.quitArmed = false;
@@ -265,6 +271,7 @@ export function back(s: AppState): void {
 
 /** Return to the root screen (Home, or the current start of setup) with an optional message. */
 export function goHome(s: AppState, flash: Line[] | null = null): void {
+  s.filtering = null;
   // "Every action" mode: leaving a send that was unlocked for it locks again.
   if (s.data.prefs.unlockMinutes === 0 && sendInProgress(s)) lockWallet(s);
   s.stack = [frame(s.stack[0].id)];

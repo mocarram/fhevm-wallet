@@ -59,6 +59,7 @@ export const GLOBAL_HELP: Array<[string, string]> = [
   [':', 'Command bar, e.g. send bob 25 cusdc'],
   ['L', 'Lock now'],
   ['?', 'This help'],
+  ['/', 'Filter the list (on long lists)'],
 ];
 
 function flashLine(text: string, style = 'dim'): Line[] {
@@ -182,6 +183,31 @@ function handleKeyInner(s: AppState, key: Key): Effect[] {
   const view = currentView(s);
   const f = top(s);
   f.cur = validCursor(view.items, f.cur);
+
+  // The list filter swallows keys while it is being typed (before the screen's keys).
+  if (s.filtering !== null) {
+    const field = s.filtering;
+    const current = s.inputs[field] ?? '';
+    if (key === 'escape' || key === 'ctrl-c') {
+      delete s.inputs[field];
+      s.filtering = null;
+    } else if (key === 'enter') {
+      s.filtering = null;
+    } else if (key === 'backspace') {
+      s.inputs[field] = Array.from(current).slice(0, -1).join('');
+    } else if (key === 'ctrl-u') {
+      s.inputs[field] = '';
+    } else if (isPrintable(key) && Array.from(current).length < 40) {
+      s.inputs[field] = current + key;
+    }
+    f.cur = 0;
+    return [];
+  }
+  if (key === '/' && view.filter && !view.input) {
+    s.filtering = view.filter;
+    s.inputs[view.filter] = s.inputs[view.filter] ?? '';
+    return [];
+  }
 
   if (view.onKey) {
     const r = view.onKey(s, key);
@@ -343,6 +369,18 @@ export function render(s: AppState, size: Size): Line[] {
       content.push([...s.notice[0], seg('   · details on Home', 'dim')], BLANK);
     }
     if (s.flash) content.push(...s.flash, BLANK);
+    if (view.filter && (s.filtering === view.filter || s.inputs[view.filter])) {
+      const typing = s.filtering === view.filter;
+      content.push(
+        line(
+          seg('  / ', 'cyan bold'),
+          seg(s.inputs[view.filter] ?? '', 'bold'),
+          typing ? seg(' ', 'cursor') : seg(''),
+          seg(typing ? '   enter keeps · esc clears' : '   / to change', 'dim'),
+        ),
+        BLANK,
+      );
+    }
     content.push(...view.body);
     if (s.fieldError) {
       content.push(BLANK, line('  ', seg(s.fieldError[0], 'red')), dimLine(`  ${s.fieldError[1]}`));

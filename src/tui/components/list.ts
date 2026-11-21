@@ -86,11 +86,13 @@ export function picked(frame: Frame): Set<string> {
 }
 
 function setPicked(frame: Frame, ids: Set<string>, options: MultiOption[]): void {
-  // Keep the options' order so the confirm callback sees a stable list.
-  frame.params.picked = options
-    .map((o) => o.id)
-    .filter((id) => ids.has(id))
-    .join(',');
+  // Keep the options' order so the confirm callback sees a stable list. Picks hidden by
+  // the list filter are kept (after the visible ones): filtering must not unselect them.
+  const visible = new Set(options.map((o) => o.id));
+  const hidden = [...picked(frame)].filter((id) => !visible.has(id));
+  frame.params.picked = [...options.map((o) => o.id).filter((id) => ids.has(id)), ...hidden].join(
+    ',',
+  );
 }
 
 /** What a key did in a multi-select list. */
@@ -131,7 +133,11 @@ export function multiSelectKey(frame: Frame, options: MultiOption[], key: string
   }
   if (key === 'enter') {
     const ids = picked(frame);
-    return { kind: 'confirm', ids: options.map((o) => o.id).filter((id) => ids.has(id)) };
+    const visible = options.map((o) => o.id).filter((id) => ids.has(id));
+    return {
+      kind: 'confirm',
+      ids: [...visible, ...[...ids].filter((id) => !visible.includes(id))],
+    };
   }
   return { kind: 'ignored' };
 }
@@ -157,3 +163,24 @@ export const MULTI_SELECT_HELP: Array<[string, string]> = [
   ['a', 'Select all, or none when all are selected'],
   ['enter', 'Confirm the selection'],
 ];
+
+/**
+ * True when `text` matches the list filter: every word of `query` appears in it, in any
+ * case. An empty query matches everything.
+ */
+export function matchesFilter(text: string, query: string | undefined): boolean {
+  const words = (query ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+  const hay = text.toLowerCase();
+  return words.every((w) => hay.includes(w));
+}
+
+/** Multi-select options matching the filter; keeps the frame's cursor on the list. */
+export function filterOptions(
+  frame: Frame,
+  options: MultiOption[],
+  query: string | undefined,
+): MultiOption[] {
+  const out = options.filter((o) => matchesFilter(`${o.label} ${o.note ?? ''}`, query));
+  if (frame.cur >= out.length) frame.cur = 0;
+  return out;
+}

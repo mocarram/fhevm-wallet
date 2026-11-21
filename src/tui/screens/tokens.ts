@@ -10,6 +10,8 @@ import { abandonFind, addFound, selectableCandidates, startFind, stopFind } from
 import { sourceLabel } from '../../core/token/findTokens.js';
 import { spinner } from '../format.js';
 import {
+  filterOptions,
+  matchesFilter,
   MULTI_SELECT_HELP,
   multiSelectKey,
   renderMultiSelect,
@@ -21,11 +23,18 @@ import { back, top, type AppState } from '../state.js';
 import { dimLine, line, pad, seg, type Line } from '../text.js';
 import { backItem, BLANK, inputLine } from './common.js';
 
+const TOKENS_FILTER = 'filter.tokens';
+const FIND_FILTER = 'filter.find';
+
 export const tokensScreen: ScreenDef = {
   crumb: ['Tokens'],
   view: (s) => {
-    const body = s.data.tokens.length
-      ? s.data.tokens.map((t) =>
+    const q = s.inputs[TOKENS_FILTER];
+    const shown = s.data.tokens.filter((t) =>
+      matchesFilter(`${t.symbol} ${t.name} ${t.address}`, q),
+    );
+    const body = shown.length
+      ? shown.map((t) =>
           line(
             '  ',
             seg(pad(t.symbol, 8), 'bold'),
@@ -35,9 +44,16 @@ export const tokensScreen: ScreenDef = {
             seg(shortAddress(t.address), 'dim'),
           ),
         )
-      : [dimLine(`  No tokens tracked on ${s.network} yet.`)];
+      : [
+          dimLine(
+            q
+              ? '  No tracked token matches the filter.'
+              : `  No tokens tracked on ${s.network} yet.`,
+          ),
+        ];
     return {
       body,
+      filter: TOKENS_FILTER,
       items: [
         {
           label: 'Add token by address',
@@ -230,6 +246,7 @@ export const tokenFindScreen: ScreenDef = {
       body,
       items: [],
       hint: 'space select · a all · enter add · r scan again · / filter · esc back',
+      filter: FIND_FILTER,
       help: [...MULTI_SELECT_HELP, ['r', 'Scan again (continues from where it stopped)']],
       onKey: (st, key) => {
         if (key === 'escape' || key === 'ctrl-c') {
@@ -254,9 +271,9 @@ export const tokenFindScreen: ScreenDef = {
   },
 };
 
-/** Options matching the list filter (`/`), if one is set. Placeholder until the filter. */
-function filtered(_s: AppState, options: MultiOption[]): MultiOption[] {
-  return options;
+/** Options matching the list filter (`/`), if one is set. */
+function filtered(s: AppState, options: MultiOption[]): MultiOption[] {
+  return filterOptions(top(s), options, s.inputs[FIND_FILTER]);
 }
 
 function removeOptions(s: AppState): MultiOption[] {
