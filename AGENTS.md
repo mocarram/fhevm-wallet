@@ -128,14 +128,20 @@ Every unit of work goes through this loop until it comes out clean:
   default `~/.fhevm-wallet`, a folder the wallet created, or one holding only wallet
   files. Never home or above, the temp folder, the current folder, `/` or a sticky
   folder (`sharedLocationReason`). A data dir or `wallets/` that group or others can
-  write to is refused before any keystore or `.env` is read (`assertTrustedDataDir`).
+  write to, or any wallet file that is writable by others, owned by another user or a
+  symlink, is refused *before* anything is tightened or read (`assertTrustedDataDir`).
+  The data-dir `.env` only supplies `SAVED_ENV_KEYS` (RPC URLs, API keys);
+  `FHEW_BACKEND`, `FHEW_DEBUG` and `FHEVM_WALLET_HOME` come only from the real
+  environment.
   A new store file must be added to `WALLET_DATA_ENTRIES`.
 - Network calls have timeouts: JSON-RPC through `getProvider` (20 s per request, chain-ID
   check per URL, fallback endpoints, `abortableGetUrl` so a timed-out socket is closed),
   `fetch` with `AbortSignal.timeout`, relayer SDK calls via `withTimeout`
   (`src/utils/timeout.ts`). HTTP 429 is retried 3 times, not ethers' 12. Custom RPC URLs
   from anywhere (settings, ./.env, the environment) must pass `validateRpcUrl`.
-  `user:password@` in an RPC URL is sent as a Basic header. The relayer SDK reads the
+  `user:password@` in an RPC URL is sent as a Basic header. Redirects are followed inside
+  `abortableGetUrl` (registered globally), never by ethers, so they keep the timeout and
+  the 429 limit. The relayer SDK reads the
   chain through `getEip1193Provider`,
   which answers `eth_chainId` locally. A one-shot command exits about a second after it
   finishes even if a timed-out relayer request is still open (`src/index.ts`).
@@ -169,6 +175,10 @@ Every unit of work goes through this loop until it comes out clean:
   `redactSecrets` masks pieces of the configured RPC URLs (path segments of 8+
   characters, query values, credentials) wherever they appear; keep new secret-bearing
   settings in its lists.
+- A JSON-RPC error from the endpoint (HTTP 200 with `{"error": ...}`) is the RPC's
+  problem, not the token's: `rpcErrorOf` maps it to `RPC_RATE_LIMITED`, `RPC_AUTH` or
+  `RPC_ERROR`. "Not a token" needs BAD_DATA (`0x` back) or an empty revert from an
+  address whose `eth_getCode` is `0x`.
 - Prompts for an RPC URL use `transformer: maskUrlWhenAnswered`; `--rpc-*` and
   `--*-key` options accept `-` for hidden or piped input (one piped value per run).
 - e2e tests that need a terminal (password prompts) use `tests/e2e/pty-run.py`

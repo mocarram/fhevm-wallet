@@ -103,6 +103,17 @@ Notes on how these landed:
     - basic-auth RPC URLs work;
     - more invisible characters are stripped;
     - the keystore export no longer fails on an audit-log error.
+- Review round 3, all fixed:
+  - JSON-RPC errors from the endpoint (rate limit, quota, bad key, internal error)
+    are worded as RPC problems everywhere, never as "not a token". The e2e sweep
+    asserts the wording for balance, history, send and token add.
+  - Wallet data that others could have changed (writable by group or others, owned by
+    another user, or a symlink) is refused before anything is tightened or read.
+  - The data-dir `.env` only supplies RPC URLs and API keys.
+  - RPC redirects keep the abortable transport and the 429 limit.
+  - Redaction only masks what looks like a key (the dRPC `network=sepolia` stays
+    readable); debug details mask more.
+  - `config --show` flags ignored RPC URLs.
 
 Acceptance: tests assert file modes; a wrong-chain RPC is refused; no test output or log
 contains a private key, phrase or API key.
