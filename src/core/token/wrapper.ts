@@ -436,15 +436,6 @@ export async function getTxOutcome(txHash: string, network: NetworkName): Promis
   }
 }
 
-/** The `latest` (mined) transaction count of `address`: its next nonce once mined. */
-export async function getMinedNonce(address: string, network: NetworkName): Promise<number> {
-  try {
-    return await getProvider(network).getTransactionCount(address, 'latest');
-  } catch (err) {
-    throw translateTxError(err, { action: 'transaction check' });
-  }
-}
-
 /**
  * Whether an unwrap request is still open on-chain: `pending` (requester set),
  * `finalized` (requester cleared: finished by this wallet or anyone), or `unknown` for

@@ -31,12 +31,24 @@ export interface StubOptions {
   rateLimitFirst?: number;
   /** Answer every eth_getLogs with a reply ethers cannot read (not an array). */
   malformedLogs?: boolean;
+  /**
+   * The `finalized` block this node reports (default: the head), or 'unsupported' to
+   * refuse the tag like endpoints that do not know it. A finalized block above `head`
+   * models a load-balanced endpoint whose nodes disagree.
+   */
+  finalized?: number | 'unsupported';
+  /** eth_getTransactionCount at a block (tags resolved to numbers). Default 0. */
+  nonceAt?: (block: number) => number;
+  /** eth_getTransactionReceipt answers by hash (lowercase); others are null. */
+  receipts?: Record<string, { status: number; blockNumber: number }>;
 }
 
 /** A running stub. `calls` lists methods in arrival order; `ranges` each eth_getLogs span. */
 export interface StubNode {
   url: string;
   calls: string[];
+  /** Block tags eth_getTransactionCount was asked at, as sent. */
+  countTags: string[];
   ranges: Array<[number, number]>;
   options: StubOptions;
   close(): Promise<void>;
@@ -60,6 +72,7 @@ function matches(log: StubLog, filter: Record<string, unknown>): boolean {
 /** Start a stub node. */
 export async function startStubRpc(options: StubOptions): Promise<StubNode> {
   const calls: string[] = [];
+  const countTags: string[] = [];
   const ranges: Array<[number, number]> = [];
   let rateLimited = 0;
   const answer = (m: { id: number; method: string; params: unknown[] }) => {
@@ -75,8 +88,44 @@ export async function startStubRpc(options: StubOptions): Promise<StubNode> {
         return ok('0xaa36a7');
       case 'eth_blockNumber':
         return ok(hex(options.head));
+      case 'eth_getTransactionCount': {
+        const tag = String(m.params[1]);
+        countTags.push(tag);
+        if (tag === 'finalized' && options.finalized === 'unsupported') {
+          return fail(-32602, 'invalid block tag finalized');
+        }
+        const block =
+          tag === 'finalized'
+            ? (options.finalized ?? options.head)
+            : tag === 'latest' || tag === 'pending'
+              ? options.head
+              : Number(BigInt(tag));
+        return ok(hex(options.nonceAt?.(block as number) ?? 0));
+      }
+      case 'eth_getTransactionReceipt': {
+        const r = options.receipts?.[String(m.params[0]).toLowerCase()];
+        return ok(
+          r
+            ? {
+                transactionHash: m.params[0],
+                status: hex(r.status),
+                blockNumber: hex(r.blockNumber),
+                logs: [],
+              }
+            : null,
+        );
+      }
       case 'eth_getBlockByNumber': {
-        const n = Number(BigInt(m.params[0] as string));
+        const tag = String(m.params[0]);
+        if (tag === 'finalized' && options.finalized === 'unsupported') {
+          return fail(-32602, 'invalid block tag finalized');
+        }
+        const n =
+          tag === 'finalized'
+            ? ((options.finalized as number | undefined) ?? options.head)
+            : tag === 'latest'
+              ? options.head
+              : Number(BigInt(tag));
         return ok({
           hash: '0x' + n.toString(16).padStart(64, '0'),
           parentHash: '0x' + '0'.repeat(64),
@@ -151,6 +200,7 @@ export async function startStubRpc(options: StubOptions): Promise<StubNode> {
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     calls,
+    countTags,
     ranges,
     options,
     close: () => new Promise<void>((r) => server.close(() => r())),

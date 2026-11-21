@@ -47,7 +47,7 @@
   wrap is unconfirmed.
 - Disclosure step 2 is refused when the earlier one cannot be checked (RPC error), and
   is not sent again while an earlier one the RPC cannot see may still be mined (its
-  nonce must be taken first, as for unwrap requests).
+  nonce must be taken at a settled block first, as for unwrap requests).
 - History: unconfirmed entries are listed first (a limit never hides them); an unwrap
   finished by `--resume` gets its burn in history; counterparties are checksummed.
 - History sync on the default endpoints: one request per direction for all tokens, a

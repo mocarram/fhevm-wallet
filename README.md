@@ -284,8 +284,10 @@ set to "every action"), unlock and use Home › Finish unwrap.
 
 `fhew unwrap --forget <id>` never drops an unwrap that could still burn tokens: one
 waiting for step 2 is refused, and a request the network does not know yet is only
-dropped once a later transaction of the wallet has taken its nonce (it may still be
-pending on another node until then; requests recorded by older versions need 30 minutes).
+dropped once a later transaction of the wallet has taken its nonce and that block is
+settled, about 15 minutes after it is mined (it may still be pending on another node
+until then; requests recorded by older versions need 30 minutes). Disclosure step 2 is
+sent again only under the same rule.
 A request that was mined but whose unwrap the wallet could not find is shown as
 "check the explorer" (tokens may have been burnt) and asks before it is removed.
 Wrapping a token again while an earlier wrap of it is unconfirmed shows a warning

@@ -36,6 +36,7 @@ import {
 } from '../../storage/TransactionStore.js';
 import { getCachedBalance } from '../token/BalanceCache.js';
 import type { NetworkName } from '../network/NetworkConfig.js';
+import type { DropCheck } from '../network/txDropped.js';
 import { NETWORK_CONFIGS } from '../network/NetworkConfig.js';
 import type { RpcProbe } from '../network/ProviderFactory.js';
 import {
@@ -1009,10 +1010,22 @@ export class MockBackend implements Backend {
   txOutcome: MockWrapOps['txOutcome'] = (...a) => this.wrapOps.txOutcome(...a);
 
   /** Mined transactions of `address` on `network` (its next nonce on the mock chain). */
-  async minedNonce(address: string, network: NetworkName): Promise<number> {
+  minedNonce(address: string, network: NetworkName): number {
+    return this.minedNonces.get(`${network}:${address}`.toLowerCase()) ?? 0;
+  }
+
+  /** The mock chain is final at once: nonce first, then our receipt (see txDropped.ts). */
+  async txDropped(
+    address: string,
+    nonce: number,
+    txHash: string,
+    network: NetworkName,
+  ): Promise<DropCheck> {
     await this.sleep(Math.min(this.opts.latencyMs, 100));
     this.rpcFailure();
-    return this.minedNonces.get(`${network}:${address}`.toLowerCase()) ?? 0;
+    if (this.minedNonce(address, network) <= nonce) return 'nonce-open';
+    const o = await this.wrapOps.txOutcome(txHash);
+    return o.status === 'mined' || o.status === 'reverted' ? 'mined' : 'dropped';
   }
   unwrapRequestId: MockWrapOps['unwrapRequestId'] = (...a) => this.wrapOps.unwrapRequestId(...a);
   prepareFinalizeUnwrap: MockWrapOps['prepareFinalizeUnwrap'] = (...a) =>

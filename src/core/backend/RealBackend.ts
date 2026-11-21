@@ -39,6 +39,7 @@ import {
 import { getAmountEntry, setCachedAmounts } from '../../storage/AmountCache.js';
 import { syncTransactions } from '../token/historySync.js';
 import { checkErc7984, type TokenCheck } from '../token/erc7984Check.js';
+import { checkTxDropped, dropCheckMessage, type DropCheck } from '../network/txDropped.js';
 import {
   pendingPublicDecryption,
   WalletTxError,
@@ -177,34 +178,24 @@ async function refuseUnlessDropped(
     }
     return;
   }
-  const provider = getProvider(network);
-  let mined: number;
+  let drop: DropCheck;
   try {
-    mined = await provider.getTransactionCount(entry.discloseFrom, 'latest');
+    // The nonce at a settled block, then the receipt from a node that has that block.
+    drop = await checkTxDropped(entry.discloseFrom, entry.discloseNonce, hash, network);
   } catch (err) {
     throw cannotCheck(err);
   }
-  if (mined <= entry.discloseNonce) {
-    throw mayStillLand(
-      `The network does not know it yet, but it can still be mined: its nonce (${entry.discloseNonce}) is not used yet.`,
-    );
-  }
-  let receipt;
-  try {
-    receipt = await provider.getTransactionReceipt(hash);
-  } catch (err) {
-    throw cannotCheck(err);
-  }
-  if (receipt) {
+  if (drop === 'mined') {
     throw new WalletTxError(
       'SENT_UNCONFIRMED',
-      'The disclosure sent earlier was just mined.',
-      'It showed up while the wallet was checking it.',
+      'The disclosure sent earlier was mined after all.',
+      dropCheckMessage('mined', entry.discloseNonce),
       `Check ${explorer} before sending it again.`,
       '',
       hash,
     );
   }
+  if (drop !== 'dropped') throw mayStillLand(dropCheckMessage(drop, entry.discloseNonce));
 }
 
 /** Delegates every call to the production code paths. */
@@ -566,7 +557,7 @@ export class RealBackend implements Backend {
   unwrapRequestStatus: RealWrapOps['unwrapRequestStatus'] = (...a) =>
     this.wrapOps.unwrapRequestStatus(...a);
   txOutcome: RealWrapOps['txOutcome'] = (...a) => this.wrapOps.txOutcome(...a);
-  minedNonce: RealWrapOps['minedNonce'] = (...a) => this.wrapOps.minedNonce(...a);
+  txDropped: RealWrapOps['txDropped'] = (...a) => this.wrapOps.txDropped(...a);
   unwrapRequestId: RealWrapOps['unwrapRequestId'] = (...a) => this.wrapOps.unwrapRequestId(...a);
   prepareFinalizeUnwrap: RealWrapOps['prepareFinalizeUnwrap'] = (...a) =>
     this.wrapOps.prepareFinalizeUnwrap(...a);

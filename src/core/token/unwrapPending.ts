@@ -30,6 +30,7 @@ import type { SendHooks } from './TokenService.js';
 import { translateTxError, WalletTxError } from './txErrors.js';
 import type { WrapperInfo } from './wrapper.js';
 import { recordWrapHistory } from './wrapHistory.js';
+import { dropCheckMessage } from '../network/txDropped.js';
 import {
   addUnwrap,
   listUnwraps,
@@ -362,10 +363,9 @@ export type ForgetCheck =
  * A request the RPC does not know (no receipt, no transaction) is not proof that it was
  * dropped: behind a load-balanced endpoint it may sit in another node's mempool and be
  * mined later, burning the tokens with no entry left to finish the unwrap. So a `signed`
- * request is only forgettable once its nonce is provably taken: the account's mined
- * nonce is past it and our hash still has no receipt (read in that order, so a request
- * mined in between is seen). Entries from before nonces were recorded need an age
- * instead (`FORGET_LEGACY_MIN_AGE_MS`).
+ * request is only forgettable once its nonce is provably taken (`Backend.txDropped`: the
+ * nonce at a settled block, then no receipt on a node that has that block). Entries from
+ * before nonces were recorded need an age instead (`FORGET_LEGACY_MIN_AGE_MS`).
  */
 export async function checkForget(
   backend: Backend,
@@ -415,18 +415,23 @@ export async function checkForget(
     }
     return { ok: true, entry };
   }
-  const mined = await backend.minedNonce(entry.wallet, entry.network);
-  if (mined <= entry.requestNonce) {
-    return open(
-      entry,
-      `The network does not know this request, but it can still be mined: its nonce (${entry.requestNonce}) is not used yet. Wait; any later transaction from this wallet settles it, then check again.`,
-    );
+  // The nonce taken at a settled block, and no receipt on a node that has that block
+  // (core/network/txDropped.ts): only then can the request never be mined.
+  const drop = await backend.txDropped(
+    entry.wallet,
+    entry.requestNonce,
+    entry.requestTxHash,
+    entry.network,
+  );
+  if (drop === 'dropped') return { ok: true, entry };
+  if (drop === 'mined' && depth === 0) {
+    // Our hash took the nonce after all: check it again (it is requested or reverted now).
+    return checkForget(backend, entry, now, depth + 1);
   }
-  // The nonce is taken. Our hash may be what took it (mined since the first look).
-  const o = await backend.txOutcome(entry.requestTxHash, entry.network);
-  if (o.status === 'missing') return { ok: true, entry };
-  if (depth > 0) {
-    return open(entry, 'The network gives changing answers about this request. Try again later.');
-  }
-  return checkForget(backend, entry, now, depth + 1);
+  return open(
+    entry,
+    drop === 'mined'
+      ? 'The network gives changing answers about this request. Try again later.'
+      : `This request: ${dropCheckMessage(drop, entry.requestNonce)}`,
+  );
 }

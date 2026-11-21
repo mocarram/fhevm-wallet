@@ -10,6 +10,7 @@ import type { DecryptSession } from '../fhe/DecryptSession.js';
 import type { SendHooks } from '../token/TokenService.js';
 import type { TxOutcome, WrapperInfo, WrapState } from '../token/wrapper.js';
 import type { UnlockedSigner } from './types.js';
+import type { DropCheck } from '../network/txDropped.js';
 
 export type { TxOutcome, WrapperInfo, WrapState } from '../token/wrapper.js';
 
@@ -139,11 +140,16 @@ export interface WrapBackend {
   txOutcome(txHash: string, network: NetworkName): Promise<TxOutcome>;
 
   /**
-   * How many transactions of `address` are mined (its `latest` transaction count). A
-   * signed transaction whose nonce is below this and that has no receipt can never be
-   * mined: another transaction took its nonce.
+   * Whether `txHash` of `address`, signed with `nonce`, can never be mined: its nonce is
+   * taken at a settled block and a node that has that block knows no receipt for it
+   * (`core/network/txDropped.ts`).
    */
-  minedNonce(address: string, network: NetworkName): Promise<number>;
+  txDropped(
+    address: string,
+    nonce: number,
+    txHash: string,
+    network: NetworkName,
+  ): Promise<DropCheck>;
 
   /** The request id in a mined request transaction for `receiver`, or null. */
   unwrapRequestId(

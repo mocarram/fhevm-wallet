@@ -314,28 +314,37 @@ describe('forgetting an unwrap (S1: an unknown request may still be mined)', () 
     expect(!f.ok && f.message).toMatch(/can still be mined.*later transaction/);
   });
 
-  it('allows it once a later transaction took the nonce and ours has no receipt', async () => {
+  it('allows it once the nonce is taken at a settled block and ours has no receipt', async () => {
     const { b, entry } = await unconfirmed();
-    vi.spyOn(b, 'minedNonce').mockResolvedValue(1);
+    const spy = vi.spyOn(b, 'txDropped').mockResolvedValue('dropped');
     expect(await checkForget(b, entry)).toMatchObject({ ok: true });
+    expect(spy).toHaveBeenCalledWith(signer.address, 0, entry.requestTxHash, 'sepolia');
   });
 
-  it('reads the receipt after the nonce: a request seen in between is not forgettable', async () => {
+  it('refuses when the answering node is behind the settled block', async () => {
     const { b, entry } = await unconfirmed();
-    const calls: string[] = [];
-    vi.spyOn(b, 'minedNonce').mockImplementation(async () => {
-      calls.push('nonce');
-      return 1;
-    });
-    let n = 0;
-    vi.spyOn(b, 'txOutcome').mockImplementation(async () => {
-      calls.push('receipt');
-      // Unknown at first; seen by the time it is looked at again after the nonce.
-      return n++ === 0 ? { status: 'missing' } : { status: 'pending' };
-    });
+    vi.spyOn(b, 'txDropped').mockResolvedValue('behind');
     const f = await checkForget(b, entry);
-    expect(calls.slice(0, 3)).toEqual(['receipt', 'nonce', 'receipt']);
     expect(f.ok).toBe(false);
+    expect(!f.ok && f.message).toMatch(/behind the chain.*Try again in a minute/);
+  });
+
+  it('a request mined after all is checked again, not forgotten', async () => {
+    const { b, entry } = await unconfirmed();
+    vi.spyOn(b, 'txDropped').mockResolvedValue('mined');
+    expect((await checkForget(b, entry)).ok).toBe(false);
+  });
+
+  it('the mock: a later mined transaction of the wallet takes the nonce', async () => {
+    const { b, entry } = await unconfirmed();
+    expect(await b.txDropped(signer.address, 0, entry.requestTxHash, 'sepolia')).toBe('nonce-open');
+    (b as unknown as { opts: { fail?: string } }).opts.fail = undefined;
+    const [, cdai] = b.catalogue('sepolia');
+    const info = (await b.wrapperInfo(cdai.address, 'sepolia'))!;
+    const p = await b.prepareUnwrap(signer, info, 1n, 'sepolia');
+    await sendUnwrapRequest(p, { network: 'sepolia', wallet: signer.address, info, amount: 1n });
+    // A later transaction of the wallet was mined: an unknown hash with nonce 0 is dead.
+    expect(await b.txDropped(signer.address, 0, '0x' + '99'.repeat(32), 'sepolia')).toBe('dropped');
   });
 
   it('refuses a request the node has pending', async () => {
@@ -361,7 +370,7 @@ describe('forgetting an unwrap (S1: an unknown request may still be mined)', () 
       amount: '1',
       requestTxHash: '0x' + '77'.repeat(32),
     });
-    const spy = vi.spyOn(b, 'minedNonce');
+    const spy = vi.spyOn(b, 'txDropped');
     const soon = await checkForget(b, legacy);
     expect(soon).toMatchObject({ ok: false });
     expect(!soon.ok && soon.message).toMatch(/Try again in 30 minutes/);

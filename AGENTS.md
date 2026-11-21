@@ -91,8 +91,11 @@ tests/e2e/                 end-to-end runs of dist/index.js in a throwaway HOME
 - "The RPC does not know this transaction" is not "dropped": behind a load balancer it
   may be pending on another node. The request's nonce is recorded when it is signed
   (`onSigned(hash, { nonce })`), and `checkForget` lets `--forget` drop a `signed` entry
-  only once `Backend.minedNonce` is past it and a second look still finds no receipt
-  (entries without a nonce: 30 minutes old). Disclosure step 2 follows the same rule
+  only once `Backend.txDropped` proves it (`src/core/network/txDropped.ts`): the nonce at
+  a *settled* block (`finalized`, else latest − 64; never `latest`) is past it, and a
+  node whose head has that block knows no receipt (both reads batched, so one node
+  answers each; a node behind is "try again in a minute"). Entries without a nonce:
+  30 minutes old. Disclosure step 2 follows the same rule
   before a resend (`refuseIfDisclosurePending` in RealBackend.ts, nonce kept in
   amount-cache.json). A mined request without an
   `UnwrapRequested` log is `unclear` (tokens may be burnt), never "failed, nothing burnt".

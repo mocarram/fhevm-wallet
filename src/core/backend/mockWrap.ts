@@ -102,8 +102,8 @@ interface MockRequest {
 }
 
 /** In-memory wrapper simulation. */
-// minedNonce is account-level: MockBackend answers it from its own nonces.
-export class MockWrapOps implements Omit<WrapBackend, 'minedNonce'> {
+// txDropped is account-level: MockBackend answers it from its own nonces.
+export class MockWrapOps implements Omit<WrapBackend, 'txDropped'> {
   /** ERC-20 balances by `${network}:${underlying}:${wallet}` (lowercase). */
   private readonly erc20 = new Map<string, bigint>();
   /** Allowances by `${network}:${underlying}:${owner}:${spender}` (lowercase). */

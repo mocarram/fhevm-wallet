@@ -15,6 +15,7 @@
 import { formatEther } from 'ethers';
 import type { NetworkName } from '../network/NetworkConfig.js';
 import { RELAYER_NETWORKS } from '../fhe/relayerConfig.js';
+import { checkTxDropped } from '../network/txDropped.js';
 import { normaliseHandle, type DecryptSession } from '../fhe/DecryptSession.js';
 import { publicDecryptHandle } from '../fhe/DecryptionService.js';
 import {
@@ -26,7 +27,6 @@ import {
 import { translateTxError, WalletTxError } from '../token/txErrors.js';
 import { approvalPlan, needsReset } from '../token/wrapMath.js';
 import {
-  getMinedNonce,
   getTxOutcome,
   getUnderlyingBalance,
   getUnwrapRequestStatus,
@@ -305,8 +305,8 @@ export class RealWrapOps implements WrapBackend {
     return getTxOutcome(txHash, network);
   }
 
-  minedNonce(address: string, network: NetworkName) {
-    return getMinedNonce(address, network);
+  txDropped(address: string, nonce: number, txHash: string, network: NetworkName) {
+    return checkTxDropped(address, nonce, txHash, network);
   }
 
   async unwrapRequestId(

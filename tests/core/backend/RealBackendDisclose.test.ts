@@ -16,6 +16,8 @@ const chain = vi.hoisted(() => ({
   minedNonce: 0,
   /** Receipts for the next lookups, before falling back to `receipt`. */
   receiptSeq: [] as Array<null | { status: number }>,
+  /** What the settled-block proof answers once the nonce is taken (txDropped.ts). */
+  dropAnswer: 'dropped' as 'dropped' | 'behind',
 }));
 const stepTwo = vi.hoisted(() => ({
   send: vi.fn(async (hooks?: { onSigned?: (h: string, m?: { nonce: number }) => void }) => {
@@ -32,13 +34,21 @@ vi.mock('../../../src/core/network/ProviderFactory.js', async (orig) => ({
         throw Object.assign(new Error('fetch failed'), { code: 'NETWORK_ERROR' });
       return chain.receiptSeq.length ? chain.receiptSeq.shift()! : chain.receipt;
     },
-    getTransactionCount: async () => chain.minedNonce,
     getTransaction: async () => {
       if (chain.failReads)
         throw Object.assign(new Error('fetch failed'), { code: 'NETWORK_ERROR' });
       return chain.pending;
     },
   }),
+}));
+// The settled-block proof itself is tested against the stub RPC (txDropped.test.ts).
+vi.mock('../../../src/core/network/txDropped.js', async (orig) => ({
+  ...(await orig<object>()),
+  checkTxDropped: async (_from: string, nonce: number) => {
+    if (chain.minedNonce <= nonce) return 'nonce-open';
+    const receipt = chain.receiptSeq.length ? chain.receiptSeq.shift() : chain.receipt;
+    return receipt ? 'mined' : chain.dropAnswer;
+  },
 }));
 vi.mock('../../../src/core/token/TokenService.js', async (orig) => ({
   ...(await orig<object>()),
@@ -68,6 +78,7 @@ beforeEach(() => {
     signNonce: undefined,
     minedNonce: 0,
     receiptSeq: [],
+    dropAnswer: 'dropped',
   });
 });
 
@@ -139,7 +150,18 @@ describe('RealBackend disclosure step 2', () => {
       chain.minedNonce = 4;
       chain.receiptSeq = [null, { status: 1 }];
       const err = await b.prepareDisclose(signer, TOKEN, H, 'sepolia').catch((e) => e);
-      expect(err.message).toMatch(/just mined/);
+      expect(err.message).toMatch(/mined after all/);
+    });
+
+    it('refuses when the node that answered is behind the settled block', async () => {
+      chain.signNonce = 3;
+      const b = new RealBackend();
+      await sentUnconfirmed(b);
+      chain.minedNonce = 4;
+      chain.dropAnswer = 'behind';
+      const err = await b.prepareDisclose(signer, TOKEN, H, 'sepolia').catch((e) => e);
+      expect(err).toMatchObject({ code: 'SENT_UNCONFIRMED', txHash: HASH });
+      expect(err.likelyCause).toMatch(/behind the chain.*Try again in a minute/);
     });
 
     it('an entry without a nonce waits 30 minutes before a resend', async () => {

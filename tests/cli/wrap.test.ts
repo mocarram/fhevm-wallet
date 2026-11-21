@@ -224,7 +224,7 @@ describe('fhew unwrap', () => {
     expect(refused.error.code).toBe('UNWRAP_STILL_OPEN');
     expect(refused.error.message).toMatch(/can still be mined/);
     expect(listUnwraps({ open: true })).toHaveLength(1);
-    vi.spyOn(backend, 'minedNonce').mockResolvedValue(5);
+    vi.spyOn(backend, 'txDropped').mockResolvedValue('dropped');
     const forgot = await run('unwrap', '--forget', ref, '--yes');
     expect(forgot.removed.id).toBe(first.error.txHash);
   });
