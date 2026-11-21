@@ -2,7 +2,7 @@
  * Network configuration for supported chains
  */
 
-import { validateRpcUrl } from '../../utils/validation.js';
+import { validateRpcUrl } from '../../utils/rpcUrl.js';
 
 export interface NetworkConfig {
   name: string;

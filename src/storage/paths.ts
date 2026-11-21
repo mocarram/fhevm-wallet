@@ -24,7 +24,7 @@ import {
   tightenPermissions,
   writeSecureFile,
 } from './secureFs.js';
-import { validateRpcUrl } from '../utils/validation.js';
+import { validateRpcUrl } from '../utils/rpcUrl.js';
 
 /**
  * Root data directory.
