@@ -250,6 +250,7 @@ export const tokenFindScreen: ScreenDef = {
     return {
       body,
       items: [],
+      multiSelect: filtered(s, findOptions(s)).length,
       hint: 'space select · a all · enter add · r scan again · / filter · esc back',
       filter: FIND_FILTER,
       help: [...MULTI_SELECT_HELP, ['r', 'Scan again (continues from where it stopped)']],
@@ -302,6 +303,7 @@ export const tokenRemoveScreen: ScreenDef = {
           : [dimLine('  No tokens tracked.')]),
       ],
       items: [],
+      multiSelect: options.length,
       hint: 'space select · a all · enter remove · esc back',
       help: MULTI_SELECT_HELP,
       onKey: (st, key) => {

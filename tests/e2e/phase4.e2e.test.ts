@@ -55,7 +55,9 @@ describe('fhew doctor (mock)', () => {
     expect(r.stdout).not.toMatch(/\u001b\[/);
     expect(r.doc).toMatchObject({ network: 'sepolia', mock: true, ok: true });
     const checks = r.doc.checks as Array<{ id: string; status: string }>;
-    expect(checks.map((c) => c.id)).toEqual(expect.arrayContaining(['node', 'data-dir', 'rpc.0', 'relayer']));
+    expect(checks.map((c) => c.id)).toEqual(
+      expect.arrayContaining(['node', 'data-dir', 'rpc.0', 'relayer']),
+    );
   });
 });
 

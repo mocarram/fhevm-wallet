@@ -13,7 +13,7 @@
  */
 
 import { parseCommand, COMMAND_EXAMPLES } from './commandParser.js';
-import { moveCursor, renderMenu, validCursor } from './components/list.js';
+import { moveCursor, renderMenu, viewCursor } from './components/list.js';
 import { QUIT, type Effect } from './effects.js';
 import { broadcast, commandSend } from './flows/send.js';
 import { broadcastTx } from './flows/tx.js';
@@ -183,7 +183,7 @@ function handleKeyInner(s: AppState, key: Key): Effect[] {
 
   const view = currentView(s);
   const f = top(s);
-  f.cur = validCursor(view.items, f.cur);
+  f.cur = viewCursor(view, f.cur);
 
   // The list filter swallows keys while it is being typed (before the screen's keys).
   if (s.filtering !== null) {
@@ -357,7 +357,7 @@ export function render(s: AppState, size: Size): Line[] {
   const rows = size.rows > 0 ? size.rows : FALLBACK_SIZE.rows;
   const view = currentView(s);
   const f = top(s);
-  f.cur = validCursor(view.items, f.cur);
+  f.cur = viewCursor(view, f.cur);
 
   const head: Line[] = [statusBar(s, cols), BLANK];
   const content: Line[] = [];

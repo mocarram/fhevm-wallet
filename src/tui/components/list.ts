@@ -32,6 +32,19 @@ export function validCursor(items: MenuEntry[], cur: number): number {
   return sel.includes(cur) ? cur : sel[0];
 }
 
+/**
+ * The frame cursor for `view`: inside its multi-select list when it has one (whose rows
+ * are not menu items, so `validCursor` would reset it to 0 on every key), else on a
+ * selectable menu item.
+ */
+export function viewCursor(
+  view: { items: MenuEntry[]; multiSelect?: number },
+  cur: number,
+): number {
+  if (view.multiSelect === undefined) return validCursor(view.items, cur);
+  return Math.max(0, Math.min(cur, view.multiSelect - 1));
+}
+
 function styles(text: string | undefined): Style[] {
   return text ? (text.split(' ').filter(Boolean) as Style[]) : [];
 }

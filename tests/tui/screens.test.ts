@@ -220,7 +220,11 @@ describe('Tokens', () => {
     expect(text).toMatch(/PLAIN .*not ERC-7984, not offered/);
     await h.keys('{enter}');
     expect(h.screen).toBe('tokens');
-    expect(listTokens('sepolia').map((t) => t.symbol).sort()).toEqual(['cDAI', 'cUSDC']);
+    expect(
+      listTokens('sepolia')
+        .map((t) => t.symbol)
+        .sort(),
+    ).toEqual(['cDAI', 'cUSDC']);
     expect(h.text()).toMatch(/Added cDAI, cUSDC/);
     // Again: the tracked ones are gone from the list; "a" picks the unverified one.
     await h.keys('3');
@@ -228,6 +232,24 @@ describe('Tokens', () => {
     await h.keys('a');
     await h.keys('{enter}');
     expect(listTokens('sepolia').map((t) => t.symbol)).toContain('cGIFT');
+  });
+
+  it('Find tokens: the cursor moves past row 1, so Space toggles the row under it', async () => {
+    // Regression: the menu cursor check reset the multi-select cursor to 0 on every key.
+    const h = new Harness({ seed: false });
+    await h.keys('6', '3');
+    await h.keys('a', 'a'); // select all, then clear all
+    expect(h.text(120, 50)).not.toMatch(/\[x\]/);
+    await h.keys('{down}', '{down}', ' ');
+    const rows = h
+      .text(120, 50)
+      .split('\n')
+      .filter((l) => /\[[x ]\]/.test(l));
+    expect(rows.length).toBeGreaterThanOrEqual(3);
+    expect(rows.map((r) => /\[x\]/.test(r))).toEqual(rows.map((_, i) => i === 2));
+    const symbol = /\] (\S+)/.exec(rows[2])![1];
+    await h.keys('{enter}');
+    expect(listTokens('sepolia').map((t) => t.symbol)).toEqual([symbol]);
   });
 
   it('Find tokens: Esc stops the scan and keeps the screen', async () => {
@@ -360,7 +382,12 @@ describe('History, Receive and Doctor', () => {
   it('Doctor flags a tracked token that is not ERC-7984, and a dead RPC', async () => {
     const h = new Harness({ mock: { fail: 'rpc' } });
     addTokenWithInfo(
-      { address: mockNonConfidentialToken('sepolia'), name: 'Plain', symbol: 'PLAIN', decimals: 18 },
+      {
+        address: mockNonConfidentialToken('sepolia'),
+        name: 'Plain',
+        symbol: 'PLAIN',
+        decimals: 18,
+      },
       'sepolia',
     );
     await h.keys('d');
@@ -427,7 +454,11 @@ describe('List filter (/)', () => {
     expect(text).toMatch(/cDAI/);
     expect(h.screen).toBe('token-find');
     await h.keys('{enter}');
-    expect(listTokens('sepolia').map((t) => t.symbol).sort()).toEqual(['cDAI', 'cGIFT', 'cUSDC']);
+    expect(
+      listTokens('sepolia')
+        .map((t) => t.symbol)
+        .sort(),
+    ).toEqual(['cDAI', 'cGIFT', 'cUSDC']);
     // The Tokens screen filters its rows too.
     await h.keys('/', 'dai', '{enter}');
     text = h.text(120, 50);

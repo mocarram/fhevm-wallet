@@ -62,6 +62,11 @@ export interface ScreenView {
    * filter. The screen itself applies `s.inputs[filter]` to its rows (`matchesFilter`).
    */
   filter?: string;
+  /**
+   * Rows of the screen's multi-select list (`components/list.ts`), when it has one. The
+   * frame cursor then indexes that list, not `items`, and is only clamped to its length.
+   */
+  multiSelect?: number;
   /** Full-screen view without a menu (countdown). */
   bare?: boolean;
   /** Handle keys before the generic keymap. Return true when the key was used. */
