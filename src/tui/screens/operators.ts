@@ -28,7 +28,7 @@ function tokenSymbol(s: AppState): string {
 }
 
 export const operatorsScreen: ScreenDef = {
-  crumb: ['Operators'],
+  crumb: ['Tokens', 'Operators'],
   onEnter: (s) => loadOperators(s),
   view: (s) => {
     if (!s.data.tokens.length) {
@@ -99,7 +99,7 @@ export const operatorsScreen: ScreenDef = {
 };
 
 export const operatorTokenScreen: ScreenDef = {
-  crumb: ['Operators', 'Token'],
+  crumb: ['Tokens', 'Operators', 'Token'],
   view: (s) => ({
     body: [line('  Show operators for:')],
     items: [
@@ -123,7 +123,7 @@ const ADDR_SPEC: InputSpec = {
 };
 
 export const operatorAddrScreen: ScreenDef = {
-  crumb: ['Operators', 'Address'],
+  crumb: ['Tokens', 'Operators', 'Address'],
   view: (s) => {
     const revoke = s.stack[s.stack.length - 1].params.mode === 'revoke';
     return {
@@ -149,7 +149,7 @@ export const operatorAddrScreen: ScreenDef = {
 
 /** Look-alike stop before a grant: the same check as Send, since an operator takes all. */
 export const operatorCheckScreen: ScreenDef = {
-  crumb: ['Operators', 'Address'],
+  crumb: ['Tokens', 'Operators', 'Address'],
   view: (s) => {
     const { address = '', contact = '' } = top(s).params;
     const saved = s.data.contacts.find((c) => c.name === contact);
@@ -194,7 +194,7 @@ export const operatorCheckScreen: ScreenDef = {
 };
 
 export const operatorExpiryScreen: ScreenDef = {
-  crumb: ['Operators', 'Expiry'],
+  crumb: ['Tokens', 'Operators', 'Expiry'],
   view: (s) => ({
     body: [
       line(`  How long may it move your ${tokenSymbol(s)}?`),
@@ -238,7 +238,7 @@ const EXPIRY_SPEC: InputSpec = {
 };
 
 export const operatorExpiryCustomScreen: ScreenDef = {
-  crumb: ['Operators', 'Expiry'],
+  crumb: ['Tokens', 'Operators', 'Expiry'],
   view: (s) => ({
     body: [
       line('  Expiry:'),
@@ -259,7 +259,7 @@ export const operatorExpiryCustomScreen: ScreenDef = {
 const FOREVER_SPEC: InputSpec = { field: 'operatorForever', placeholder: 'forever', maxLength: 10 };
 
 export const operatorForeverScreen: ScreenDef = {
-  crumb: ['Operators', 'No expiry'],
+  crumb: ['Tokens', 'Operators', 'No expiry'],
   view: (s) => ({
     body: [
       line(
@@ -280,7 +280,7 @@ export const operatorForeverScreen: ScreenDef = {
 };
 
 export const operatorRevokeScreen: ScreenDef = {
-  crumb: ['Operators', 'Revoke'],
+  crumb: ['Tokens', 'Operators', 'Revoke'],
   view: (s) => {
     const active = (s.operators?.rows ?? []).filter((r) => r.isOperator);
     return {

@@ -8,13 +8,19 @@ import { afterTxUnlock, confirmTx, stopTxCountdown } from '../flows/tx.js';
 import { unlock } from '../flows/wallet.js';
 import { formatEth, spinner } from '../format.js';
 import type { InputSpec, Item, ScreenDef } from '../screen.js';
-import { goHome, isUnlocked } from '../state.js';
+import { goHome, isUnlocked, type AppState } from '../state.js';
 import { dimLine, line, seg, type Line } from '../text.js';
 import { unlockMinutesText } from './balances.js';
 import { backItem, BLANK, inputLine } from './common.js';
 
+/** Where the action came from: Tokens › Operators, or History › Disclose. */
+function txCrumb(s: AppState, ...rest: string[]): string[] {
+  const from = s.txAction?.kind === 'operator' ? ['Tokens', 'Operators'] : ['History', 'Disclose'];
+  return [...from, ...rest];
+}
+
 export const txReviewScreen: ScreenDef = {
-  crumb: ['Review'],
+  crumb: (s) => txCrumb(s, 'Review'),
   view: (s) => {
     const a = s.txAction;
     if (!a)
@@ -32,9 +38,10 @@ export const txReviewScreen: ScreenDef = {
     if (a.operator) body.push(line('  Operator  ', seg(a.operator, 'bold')));
     if (a.prepared) {
       body.push(
+        // The same wording as the send Review.
         line(
-          '  Fee       ',
-          `up to ${formatEth(a.prepared.feeWei)} ETH (you have ${formatEth(a.prepared.ethBalanceWei)})`,
+          `  Fee       ≈ ${formatEth(a.prepared.feeWei)} ETH`,
+          seg(`   you have ${formatEth(a.prepared.ethBalanceWei)} ETH`, 'dim'),
         ),
         BLANK,
         line(
@@ -68,7 +75,7 @@ export const txReviewScreen: ScreenDef = {
 const SIGN_SPEC: InputSpec = { field: 'unlock', secret: true, placeholder: 'your wallet password' };
 
 export const txSignScreen: ScreenDef = {
-  crumb: ['Review', 'Sign'],
+  crumb: (s) => txCrumb(s, 'Sign'),
   view: (s) => ({
     body: [
       line('  Password for ', seg(s.wallet?.name ?? '', 'bold')),
@@ -87,7 +94,11 @@ export const txSignScreen: ScreenDef = {
 };
 
 export const txCountScreen: ScreenDef = {
-  crumb: ['Review', 'Sending'],
+  crumb: (s) =>
+    txCrumb(
+      s,
+      s.txAction?.kind !== 'operator' ? 'Disclosing' : s.txAction.until ? 'Granting' : 'Revoking',
+    ),
   view: (s) => {
     const cd = s.countdown;
     const left = cd ? Math.max(0, Math.ceil((cd.endsAt - s.now) / 1000)) : 0;

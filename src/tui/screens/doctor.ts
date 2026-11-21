@@ -22,7 +22,7 @@ const MARK: Record<DoctorRow['status'], [string, string]> = {
 export function doctorLines(rows: DoctorRow[]): Line[] {
   return rows.map((r) => {
     const [mark, style] = MARK[r.status];
-    return line('  ', seg(mark, style), ` ${r.text}`, r.detail ? seg(` ${r.detail}`, 'dim') : '');
+    return line('  ', seg(mark, style), ` ${r.text}`, r.detail ? seg(` · ${r.detail}`, 'dim') : '');
   });
 }
 

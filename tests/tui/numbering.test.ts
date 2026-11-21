@@ -56,3 +56,45 @@ describe('explorer links', () => {
     expect(t).toContain(hashEnd);
   });
 });
+
+describe('command bar', () => {
+  it('knows operators, find, network and unlock; errors are indented like other notes', async () => {
+    const { parseCommand } = await import('../../src/tui/commandParser.js');
+    expect(parseCommand('operators')).toEqual({ type: 'go', screen: 'operators' });
+    expect(parseCommand('find')).toEqual({ type: 'go', screen: 'token-find' });
+    expect(parseCommand('network')).toEqual({ type: 'go', screen: 'settings-network' });
+    expect(parseCommand('unlock')).toEqual({ type: 'go', screen: 'unlock' });
+    const h = new Harness();
+    await h.keys(':', 'send nobody 1', '{enter}');
+    expect(
+      h
+        .text()
+        .split('\n')
+        .find((l) => /nobody/.test(l)),
+    ).toMatch(/^ {2}\S/);
+  });
+
+  it('operator crumbs say Tokens › Operators; the review fee reads like Send', async () => {
+    const h = new Harness({ unlocked: true });
+    await h.keys('6', '4');
+    expect(h.text(160, 40)).toMatch(/Home › Tokens › Operators/);
+    await h.keys('1', 'bob', '{enter}', '2');
+    expect(h.screen).toBe('tx-review');
+    expect(h.text(160, 40)).toMatch(/Tokens › Operators › Review/);
+    expect(h.text()).toMatch(/Fee +≈ [\d.]+ ETH {3}you have/);
+  });
+
+  it('an empty operator address asks for one instead of "No contact called"', async () => {
+    const h = new Harness();
+    await h.keys('6', '4', '1', '{enter}');
+    expect(h.text()).toMatch(/Type or paste the operator address/);
+    expect(h.text()).not.toMatch(/No contact called ""/);
+  });
+
+  it('the recipient field takes a contact name too', async () => {
+    const h = new Harness();
+    await h.keys('s', '{enter}', 'p', 'bob', '{enter}');
+    expect(h.screen).toBe('send-amount');
+    expect(h.s.send.to?.name).toBe('bob');
+  });
+});

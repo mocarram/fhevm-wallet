@@ -7,7 +7,7 @@ import { shortAddress } from '../../core/send/recipient.js';
 import { removeContact, submitContactAddress, submitContactName } from '../flows/manage.js';
 import { open } from '../nav.js';
 import type { Item, ScreenDef } from '../screen.js';
-import { top } from '../state.js';
+import { back, top } from '../state.js';
 import { dimLine, line, pad, seg } from '../text.js';
 import { backItem, BLANK, inputLine, pasteAddressInto, SEP } from './common.js';
 import { matchesFilter } from '../components/list.js';
@@ -44,6 +44,10 @@ export const contactsScreen: ScreenDef = {
       backItem(),
     ],
     hint: '↑↓ move · enter select · / filter · esc back',
+    help: [
+      ['/', 'Filter the contacts by name or address'],
+      ['paste', 'A pasted address starts Add contact with it filled in'],
+    ],
     // A pasted address starts "Add contact" with the address step filled in.
     onPaste: (st, text) => {
       delete st.inputs.contactName;
@@ -103,18 +107,49 @@ export const contactAddressScreen: ScreenDef = {
   }),
 };
 
+const REMOVE_FILTER = 'filter.contactRemove';
+
 export const contactRemoveScreen: ScreenDef = {
   crumb: ['Address book', 'Remove'],
-  view: (s) => ({
-    body: [dimLine('  Pick a contact to remove.')],
-    items: [
-      ...s.data.contacts.map<Item>((c) => ({
-        label: `${pad(c.name, 14)} ${shortAddress(c.address)}`,
-        act: (st) => removeContact(st, c.name),
-      })),
-      SEP,
-      backItem(),
-    ],
-    hint: '↑↓ move · enter remove · esc back',
-  }),
+  view: (s) => {
+    const q = s.inputs[REMOVE_FILTER];
+    const shown = s.data.contacts.filter((c) => matchesFilter(`${c.name} ${c.address}`, q));
+    return {
+      body: [dimLine('  Pick a contact to remove. You confirm on the next step.')],
+      items: [
+        ...shown.map<Item>((c) => ({
+          label: `${pad(c.name, 14)} ${shortAddress(c.address)}`,
+          act: (st) => open(st, 'contact-remove-confirm', { name: c.name }),
+        })),
+        SEP,
+        backItem(),
+      ],
+      filter: REMOVE_FILTER,
+      hint: '↑↓ move · enter pick · / filter · esc back',
+    };
+  },
+};
+
+/** "Remove bob?": a removal is never one key press (a double tap used to remove one). */
+export const contactRemoveConfirmScreen: ScreenDef = {
+  crumb: ['Address book', 'Remove'],
+  view: (s) => {
+    const name = top(s).params.name ?? '';
+    const c = s.data.contacts.find((x) => x.name === name);
+    if (!c)
+      return { body: [dimLine('  That contact is gone.')], items: [backItem()], hint: 'esc back' };
+    return {
+      body: [
+        line('  Remove ', seg(c.name, 'bold'), ' from your address book?'),
+        line('  ', seg(c.address, 'dim')),
+        BLANK,
+        dimLine('  Pasted look-alikes of this address are no longer caught once it is removed.'),
+      ],
+      items: [
+        { label: 'Keep it', act: (st) => back(st) },
+        { label: `Remove ${c.name}`, valueStyle: 'red', act: (st) => removeContact(st, c.name) },
+      ],
+      hint: 'enter select · esc back',
+    };
+  },
 };

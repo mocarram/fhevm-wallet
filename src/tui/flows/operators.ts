@@ -94,6 +94,10 @@ export function loadOperators(s: AppState, token?: string): Effect[] {
 /** Operator address step: a contact name or a pasted address. */
 export function submitOperatorAddress(s: AppState): Effect[] {
   const text = (s.inputs.operatorAddr ?? '').trim();
+  if (!text) {
+    s.fieldError = ['Type or paste the operator address.', 'A contact name works too.'];
+    return [];
+  }
   const r = resolveRecipient(text, s.data.contacts);
   if (!r.ok) {
     s.fieldError = [r.error, 'Paste the operator address, or type a contact name.'];

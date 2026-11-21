@@ -130,8 +130,8 @@ export const sendToScreen: ScreenDef = {
 
 const PASTE_SPEC: InputSpec = {
   field: 'paste',
-  placeholder: '0x… recipient address',
-  accept: /^[0-9a-zA-Z]$/,
+  placeholder: '0x… recipient address, or a contact name',
+  accept: /^[0-9a-zA-Z ]$/,
   maxLength: 42,
 };
 
@@ -141,7 +141,7 @@ export const sendPasteScreen: ScreenDef = {
     body: [
       stepper(1, SEND_STEPS),
       BLANK,
-      line('  Paste the recipient address:'),
+      line('  Paste the recipient address (or type a contact name):'),
       BLANK,
       inputLine(s, PASTE_SPEC),
       BLANK,

@@ -78,6 +78,10 @@ export const tokensScreen: ScreenDef = {
         backItem(),
       ],
       hint: '↑↓ move · enter select · / filter · esc back',
+      help: [
+        ['/', 'Filter the tokens by symbol, name or address'],
+        ['paste', 'A pasted token address opens Add token with it filled in'],
+      ],
       onPaste: pasteAddressInto('tokenAddress', 'token-add'),
     };
   },

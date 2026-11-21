@@ -7,6 +7,7 @@ import { balancesScreen, unlockScreen } from './balances.js';
 import {
   contactAddressScreen,
   contactNameScreen,
+  contactRemoveConfirmScreen,
   contactRemoveScreen,
   contactsScreen,
 } from './contacts.js';
@@ -128,6 +129,7 @@ export const SCREENS: Record<string, ScreenDef> = {
   'contact-name': contactNameScreen,
   'contact-address': contactAddressScreen,
   'contact-remove': contactRemoveScreen,
+  'contact-remove-confirm': contactRemoveConfirmScreen,
 
   settings: settingsScreen,
   'settings-network': settingsNetworkScreen,

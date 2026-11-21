@@ -24,6 +24,12 @@ export const GO_TARGETS: Record<string, string> = {
   contacts: 'contacts',
   contact: 'contacts',
   'address book': 'contacts',
+  operators: 'operators',
+  operator: 'operators',
+  find: 'token-find',
+  'find tokens': 'token-find',
+  unlock: 'unlock',
+  network: 'settings-network',
 };
 
 /** A parsed command. */
@@ -40,10 +46,11 @@ export type Command =
 export const COMMAND_EXAMPLES = [
   'send bob 25 cusdc',
   'balances',
-  'receive',
   'history',
-  'doctor',
-  'settings',
+  'operators',
+  'find',
+  'network',
+  'unlock',
   'lock',
   'help',
 ];
@@ -80,6 +87,6 @@ export function parseCommand(input: string): Command {
     type: 'error',
     // Echo what was typed with URLs cut to their host (a pasted RPC URL carries its key)
     // and unsafe characters removed; the raw text is not kept anywhere.
-    message: `Unknown command "${safeText(text, 60)}". Try: send bob 25 cusdc · balances · doctor · lock`,
+    message: `Unknown command "${safeText(text, 60)}". Try: send bob 25 cusdc · balances · history · operators · find · network · unlock · lock · help`,
   };
 }

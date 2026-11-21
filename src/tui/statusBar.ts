@@ -13,7 +13,8 @@ import { formatEth, isLowGas, spinner } from './format.js';
 export function breadcrumb(s: AppState): string {
   const def = SCREENS[top(s).id];
   const root = inSetup(s) ? [] : ['Home'];
-  const parts = [...root, ...(def?.crumb ?? [])];
+  const crumb = typeof def?.crumb === 'function' ? def.crumb(s) : (def?.crumb ?? []);
+  const parts = [...root, ...crumb];
   return parts.length ? parts.join(' › ') : 'Home';
 }
 

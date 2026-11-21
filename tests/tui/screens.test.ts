@@ -297,8 +297,15 @@ describe('Address book', () => {
     expect(listAddresses().map((c) => c.name)).toContain('carol');
     await h.keys('1', 'Carol', '{enter}');
     expect(h.s.fieldError?.[0]).toMatch(/already have a contact/);
+    // Remove carol (the 2nd): a double tap of 2 only opens the confirmation, 1 keeps her.
     await h.keys('{escape}', '2', '2');
+    expect(h.screen).toBe('contact-remove-confirm');
+    expect(h.text()).toMatch(/Remove carol from your address book\?/);
+    await h.keys('1');
+    expect(listAddresses().map((c) => c.name)).toEqual(['bob', 'carol']);
+    await h.keys('2', '2');
     expect(listAddresses().map((c) => c.name)).toEqual(['bob']);
+    expect(h.screen).toBe('contacts');
   });
 });
 

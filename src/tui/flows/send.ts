@@ -132,7 +132,18 @@ function isNewAddress(s: AppState, address: string): boolean {
  * contact, and marks first-time addresses.
  */
 export function submitPastedAddress(s: AppState): Effect[] {
-  const parsed = parseAddressInput(s.inputs.paste ?? '');
+  const text = (s.inputs.paste ?? '').trim();
+  // A contact name works here too, as on the Operators address step and in `fhew send`.
+  if (text && !/^0x/i.test(text)) {
+    const r = resolveRecipient(text, s.data.contacts);
+    if (r.ok && r.contact) return chooseContact(s, r.contact);
+    s.fieldError = [
+      r.ok ? 'Paste the full address.' : r.error,
+      'Paste an address starting with 0x, or type a contact name.',
+    ];
+    return [];
+  }
+  const parsed = parseAddressInput(text);
   if (!parsed.ok) {
     s.fieldError = [parsed.error, 'Paste the full address, starting with 0x.'];
     return [];
@@ -651,15 +662,15 @@ export function commandSend(
   const sticky = stickyFor(s).lastToken;
   const tokenText = args.token ?? sticky ?? s.data.tokens[0].address;
   const tr = resolveToken(tokenText, s.data.tokens);
-  if (!tr.ok) return fail(`  ${tr.error}`);
+  if (!tr.ok) return fail(`${tr.error}`);
   const t = tr.token;
 
   const rr = resolveRecipient(args.to, s.data.contacts);
-  if (!rr.ok) return fail(`  ${rr.error}`);
+  if (!rr.ok) return fail(`${rr.error}`);
 
   const bal = knownBalance(s, t.address);
   const ar = parseAmountFor(s, args.amount, t, bal?.value);
-  if (!ar.ok) return fail(`  ${ar.error} ${ar.hint}`);
+  if (!ar.ok) return fail(`${ar.error} ${ar.hint}`);
 
   if (!rr.contact) return prefilledFromAddress(s, t, rr.address, ar.value, args.amount, 'command');
   return prefilledReview(

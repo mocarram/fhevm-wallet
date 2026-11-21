@@ -4,6 +4,7 @@
  * `discloseEncryptedAmount` publishes the value with the relayer's KMS proof.
  */
 
+import { matchesFilter } from '../components/list.js';
 import { normaliseHandle } from '../../core/fhe/DecryptSession.js';
 import { describeError } from '../errors.js';
 import { effect, type Effect } from '../effects.js';
@@ -41,15 +42,28 @@ export function loadDiscloseStage(s: AppState): Effect[] {
   ];
 }
 
+const DISCLOSE_FILTER = 'filter.disclose';
+
 export const disclosePickScreen: ScreenDef = {
   crumb: ['History', 'Disclose'],
   view: (s) => {
-    const rows = (s.history?.rows ?? []).filter((r) => r.handle && r.tokenAddress).slice(0, 20);
+    // Every confidential transfer in History (the menu scrolls; / filters), not only the
+    // 20 most recent as before.
+    const rows = (s.history?.rows ?? []).filter(
+      (r) =>
+        r.handle &&
+        r.tokenAddress &&
+        matchesFilter(
+          `${r.kind} ${r.token} ${r.counterparty} ${r.amount} ${r.txHash}`,
+          s.inputs[DISCLOSE_FILTER],
+        ),
+    );
     return {
       body: [
         line('  Which transfer amount should become public?'),
         dimLine('  You can disclose transfers you sent or received.'),
       ],
+      filter: DISCLOSE_FILTER,
       items: [
         ...rows.map((r): Item => ({
           label: `${r.when}  ${r.kind}  ${r.amount} ${r.token}  ${r.counterparty}`,
@@ -64,7 +78,7 @@ export const disclosePickScreen: ScreenDef = {
         })),
         backItem(),
       ],
-      hint: '↑↓ move · enter select · esc back',
+      hint: '↑↓ move · enter select · / filter · esc back',
     };
   },
 };

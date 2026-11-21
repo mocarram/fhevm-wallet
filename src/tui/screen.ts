@@ -90,8 +90,8 @@ export interface ScreenView {
 
 /** A screen module: breadcrumb, view and what to load when it opens. */
 export interface ScreenDef {
-  /** Breadcrumb after "Home", e.g. ["Send", "Amount"]. */
-  crumb: string[];
+  /** Breadcrumb after "Home", e.g. ["Send", "Amount"], or one that depends on the state. */
+  crumb: string[] | ((s: AppState) => string[]);
   view: (s: AppState) => ScreenView;
   /** Effects to run when the screen is opened (not when returning to it with Esc). */
   onEnter?: (s: AppState) => Effect[];
