@@ -205,3 +205,35 @@ describe('terminal safety', () => {
     expect(h.s.signer).toBeNull();
   });
 });
+
+describe('verifier findings', () => {
+  it('the command bar never echoes a typed URL with its key', async () => {
+    const h = new Harness();
+    await h.keys(':https://rpc.example.org/v3/SECRETKEY123456{enter}');
+    const t = h.text();
+    expect(t).toMatch(/Unknown command "https:\/\/rpc\.example\.org\/…"/);
+    expect(t).not.toMatch(/SECRETKEY123456/);
+    expect(h.s.cmd).toBeNull();
+  });
+
+  it('help descriptions wrap inside the box', async () => {
+    const h = new Harness();
+    await h.keys('8', '?');
+    const lines = h.text(100, 40).split('\n');
+    const box = lines.filter((l) => l.startsWith('    ') && l.length > 10);
+    const widths = new Set(
+      lines.filter((l) => /^ {2}\S|^ {4}/.test(l)).map((l) => l.trimEnd().length),
+    );
+    expect(widths.size).toBeGreaterThan(0);
+    expect(h.text()).toMatch(/Change the setting/);
+    for (const l of box) expect(l.trimEnd().length).toBeLessThanOrEqual(2 + 64);
+  });
+
+  it('checking an RPC URL with the mock says plainly it was not saved', async () => {
+    const h = new Harness();
+    await h.keys('8', '3', '2', 'https://rpc.example.org', '{enter}');
+    expect(h.text()).toMatch(/Checked: it answers with chain id 11155111/);
+    expect(h.text()).toMatch(/Not saved: the offline mock never changes\s+RPC settings/);
+    expect(h.text()).not.toMatch(/✔ Saved/);
+  });
+});

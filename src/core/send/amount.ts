@@ -97,7 +97,7 @@ export function parseFriendlyAmount(input: string, opts: ParseAmountOptions): Am
   if (balance !== undefined && value > balance) {
     return {
       ok: false,
-      error: `That's more than your ${formatTokenAmount(balance, decimals, decimals)}.`,
+      error: `That's more than your ${formatExactAmount(balance, decimals)}.`,
       hint: 'ERC-7984 would send 0 instead of failing, so this is blocked here.',
     };
   }

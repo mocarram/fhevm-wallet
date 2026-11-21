@@ -47,7 +47,7 @@ describe('send wizard', () => {
     expect(h.text()).toMatch(/= 625 cUSDC/);
     await h.keys('{ctrl-u}', '5000', '{enter}');
     expect(h.screen).toBe('send-amount');
-    expect(h.text()).toMatch(/more than your 1250/);
+    expect(h.text()).toMatch(/more than your 1,250\./);
     expect(h.text()).toMatch(/would send 0 instead of failing/);
   });
 

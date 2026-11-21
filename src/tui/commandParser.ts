@@ -3,6 +3,8 @@
  * to do with it (and checks contacts, tokens and amounts).
  */
 
+import { safeText } from '../cli/utils/userError.js';
+
 /** Screens reachable by name from the command bar. */
 export const GO_TARGETS: Record<string, string> = {
   balances: 'balances',
@@ -76,6 +78,8 @@ export function parseCommand(input: string): Command {
 
   return {
     type: 'error',
-    message: `Unknown command "${text}". Try: send bob 25 cusdc · balances · doctor · lock`,
+    // Echo what was typed with URLs cut to their host (a pasted RPC URL carries its key)
+    // and unsafe characters removed; the raw text is not kept anywhere.
+    message: `Unknown command "${safeText(text, 60)}". Try: send bob 25 cusdc · balances · doctor · lock`,
   };
 }

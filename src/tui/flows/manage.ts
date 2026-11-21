@@ -331,10 +331,11 @@ export function saveRpcUrl(s: AppState): Effect[] {
           st.busy = null;
           delete st.inputs.rpcUrl;
           popTo(st, 'settings-rpc');
-          const note = deps.backend.kind === 'mock' ? ' (mock: checked, not saved)' : '';
           ok(
             st,
-            `Saved. It answers with chain id ${probe.chainId} in ${probe.latencyMs} ms${note}`,
+            deps.backend.kind === 'mock'
+              ? `Checked: it answers with chain id ${probe.chainId} in ${probe.latencyMs} ms. Not saved: the offline mock never changes RPC settings.`
+              : `Saved. It answers with chain id ${probe.chainId} in ${probe.latencyMs} ms.`,
           );
           return [reload(st)];
         };

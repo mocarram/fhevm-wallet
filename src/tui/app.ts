@@ -291,7 +291,18 @@ function helpLines(view: ScreenView, cols: number): Line[] {
   const out: Line[] = [line('  ', seg(pad('  Keys on this screen', w), 'bar bold'))];
   out.push(line('  ', seg(' '.repeat(w), 'bar')));
   for (const [k, d] of rows) {
-    out.push(line('  ', seg(`  ${pad(k, 14)}`, 'bar bold'), seg(pad(d, w - 16), 'bar')));
+    // Long descriptions wrap inside the box instead of running past its edge.
+    const wrapped = wrapLine([{ t: d }], w - 16).map((r) =>
+      r
+        .map((g) => g.t)
+        .join('')
+        .trimStart(),
+    );
+    wrapped.forEach((part, i) => {
+      out.push(
+        line('  ', seg(`  ${pad(i ? '' : k, 14)}`, 'bar bold'), seg(pad(part, w - 16), 'bar')),
+      );
+    });
   }
   out.push(line('  ', seg(' '.repeat(w), 'bar')));
   out.push(line('  ', seg(pad('  Press any key to close', w), 'bar dim')));
