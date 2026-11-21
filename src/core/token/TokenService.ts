@@ -13,7 +13,13 @@ import {
   type JsonRpcProvider,
   type TransactionRequest,
 } from 'ethers';
-import { sentButUnconfirmed, translateTxError, WalletTxError } from './txErrors.js';
+import {
+  DecryptionFailedError,
+  isNoContractAnswer,
+  sentButUnconfirmed,
+  translateTxError,
+  WalletTxError,
+} from './txErrors.js';
 import { sanitizeTokenName, sanitizeTokenSymbol } from './tokenText.js';
 import { getProvider, NetworkName, getNetworkConfig } from '../network/index.js';
 import { encryptAmount } from '../fhe/EncryptionService.js';
@@ -249,11 +255,27 @@ function getTokenContract(tokenAddress: string, network: NetworkName, signer?: S
 export async function getTokenInfo(tokenAddress: string, network: NetworkName): Promise<TokenInfo> {
   const contract = getTokenContract(tokenAddress, network);
 
-  const [name, symbol, decimals] = await Promise.all([
-    contract.name(),
-    contract.symbol(),
-    contract.decimals(),
-  ]);
+  let name: unknown, symbol: unknown, decimals: unknown;
+  try {
+    [name, symbol, decimals] = await Promise.all([
+      contract.name(),
+      contract.symbol(),
+      contract.decimals(),
+    ]);
+  } catch (err) {
+    // `0x` back from name() & co. means there is no token here (an account, another kind
+    // of contract, or a token on a different network). Say that, not "could not decode".
+    if (isNoContractAnswer(err)) {
+      throw new WalletTxError(
+        'NOT_A_TOKEN',
+        `That address is not a token contract on ${network}.`,
+        'It did not answer name(), symbol() and decimals() the way a token does. It may be a wallet address, another kind of contract, or a token on a different network.',
+        'Check the address and network on a block explorer.',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    throw err;
+  }
 
   // name() and symbol() are whatever the (user-added, untrusted) contract returns: strip
   // terminal escapes and invisible characters, and cap the length, before anything
@@ -279,10 +301,24 @@ export async function getEncryptedBalance(
   const contract = getTokenContract(tokenAddress, network);
   // The ABI returns bytes32 (a 0x-hex string). Convert once here so the rest of the
   // wallet (zero check, cache key, decryption) works with a single bigint representation.
-  const handle: string | bigint =
-    blockTag === undefined
-      ? await contract.confidentialBalanceOf(userAddress)
-      : await contract.confidentialBalanceOf(userAddress, { blockTag });
+  let handle: string | bigint;
+  try {
+    handle =
+      blockTag === undefined
+        ? await contract.confidentialBalanceOf(userAddress)
+        : await contract.confidentialBalanceOf(userAddress, { blockTag });
+  } catch (err) {
+    if (isNoContractAnswer(err)) {
+      throw new WalletTxError(
+        'NOT_ERC7984',
+        `That address is not an ERC-7984 token on ${network}.`,
+        'It did not answer confidentialBalanceOf(). It may not be a confidential token, or it may be on a different network.',
+        'Check the token address and network on a block explorer.',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+    throw err;
+  }
   return BigInt(handle);
 }
 
@@ -321,7 +357,14 @@ export async function getDecryptedBalance(
   }
 
   // Handle changed or no cache - decrypt the balance (expensive)
-  const balance = await decryptBalance(encryptedHandle, tokenAddress, wallet, network);
+  // Mark failures of this step, so callers can tell a relayer problem from a failed
+  // contract read above.
+  let balance: bigint;
+  try {
+    balance = await decryptBalance(encryptedHandle, tokenAddress, wallet, network);
+  } catch (err) {
+    throw new DecryptionFailedError(err);
+  }
 
   // Cache with the current handle. The cache is an optimisation: a disk error must not
   // hide a balance that was decrypted fine.
@@ -399,16 +442,16 @@ export async function prepareConfidentialTransfer(
     try {
       tokenBalance = await getDecryptedBalance(tokenAddress, wallet, network);
     } catch (err) {
-      // Keep the specific wording for a wrong-chain or unreachable RPC; anything else
-      // (the relayer failing or timing out, a refused decryption) gets one clear message.
+      // Only the decrypt step becomes BALANCE_CHECK_FAILED. A failed contract read keeps
+      // its own meaning (unreachable RPC, wrong chain, not an ERC-7984 token, a revert).
       const translated = translateTxError(err, { iface: ERC7984_INTERFACE });
-      if (translated.code === 'WRONG_CHAIN' || translated.code === 'RPC_UNAVAILABLE') {
-        throw translated;
-      }
+      if (!(err instanceof DecryptionFailedError)) throw translated;
       throw new WalletTxError(
         'BALANCE_CHECK_FAILED',
         "Couldn't check your token balance before sending.",
-        'Decrypting the balance through the Zama relayer failed or timed out. Nothing was sent.',
+        translated.code === 'RELAYER_TIMEOUT'
+          ? 'Decrypting the balance through the Zama relayer timed out. Nothing was sent.'
+          : 'Decrypting the balance through the Zama relayer failed. Nothing was sent.',
         'Try again in a minute.',
         translated.raw,
       );

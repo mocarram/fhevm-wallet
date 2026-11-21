@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ERC7984_INTERFACE } from '../../../src/core/token/TokenService.js';
 import {
+  DecryptionFailedError,
   WalletTxError,
   formatTxError,
   sentButUnconfirmed,
@@ -246,5 +247,30 @@ describe('sanitizeContractText', () => {
     const { sanitizeContractText } = await import('../../../src/core/token/txErrors.js');
     const out = sanitizeContractText('send to 0xabc‮dcba​ now');
     expect(out).not.toMatch(/[‮​]/);
+  });
+});
+
+describe('relayer failures', () => {
+  it('a relayer error that is not a timeout is RELAYER_UNAVAILABLE, not an RPC problem', () => {
+    for (const err of [
+      new Error("Relayer didn't response correctly. Bad JSON."),
+      Object.assign(new Error('bad answer'), { code: 'RELAYER_FETCH_ERROR' }),
+      new DecryptionFailedError(new Error('fetch failed')),
+    ]) {
+      const t = translateTxError(err);
+      expect(t.code).toBe('RELAYER_UNAVAILABLE');
+      expect(`${t.message} ${t.likelyCause} ${t.hint}`).toMatch(/relayer/i);
+      expect(t.hint).not.toMatch(/check your rpc/i);
+    }
+  });
+
+  it('a timed-out decrypt stays RELAYER_TIMEOUT', () => {
+    const t = translateTxError(new DecryptionFailedError(new TimeoutError('Decrypting', 1000)));
+    expect(t.code).toBe('RELAYER_TIMEOUT');
+  });
+
+  it('technical details strip terminal escapes', () => {
+    const e = new WalletTxError('UNKNOWN', 'T', 'c', 'h', 'raw \u001b[2J text');
+    expect(formatTxError(e, true)).not.toContain('\u001b');
   });
 });

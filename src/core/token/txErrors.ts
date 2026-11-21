@@ -29,6 +29,8 @@ export type TxErrorCode =
   | 'INSUFFICIENT_TOKEN_BALANCE'
   | 'BALANCE_CHECK_FAILED'
   | 'RELAYER_TIMEOUT'
+  | 'RELAYER_UNAVAILABLE'
+  | 'NOT_A_TOKEN'
   | 'UNKNOWN';
 
 /** A user-facing transaction error. `raw` is only shown when the user asks for details. */
@@ -69,6 +71,43 @@ export class WalletTxError extends Error {
     this.txHash = txHash;
     this.replacementHash = replacementHash;
   }
+}
+
+/**
+ * Thrown by the decrypt step (the relayer SDK's user decrypt), wrapping what it threw.
+ * Lets callers tell "the relayer failed" apart from "the contract read failed" without
+ * guessing from the text: only this one becomes BALANCE_CHECK_FAILED before a send.
+ */
+export class DecryptionFailedError extends Error {
+  readonly code = 'DECRYPTION_FAILED';
+  constructor(readonly cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = 'DecryptionFailedError';
+  }
+}
+
+/**
+ * True for errors that come from Zama's relayer SDK rather than the RPC: its messages
+ * name the relayer ("Relayer didn't response correctly. Bad JSON.") and its error codes
+ * start with RELAYER_.
+ */
+export function isRelayerError(err: unknown): boolean {
+  const e = (err ?? {}) as { code?: unknown; name?: unknown; message?: unknown };
+  if (typeof e.code === 'string' && /^RELAYER_/i.test(e.code)) return true;
+  if (typeof e.name === 'string' && /relayer/i.test(e.name)) return true;
+  return typeof e.message === 'string' && /\brelayer\b/i.test(e.message);
+}
+
+/**
+ * True when a read call got no usable answer from `address`: ethers' BAD_DATA ("could not
+ * decode result data", typically `0x` from an address with no code) or a call that
+ * reverted with no data at all. Both mean "no such function here": not a contract, or
+ * not this kind of contract.
+ */
+export function isNoContractAnswer(err: unknown): boolean {
+  const e = (err ?? {}) as EthersLikeError;
+  if (e.code === 'BAD_DATA') return true;
+  return e.code === 'CALL_EXCEPTION' && e.action === 'call' && (e.data === null || e.data === '0x');
 }
 
 /** Shape of the ethers v6 error fields we look at. All optional: errors come from many places. */
@@ -143,11 +182,23 @@ export interface TranslateOptions {
   action?: string;
 }
 
+/** The relayer failed in some way other than a timeout. */
+function relayerUnavailable(raw: string): WalletTxError {
+  return new WalletTxError(
+    'RELAYER_UNAVAILABLE',
+    "Zama's relayer could not complete the request.",
+    'Encryption and decryption go through the relayer, which returned an error or an unreadable answer.',
+    'Try again in a few minutes. Your RPC settings are not the problem.',
+    raw,
+  );
+}
+
 /** Pull a readable raw string out of anything that was thrown (redacted in the constructor). */
 function rawText(err: unknown): string {
   if (err instanceof Error) return err.message;
   try {
-    return JSON.stringify(err);
+    // JSON.stringify(undefined) is undefined, not a string.
+    return JSON.stringify(err) ?? String(err);
   } catch {
     return String(err);
   }
@@ -251,6 +302,13 @@ export function translateTxError(err: unknown, opts: TranslateOptions = {}): Wal
   const raw = rawText(err);
   const lower = raw.toLowerCase();
 
+  // The decrypt step failed: judge it by what the relayer SDK threw.
+  if (err instanceof DecryptionFailedError) {
+    const inner = translateTxError(err.cause, opts);
+    if (inner.code === 'RELAYER_TIMEOUT' || inner.code === 'RELAYER_UNAVAILABLE') return inner;
+    return relayerUnavailable(raw);
+  }
+
   // withTimeout gave up on the relayer SDK (encryption or decryption). That is not an
   // RPC problem, so don't send the user off to check their RPC settings.
   if (err instanceof TimeoutError) {
@@ -262,6 +320,9 @@ export function translateTxError(err: unknown, opts: TranslateOptions = {}): Wal
       raw,
     );
   }
+
+  // The relayer answered badly or not at all (not a timeout). Also not an RPC problem.
+  if (isRelayerError(err)) return relayerUnavailable(raw);
 
   // Not enough ETH to pay for gas. Nodes word this differently, so check text too.
   if (e.code === 'INSUFFICIENT_FUNDS' || lower.includes('insufficient funds')) {
@@ -438,7 +499,7 @@ export function formatTxError(err: WalletTxError, includeRaw = wantsErrorDetails
   const lines = [err.message, '', `Likely cause: ${err.likelyCause}`, `What to try:  ${err.hint}`];
   if (err.txHash) lines.push(`Transaction:  ${err.txHash}`);
   if (err.replacementHash) lines.push(`Replaced by:  ${err.replacementHash}`);
-  if (includeRaw && err.raw) lines.push('', `Technical details: ${err.raw}`);
+  if (includeRaw && err.raw) lines.push('', `Technical details: ${stripUnsafeChars(err.raw)}`);
   else if (err.raw) lines.push('', 'Set FHEW_DEBUG=1 to see technical details.');
   return lines.join('\n');
 }

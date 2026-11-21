@@ -56,7 +56,13 @@ export function registerTokenCommands(program: Command): void {
 
         const spinner = ora(`Fetching token info from ${network}...`).start();
 
-        const entry = await addToken(address!, network);
+        let entry;
+        try {
+          entry = await addToken(address!, network);
+        } catch (err) {
+          spinner.fail('Could not add the token');
+          throw err;
+        }
 
         spinner.succeed('Token added');
 

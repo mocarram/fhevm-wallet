@@ -336,6 +336,37 @@ describe('TokenService.confidentialTransfer', () => {
     ).rejects.toMatchObject({ code: 'RPC_UNAVAILABLE' });
   });
 
+  it('a contract revert while reading the balance keeps its meaning (not BALANCE_CHECK_FAILED)', async () => {
+    contractStubs.confidentialBalanceOf.mockRejectedValueOnce(
+      Object.assign(new Error('execution reverted'), {
+        code: 'CALL_EXCEPTION',
+        action: 'call',
+        data: '0x',
+        reason: null,
+      }),
+    );
+    const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const err = await prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia').catch(
+      (e) => e,
+    );
+    expect(err.code).toBe('NOT_ERC7984');
+    expect(err.message).toBe('That address is not an ERC-7984 token on sepolia.');
+  });
+
+  it('a relayer answer it cannot read during the pre-send decrypt names the relayer', async () => {
+    const decryption = await import('../../../src/core/fhe/DecryptionService.js');
+    vi.mocked(decryption.decryptBalance).mockRejectedValueOnce(
+      new Error("Relayer didn't response correctly. Bad JSON."),
+    );
+    const { prepareConfidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    const err = await prepareConfidentialTransfer(w, TOKEN, RECIPIENT, 5n, 'sepolia').catch(
+      (e) => e,
+    );
+    expect(err.code).toBe('BALANCE_CHECK_FAILED');
+    expect(err.likelyCause).toMatch(/relayer failed/);
+    expect(`${err.message} ${err.likelyCause} ${err.hint}`).not.toMatch(/RPC settings/i);
+  });
+
   it('re-checks the balance at the block that mined the transfer', async () => {
     broadcastWith(async () => ({ status: 1, blockNumber: 1234 }));
     const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
@@ -705,5 +736,49 @@ describe('TokenService.checkBalanceAfter', () => {
       balanceCheck: 'changed',
       balanceAfter: 120n,
     });
+  });
+});
+
+describe('TokenService reads from an address that is not a token', () => {
+  const badData = () =>
+    Object.assign(new Error('could not decode result data (value="0x", ...)'), {
+      code: 'BAD_DATA',
+      value: '0x',
+    });
+
+  it('getTokenInfo says "not a token contract on <network>" for BAD_DATA', async () => {
+    contractStubs.name.mockRejectedValueOnce(badData());
+    const { getTokenInfo } = await import('../../../src/core/token/TokenService.js');
+    const err = await getTokenInfo(TOKEN, 'sepolia').catch((e) => e);
+    expect(err.code).toBe('NOT_A_TOKEN');
+    expect(err.message).toBe('That address is not a token contract on sepolia.');
+  });
+
+  it('getTokenInfo passes other failures through unchanged', async () => {
+    const down = Object.assign(new Error('fetch failed'), { code: 'NETWORK_ERROR' });
+    contractStubs.name.mockRejectedValueOnce(down);
+    const { getTokenInfo } = await import('../../../src/core/token/TokenService.js');
+    await expect(getTokenInfo(TOKEN, 'sepolia')).rejects.toBe(down);
+  });
+
+  it('getEncryptedBalance says "not an ERC-7984 token" for BAD_DATA', async () => {
+    contractStubs.confidentialBalanceOf.mockRejectedValueOnce(badData());
+    const { getEncryptedBalance } = await import('../../../src/core/token/TokenService.js');
+    await expect(getEncryptedBalance(TOKEN, RECIPIENT, 'mainnet')).rejects.toMatchObject({
+      code: 'NOT_ERC7984',
+      message: 'That address is not an ERC-7984 token on mainnet.',
+    });
+  });
+
+  it('a failed decrypt is marked as the decrypt step', async () => {
+    contractStubs.confidentialBalanceOf.mockResolvedValueOnce(5n);
+    const decryption = await import('../../../src/core/fhe/DecryptionService.js');
+    vi.mocked(decryption.decryptBalance).mockRejectedValueOnce(new Error('boom'));
+    const { getDecryptedBalance } = await import('../../../src/core/token/TokenService.js');
+    const { DecryptionFailedError } = await import('../../../src/core/token/txErrors.js');
+    const err = await getDecryptedBalance(TOKEN, Wallet.createRandom(), 'sepolia', {
+      forceRefresh: true,
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(DecryptionFailedError);
   });
 });
