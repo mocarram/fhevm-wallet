@@ -21,6 +21,7 @@ import { clearProviderCache } from '../core/network/ProviderFactory.js';
 import { describeError } from './utils/userError.js';
 import { adoptTypedNetwork } from './utils/networkOption.js';
 import { maskUrl } from '../utils/redact.js';
+import { validateTokenListUrl } from '../core/token/tokenLists.js';
 import { enterJsonMode, printJson, printJsonError } from './utils/json.js';
 import { resolveSecretOption, rpcOptionHelp, secretOptionHelp } from './utils/secretInput.js';
 
@@ -64,10 +65,15 @@ function keyJson(key: string) {
 }
 
 /** `config --show --json`: stable keys, URLs masked, API keys never in full. */
-function configJson(config: { defaultNetwork: string; defaultWallet?: string }) {
+function configJson(config: {
+  defaultNetwork: string;
+  defaultWallet?: string;
+  tokenListUrl?: string;
+}) {
   return {
     defaultNetwork: config.defaultNetwork,
     defaultWallet: config.defaultWallet ?? null,
+    tokenListUrl: config.tokenListUrl ? maskUrl(config.tokenListUrl) : null,
     rpc: {
       mainnet: rpcJson('MAINNET_RPC_URL', DEFAULT_RPC_URLS.mainnet),
       sepolia: rpcJson('SEPOLIA_RPC_URL', DEFAULT_RPC_URLS.sepolia),
@@ -129,6 +135,10 @@ export function createProgram(): Command {
     .option('--rpc-sepolia <url>', rpcOptionHelp('Sepolia'))
     .option('--etherscan-key [key]', secretOptionHelp('the Etherscan API key'))
     .option('--zama-key [key]', secretOptionHelp('the Zama mainnet API key'))
+    .option(
+      '--token-list-url <url>',
+      'Token list (token-list JSON) for "token find"; "none" clears it',
+    )
     .option('--json', 'With --show (or no other option): print machine-readable JSON')
     .action(
       async (options: {
@@ -138,6 +148,7 @@ export function createProgram(): Command {
         rpcSepolia?: string;
         etherscanKey?: string | true;
         zamaKey?: string | true;
+        tokenListUrl?: string;
         json?: boolean;
       }) => {
         const hasSetOption =
@@ -145,7 +156,8 @@ export function createProgram(): Command {
           options.rpcMainnet ||
           options.rpcSepolia ||
           options.etherscanKey ||
-          options.zamaKey;
+          options.zamaKey ||
+          options.tokenListUrl;
 
         if (options.json && hasSetOption) {
           printJsonError(
@@ -190,6 +202,11 @@ export function createProgram(): Command {
           console.log(`  Mainnet: ${rpcLine('MAINNET_RPC_URL', DEFAULT_RPC_URLS.mainnet)}`);
           console.log(`  Sepolia: ${rpcLine('SEPOLIA_RPC_URL', DEFAULT_RPC_URLS.sepolia)}`);
           console.log();
+          console.log('Token list:');
+          console.log(
+            `  ${config.tokenListUrl ? maskUrl(config.tokenListUrl) : chalk.dim('(none; only the lists shipped with the wallet)')}`,
+          );
+          console.log();
           console.log('API Keys:');
           console.log(`  Etherscan: ${keyLine('ETHERSCAN_API_KEY')}`);
           console.log(`  Zama:      ${keyLine('ZAMA_MAINNET_API_KEY')}`);
@@ -204,6 +221,27 @@ export function createProgram(): Command {
           }
           updateConfig({ defaultNetwork: options.network as NetworkName });
           console.log(chalk.green(`Default network set to ${options.network}`));
+        }
+
+        if (options.tokenListUrl) {
+          const url = options.tokenListUrl.trim();
+          if (url.toLowerCase() === 'none') {
+            updateConfig({ tokenListUrl: undefined });
+            console.log(chalk.green('Token list URL cleared'));
+          } else {
+            const problem = validateTokenListUrl(url);
+            if (problem) {
+              console.log(chalk.red(problem));
+              process.exitCode = 1;
+            } else {
+              updateConfig({ tokenListUrl: url });
+              console.log(
+                chalk.green(
+                  `Token list URL saved. "fhew token find" downloads it (${maskUrl(url)}).`,
+                ),
+              );
+            }
+          }
         }
 
         if (options.rpcMainnet) {

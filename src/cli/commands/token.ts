@@ -20,6 +20,7 @@ import { formatAddress, success, error, warning } from '../../utils/formatting.j
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
 import { describeError } from '../utils/userError.js';
 import { printJson, printJsonError } from '../utils/json.js';
+import { registerTokenFind } from './tokenFind.js';
 
 const NETWORK_ERROR = 'Invalid network. Use "sepolia" or "mainnet"';
 
@@ -107,6 +108,8 @@ export function registerTokenCommands(program: Command): void {
         console.log(error(describeError(err, 'Failed to add token')));
       }
     });
+
+  registerTokenFind(token);
 
   // List tokens
   token
