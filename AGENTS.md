@@ -80,9 +80,10 @@ so mock and real data never share a folder (`src/core/backend/mockGuard.ts`):
 `FHEW_BACKEND` and `FHEVM_WALLET_HOME` are taken from the launch environment, never a
 `.env`; the mock runs only in a folder marked `.fhew-mock`, which it creates only in a
 missing or empty folder other than `~/.fhevm-wallet`; every command refuses a marked
-folder without `FHEW_BACKEND=mock`; and under the mock only the TUI and the commands in
-`MOCK_COMMANDS` run (`send`, `wallet`, `token`, `doctor`, `receive`, `history`,
-`operator`, `disclose`, help); the rest (`balance`, `config`) would reach the real network. Use `FHEVM_WALLET_HOME=$(mktemp -d)`. The TUI shows
+folder without `FHEW_BACKEND=mock`; and under the mock only the commands in
+`MOCK_COMMANDS` run: the TUI, `send`, `wallet`, `token`, `doctor`, `receive`, `history`,
+`operator`, `disclose` and help (the rest, e.g. `balance` and `config`, would reach the
+real network; an unknown command is left to commander's "unknown command"). Use `FHEVM_WALLET_HOME=$(mktemp -d)`. The TUI shows
 "MOCK · simulated, no real funds" right after the brand in the status bar.
 
 ## Terminal UI (src/tui)
