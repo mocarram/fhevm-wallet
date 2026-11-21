@@ -12,11 +12,13 @@ import {
   writeFileSync,
 } from 'fs';
 import { homedir, tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import {
   appendSecureFile,
   ensureSecureDir,
   isSharedLocation,
+  markNoChmod,
+  sharedLocationReason,
   tightenPermissions,
   writeNewPrivateFile,
   writeSecureFile,
@@ -111,6 +113,27 @@ describe.skipIf(process.platform === 'win32')('secureFs', () => {
     expect(tightenPermissions(cwd, ENTRIES)).toEqual([]);
     ensureSecureDir(cwd);
     expect(mode(cwd)).toBe(before);
+  });
+
+  it('treats temp, folders above home and sticky folders as shared too', () => {
+    // (In tests HOME lives under the temp folder, so either reason may apply.)
+    expect(sharedLocationReason(tmpdir())).not.toBeNull();
+    expect(sharedLocationReason(dirname(homedir()))).toMatch(/home folder or a folder above/);
+    const sticky = join(root, 'sticky');
+    mkdirSync(sticky);
+    chmodSync(sticky, 0o1777);
+    expect(sharedLocationReason(sticky)).toBe('a shared (sticky) folder');
+    ensureSecureDir(sticky);
+    expect(statSync(sticky).mode & 0o7777).toBe(0o1777);
+  });
+
+  it('markNoChmod keeps ensureSecureDir off an existing folder', () => {
+    const dir = join(root, 'theirs');
+    mkdirSync(dir, { mode: 0o755 });
+    chmodSync(dir, 0o755);
+    markNoChmod(dir);
+    ensureSecureDir(dir);
+    expect(mode(dir)).toBe(0o755);
   });
 
   it('does not follow symlinks out of the data dir', () => {

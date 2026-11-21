@@ -64,8 +64,78 @@ describe.skipIf(process.platform === 'win32')('wallet data storage', () => {
     chmodSync(t.home, 0o755);
     const res = runCli(['--version'], t.home, { FHEVM_WALLET_HOME: t.home });
     expect(res.code).toBe(0);
-    expect(res.stderr).toMatch(/shared folder/);
+    expect(res.stderr).toMatch(/which is your home folder/);
     expect(mode(t.home)).toBe(0o755);
+  });
+
+  it('never chmods a sticky shared folder, and refuses to trust a world-writable one', () => {
+    const t = tempHome();
+    cleanup = t.cleanup;
+    const shared = join(t.home, 'tmp-like');
+    mkdirSync(shared);
+    chmodSync(shared, 0o1777);
+    const res = runCli(['--version'], t.home, { FHEVM_WALLET_HOME: shared });
+    expect(statSync(shared).mode & 0o7777).toBe(0o1777); // sticky bit and mode kept
+    expect(res.code).toBe(1);
+    expect(res.stderr).toMatch(/a shared \(sticky\) folder/);
+    expect(res.stderr).toMatch(/Other users can change the wallet data folder/);
+    expect(res.stdout).toBe(''); // nothing ran
+  });
+
+  it('leaves the folder alone when it holds other files, and says so accurately', () => {
+    const t = tempHome();
+    cleanup = t.cleanup;
+    const dataDir = join(t.home, 'project');
+    mkdirSync(dataDir, { mode: 0o755 });
+    chmodSync(dataDir, 0o755);
+    writeFileSync(join(dataDir, 'README.md'), 'x', { mode: 0o644 });
+    const res = runCli(['--version'], t.home, { FHEVM_WALLET_HOME: dataDir });
+    expect(res.code).toBe(0);
+    expect(mode(dataDir)).toBe(0o755);
+    expect(mode(join(dataDir, 'README.md'))).toBe(0o644);
+    expect(res.stderr).toMatch(/also holds files the wallet did not create/);
+  });
+
+  it('makes an existing empty folder named by FHEVM_WALLET_HOME private', () => {
+    const t = tempHome();
+    cleanup = t.cleanup;
+    const dataDir = join(t.home, 'fresh');
+    mkdirSync(dataDir, { mode: 0o755 });
+    chmodSync(dataDir, 0o755);
+    const res = runCli(['--version'], t.home, { FHEVM_WALLET_HOME: dataDir });
+    expect(res.code).toBe(0);
+    expect(mode(dataDir)).toBe(0o700);
+    expect(res.stderr).not.toMatch(/Warning/);
+  });
+
+  it('refuses to load keys from a data folder others can write to', () => {
+    const t = tempHome();
+    cleanup = t.cleanup;
+    const dataDir = join(t.home, 'planted');
+    mkdirSync(join(dataDir, 'wallets'), { recursive: true });
+    writeFileSync(join(dataDir, 'notes.txt'), 'not ours'); // so the folder is not chmodded
+    chmodSync(dataDir, 0o777);
+    const res = runCli(['wallet', 'list'], t.home, { FHEVM_WALLET_HOME: dataDir });
+    expect(res.code).toBe(1);
+    expect(res.stderr).toMatch(/will not load keys or settings from it/);
+    expect(mode(dataDir)).toBe(0o777);
+  });
+
+  it('the default data folder is still tightened when it is the current folder', () => {
+    const t = tempHome();
+    cleanup = t.cleanup;
+    const dataDir = join(t.home, '.fhevm-wallet');
+    mkdirSync(dataDir, { mode: 0o755 });
+    chmodSync(dataDir, 0o755);
+    const res = spawnSync(process.execPath, [CLI, '--version'], {
+      env: { PATH: process.env.PATH ?? '', HOME: t.home, NO_COLOR: '1' },
+      cwd: dataDir,
+      encoding: 'utf-8',
+      timeout: 30_000,
+    });
+    expect(res.status).toBe(0);
+    expect(mode(dataDir)).toBe(0o700);
+    expect(res.stderr).not.toMatch(/FHEVM_WALLET_HOME/);
   });
 
   it.skipIf(typeof process.getuid !== 'function' || process.getuid() !== 0)(

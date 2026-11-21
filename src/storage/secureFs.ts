@@ -29,8 +29,8 @@ import {
   unlinkSync,
   writeSync,
 } from 'fs';
-import { dirname, join, parse, resolve } from 'path';
-import { homedir } from 'os';
+import { dirname, isAbsolute, join, parse, relative, resolve } from 'path';
+import { homedir, tmpdir } from 'os';
 import { randomBytes } from 'crypto';
 
 export const DIR_MODE = 0o700;
@@ -38,6 +38,9 @@ export const FILE_MODE = 0o600;
 
 /** Group and other permission bits: what tightening removes. Owner bits are kept. */
 const GROUP_OTHER_BITS = 0o077;
+
+/** The sticky bit: set on shared folders such as /tmp. */
+const STICKY_BIT = 0o1000;
 
 /** Resolve symlinks where possible, so `~/link-to-home` is recognised as home. */
 function canonical(path: string): string {
@@ -48,15 +51,60 @@ function canonical(path: string): string {
   }
 }
 
+/** Folders `ensureSecureDir` must not chmod although they exist (see `markNoChmod`). */
+const noChmodDirs = new Set<string>();
+/** Folders the wallet owns even though they look shared (the default data dir as cwd). */
+const ownDirs = new Set<string>();
+
+/** Never chmod `dir` (an existing folder the wallet was pointed at but does not own). */
+export function markNoChmod(dir: string): void {
+  noChmodDirs.add(canonical(dir));
+}
+
+/** Treat `dir` as the wallet's own, even when it is also the current folder. */
+export function markOwnDir(dir: string): void {
+  ownDirs.add(canonical(dir));
+}
+
+/** True when `ancestor` is `path` or one of its parent folders. */
+function isAncestorOrSelf(ancestor: string, path: string): boolean {
+  const rel = relative(ancestor, path);
+  return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+}
+
 /**
- * True for folders the wallet must never chmod even if FHEVM_WALLET_HOME points there:
- * the user's home, the current directory and the filesystem root. Making those 0700
- * would break other programs (a web server's home, a shared project folder).
+ * Why the wallet must never chmod `dir`, or null if it may. FHEVM_WALLET_HOME can point
+ * anywhere, and making a shared folder 0700 breaks other programs (or, as root with
+ * /tmp, the whole system):
+ * - the filesystem root, the home folder and every folder above it;
+ * - the temp folder and the current folder;
+ * - any sticky folder (1777 /tmp-style folders shared by all users).
  */
-export function isSharedLocation(dir: string): boolean {
+export function sharedLocationReason(dir: string): string | null {
   const target = canonical(dir);
-  const shared = [homedir(), process.cwd(), parse(target).root].map(canonical);
-  return shared.includes(target);
+  const home = canonical(homedir());
+  if (target === parse(target).root) return 'the filesystem root';
+  if (isAncestorOrSelf(target, home)) return 'your home folder or a folder above it';
+  if (target === canonical(tmpdir())) return 'the temp folder';
+  if (target === canonical(process.cwd())) return 'the current folder';
+  try {
+    if (statSync(target).mode & STICKY_BIT) return 'a shared (sticky) folder';
+  } catch {
+    /* missing: nothing to protect */
+  }
+  return null;
+}
+
+/** True for folders the wallet must never chmod (see `sharedLocationReason`). */
+export function isSharedLocation(dir: string): boolean {
+  return sharedLocationReason(dir) !== null;
+}
+
+/** True when `dir` may be chmodded: not marked off-limits, and ours or not shared. */
+function mayChmodDir(dir: string): boolean {
+  const c = canonical(dir);
+  if (noChmodDirs.has(c)) return false;
+  return ownDirs.has(c) || !isSharedLocation(dir);
 }
 
 /** chmod that tolerates "not yours to change" (a volume created by root, say). */
@@ -74,7 +122,8 @@ function chmodIfPermitted(path: string, mode: number): boolean {
 /**
  * Create `dir` (and parents) if missing and make sure it is owner-only.
  *
- * Does not chmod a shared location (see `isSharedLocation`), and does not fail when the
+ * Does not chmod a shared location (see `sharedLocationReason`) or a folder marked with
+ * `markNoChmod`, and does not fail when the
  * folder belongs to another user but is still writable: writes then still work and the
  * files we create are ours (and 0600). Startup warns about that case once.
  */
@@ -82,7 +131,7 @@ export function ensureSecureDir(dir: string): void {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true, mode: DIR_MODE });
   }
-  if (isSharedLocation(dir)) return;
+  if (!mayChmodDir(dir)) return;
   chmodIfPermitted(dir, DIR_MODE);
 }
 
@@ -201,17 +250,24 @@ export function writeNewPrivateFile(path: string, data: string): void {
  * Deliberately narrow, because FHEVM_WALLET_HOME can point at a folder that also holds
  * other things:
  * - only `root` and the listed `entries` (relative to it) are touched; a listed directory
- *   also gets its direct children (the keystores in wallets/), nothing deeper;
+ *   also gets its direct children (the keystores in wallets/), nothing deeper; with
+ *   `includeRoot: false` (a folder the wallet shares with other files) only the entries;
  * - only group/other bits are cleared: owner bits stay as they are, so an executable
  *   keeps its x bit and a read-only file stays read-only;
- * - nothing happens at all when `root` is a shared location (home, cwd, /);
+ * - nothing happens at all when `root` is a shared location (see `sharedLocationReason`);
  * - symlinks inside `root` are skipped (chmod would change their target), while `root`
  *   itself is followed (the data dir may live on another disk);
  * - entries that cannot be changed (owned by someone else) are skipped, so a stray file
  *   never stops the wallet from starting.
  */
-export function tightenPermissions(root: string, entries: readonly string[]): string[] {
-  if (!existsSync(root) || process.platform === 'win32' || isSharedLocation(root)) return [];
+export function tightenPermissions(
+  root: string,
+  entries: readonly string[],
+  opts: { includeRoot?: boolean } = {},
+): string[] {
+  if (!existsSync(root) || process.platform === 'win32') return [];
+  // A shared folder (home, /tmp, ...) is never touched, nor anything in it.
+  if (isSharedLocation(root) && !ownDirs.has(canonical(root))) return [];
   const changed: string[] = [];
 
   const tighten = (path: string, follow: boolean): ReturnType<typeof statSync> | null => {
@@ -229,7 +285,7 @@ export function tightenPermissions(root: string, entries: readonly string[]): st
     return st;
   };
 
-  tighten(root, true);
+  if (opts.includeRoot !== false && mayChmodDir(root)) tighten(root, true);
   for (const entry of entries) {
     const path = join(root, entry);
     const st = tighten(path, false);

@@ -6,11 +6,13 @@
  * A CLI wallet for managing encrypted ERC-7984 tokens using Zama's FHE technology.
  */
 
-import { DATA_DIR, loadEnv, secureExistingData } from './storage/paths.js';
+import { DATA_DIR, loadEnv, secureExistingData, UntrustedDataDirError } from './storage/paths.js';
 
 // Load settings: the data dir's private .env, plus allow-listed keys from ./.env.
 // Failing here (data dir not writable) gets one clear sentence, not a stack trace.
 try {
+  // Check and tighten the data dir before reading anything from it (its .env included).
+  const { tightened, warning } = secureExistingData();
   const env = loadEnv();
   // A ./.env can point the wallet at another RPC: say where settings came from.
   if (env.fromCwd.length > 0) {
@@ -26,8 +28,7 @@ try {
   }
 
   // Older versions wrote wallet data with default (often world-readable) permissions.
-  // Fix them on every start; mention it on stderr so stdout stays scriptable.
-  const { tightened, warning } = secureExistingData();
+  // They are fixed on every start; mention it on stderr so stdout stays scriptable.
   if (tightened > 0) {
     process.stderr.write(
       `Restricted ${tightened} wallet data item(s) (files or folders) to your user only.\n`,
@@ -37,9 +38,11 @@ try {
 } catch (err) {
   const code = (err as NodeJS.ErrnoException).code;
   process.stderr.write(
-    code === 'EACCES' || code === 'EPERM'
-      ? `Cannot use the wallet data folder ${DATA_DIR}: permission denied. Make it writable by your user, or set FHEVM_WALLET_HOME to another folder.\n`
-      : `Cannot open the wallet data folder ${DATA_DIR}: ${safeText(err instanceof Error ? err.message : String(err))}\n`,
+    err instanceof UntrustedDataDirError
+      ? `${err.message}\n`
+      : code === 'EACCES' || code === 'EPERM'
+        ? `Cannot use the wallet data folder ${DATA_DIR}: permission denied. Make it writable by your user, or set FHEVM_WALLET_HOME to another folder.\n`
+        : `Cannot open the wallet data folder ${DATA_DIR}: ${safeText(err instanceof Error ? err.message : String(err))}\n`,
   );
   process.exit(1);
 }

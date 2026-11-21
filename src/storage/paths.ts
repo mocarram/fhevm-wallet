@@ -2,13 +2,22 @@
  * Centralized path configuration and the user's private `.env` file.
  */
 
-import { accessSync, constants as fsConstants, existsSync, readFileSync, statSync } from 'fs';
+import {
+  accessSync,
+  constants as fsConstants,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+} from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
 import { config as dotenvConfig, parse as dotenvParse } from 'dotenv';
 import {
   ensureSecureDir,
-  isSharedLocation,
+  markNoChmod,
+  markOwnDir,
+  sharedLocationReason,
   tightenPermissions,
   writeSecureFile,
 } from './secureFs.js';
@@ -28,9 +37,95 @@ export const DATA_DIR = process.env.FHEVM_WALLET_HOME
 /** Path to the private `.env` file in the data directory. */
 export const ENV_FILE_PATH = join(DATA_DIR, '.env');
 
-/** Ensure the data directory exists and is owner-only (0700). */
+/** Whether the wallet may chmod the data dir itself; computed on first use. */
+let dataDirPolicy: DataDirPolicy | null = null;
+
+/** What the wallet may do with the data dir, and why not when it may not chmod it. */
+export interface DataDirPolicy {
+  /** The folder is the wallet's own: it may make it 0700. */
+  ours: boolean;
+  /** Why it is not, for the startup warning; null when it is. */
+  reason: string | null;
+  /** Only wallet files in it are tightened, never the folder itself or anything else. */
+  sharedWithOtherFiles: boolean;
+}
+
+/** Temp files `writeSecureFile` leaves for a moment during an atomic write. */
+const TEMP_FILE_RE = /^\.[0-9a-f]{12}\.tmp$/;
+
+/**
+ * Decide, once, whether the data dir is the wallet's to chmod. The default
+ * `~/.fhevm-wallet` and a folder the wallet creates are. An existing folder named by
+ * FHEVM_WALLET_HOME is only if it is not a shared location (home or above, temp, cwd,
+ * root, a sticky folder) and holds nothing but files the wallet creates.
+ */
+export function getDataDirPolicy(): DataDirPolicy {
+  if (dataDirPolicy) return dataDirPolicy;
+  const own: DataDirPolicy = { ours: true, reason: null, sharedWithOtherFiles: false };
+  if (!existsSync(DATA_DIR) || !process.env.FHEVM_WALLET_HOME) {
+    markOwnDir(DATA_DIR); // ours even when it happens to be the current folder
+    return (dataDirPolicy = own);
+  }
+  const shared = sharedLocationReason(DATA_DIR);
+  if (shared) {
+    markNoChmod(DATA_DIR);
+    return (dataDirPolicy = {
+      ours: false,
+      reason: `FHEVM_WALLET_HOME points at ${DATA_DIR}, which is ${shared}. The wallet will not change its permissions. Point it at a dedicated folder.`,
+      sharedWithOtherFiles: false,
+    });
+  }
+  let foreign: string[] = [];
+  try {
+    foreign = readdirSync(DATA_DIR).filter(
+      (e) => !(WALLET_DATA_ENTRIES as readonly string[]).includes(e) && !TEMP_FILE_RE.test(e),
+    );
+  } catch {
+    /* unreadable: the access check reports it */
+  }
+  if (foreign.length > 0) {
+    markNoChmod(DATA_DIR);
+    return (dataDirPolicy = {
+      ours: false,
+      reason: `FHEVM_WALLET_HOME points at ${DATA_DIR}, which also holds files the wallet did not create, so the wallet only restricts its own files there. Point it at a dedicated folder to keep the folder itself private.`,
+      sharedWithOtherFiles: true,
+    });
+  }
+  return (dataDirPolicy = own);
+}
+
+/** Ensure the data directory exists and, when it is the wallet's own, is owner-only. */
 export function ensureDataDir(): void {
+  getDataDirPolicy(); // before the first chmod: decides whether there may be one
   ensureSecureDir(DATA_DIR);
+}
+
+/**
+ * Thrown when the data dir (or wallets/) can be changed by other users. Anyone who can
+ * write there can plant a keystore or a `.env` with their own RPC URL, so the wallet must
+ * not load either.
+ */
+export class UntrustedDataDirError extends Error {
+  readonly code = 'UNTRUSTED_DATA_DIR';
+}
+
+/** Throw UntrustedDataDirError if other users can write to the data dir or wallets/. */
+export function assertTrustedDataDir(): void {
+  if (process.platform === 'win32') return; // no POSIX modes to check
+  for (const dir of [DATA_DIR, join(DATA_DIR, 'wallets')]) {
+    let st;
+    try {
+      st = statSync(dir);
+    } catch {
+      continue; // not there yet: the wallet creates it 0700
+    }
+    if ((st.mode & 0o022) !== 0) {
+      const mine = typeof process.getuid !== 'function' || st.uid === process.getuid();
+      throw new UntrustedDataDirError(
+        `Other users can change the wallet data folder ${dir}${mine ? '' : ' (it belongs to another user)'}, so the wallet will not load keys or settings from it. Remove write access for group and others (chmod go-w), or set FHEVM_WALLET_HOME to a private folder.`,
+      );
+    }
+  }
 }
 
 /**
@@ -59,26 +154,34 @@ export interface DataDirSecurity {
 
 /**
  * Tighten permissions on data written by older versions (which used the default umask),
- * and explain once when the data dir cannot be made private.
+ * and explain once when the data dir cannot be made private. Throws
+ * UntrustedDataDirError when other users can still write to it afterwards.
  */
 export function secureExistingData(): DataDirSecurity {
-  if (isSharedLocation(DATA_DIR)) {
-    return {
-      tightened: 0,
-      warning: `FHEVM_WALLET_HOME points at ${DATA_DIR}, a shared folder (home, current folder or root). The wallet will not change its permissions. Point it at a dedicated folder.`,
-    };
-  }
-  const tightened = tightenPermissions(DATA_DIR, WALLET_DATA_ENTRIES).length;
-  let warning: string | null = null;
+  ensureDataDir();
+  const policy = getDataDirPolicy();
+  const tightened =
+    policy.ours || policy.sharedWithOtherFiles
+      ? tightenPermissions(DATA_DIR, WALLET_DATA_ENTRIES, { includeRoot: policy.ours }).length
+      : 0;
+  let warning = policy.reason;
   try {
     const st = statSync(DATA_DIR);
-    // Writable but not ours (a Docker volume created by root, say): chmod is refused,
-    // so other users may still be able to list it.
-    if (typeof process.getuid === 'function' && st.uid !== process.getuid()) {
+    // Ours to use but not ours to chmod (a Docker volume created by root, say).
+    if (!warning && typeof process.getuid === 'function' && st.uid !== process.getuid()) {
       warning = `The wallet data folder ${DATA_DIR} belongs to another user, so its permissions cannot be restricted. Give it to your user (chown) to keep it private.`;
     }
   } catch {
     /* missing dir: nothing to warn about */
+  }
+  try {
+    assertTrustedDataDir();
+  } catch (err) {
+    // Say first why the wallet did not just fix the permissions itself.
+    if (err instanceof UntrustedDataDirError && policy.reason) {
+      throw new UntrustedDataDirError(`${policy.reason}\n${err.message}`);
+    }
+    throw err;
   }
   return { tightened, warning };
 }
@@ -159,6 +262,8 @@ export function loadEnv(cwdEnvPath = resolve('.env')): LoadEnvResult {
   // An existing folder we may not write to (another user's, or read-only) would only
   // fail later, mid-command, with a raw EACCES. Fail now, so startup can say it plainly.
   accessSync(DATA_DIR, fsConstants.R_OK | fsConstants.W_OK | fsConstants.X_OK);
+  // A .env others could have written would let them pick the RPC (and see the API keys).
+  assertTrustedDataDir();
   if (existsSync(ENV_FILE_PATH)) {
     // quiet: dotenv 17+ otherwise prints a promotional line to stdout.
     const loaded = dotenvConfig({ path: ENV_FILE_PATH, override: true, quiet: true });
