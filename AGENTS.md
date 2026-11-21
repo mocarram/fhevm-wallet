@@ -176,7 +176,10 @@ Every unit of work goes through this loop until it comes out clean:
   files. Never home or above, the temp folder, the current folder, `/` or a sticky
   folder (`sharedLocationReason`). A data dir or `wallets/` that group or others can
   write to, or any wallet file that is writable by others, owned by another user or a
-  symlink, is refused *before* anything is tightened or read (`assertTrustedDataDir`).
+  symlink, is refused *before* anything is tightened or read (`assertTrustedDataDir`),
+  and so is a data dir under a folder anyone can write to without the sticky bit. The
+  one exception is a group-writable (not world-writable) file of the user's own private
+  group, which is tightened. Trust is re-checked before a keystore is read.
   The data-dir `.env` only supplies `SAVED_ENV_KEYS` (RPC URLs, API keys);
   `FHEW_BACKEND`, `FHEW_DEBUG` and `FHEVM_WALLET_HOME` come only from the real
   environment.
@@ -234,6 +237,17 @@ Every unit of work goes through this loop until it comes out clean:
   typed, so the program's preAction hook copies it to the running subcommand's own
   `network` option (`adoptTypedNetwork`, `src/cli/utils/networkOption.ts`). A new
   command that takes a network declares `-n, --network` and reads `options.network`.
+- Anything that needs the chain or relayer goes through the `Backend` interface so the
+  mock supports it; a command that does is added to `MOCK_COMMANDS`
+  (`src/core/backend/mockGuard.ts`).
+- Tokens are added only after `Backend.checkToken` (ERC-7984 check,
+  `src/core/token/erc7984Check.ts`); a failing one needs an explicit override (`--force`,
+  "Add anyway"). A transport failure is never reported as "not ERC-7984".
+- `--json` (`src/cli/utils/json.ts`): one document on stdout, stable camelCase keys, bigint
+  as strings, errors `{"error":{code,message}}` with exit 1, no prompts (require
+  `--password-stdin` / `--yes` instead), human progress on stderr only.
+- Never put a token address in `src/core/token/lists/*.json` that was not verified; record
+  the source in `docs/token-lists.md`.
 - No emoji in menus (they break column alignment in many terminals).
 
 ## Where the plan lives

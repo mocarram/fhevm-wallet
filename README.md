@@ -6,7 +6,11 @@ A CLI wallet for managing encrypted ERC-7984 tokens using Zama's Fully Homomorph
 
 - **Interactive terminal UI** - Status bar, numbered menus, a send wizard with safety checks, `?` help and a `:` command bar
 - **Wallet Management** - Create new wallets or import existing ones via mnemonic phrase or private key
-- **Confidential Token Tracking** - Add and manage ERC-7984 compliant tokens
+- **Confidential Token Tracking** - Add and manage ERC-7984 tokens; every token is checked for ERC-7984 before it is added
+- **Find tokens** - Discover tokens from known lists and from confidential transfers sent to your wallet
+- **Doctor** - One command checks Node, the data folder, RPC, the Zama relayer, gas and every token
+- **Receive with a QR code** - Your address (or an EIP-681 link) as a terminal QR code
+- **Scriptable** - `--json` on non-interactive commands
 - **Encrypted Balance Viewing** - Decrypt and view your confidential token balances
 - **Confidential Transfers** - Send tokens with end-to-end encryption
 - **Address Book** - Save frequently used addresses with friendly names
@@ -92,8 +96,15 @@ fhew wallet set-default my-wallet
 ### Token Commands
 
 ```bash
-# Add a token to track
+# Add a token to track (checked for ERC-7984 first; --force adds one that fails)
 fhew token add 0x...
+
+# Find tokens you may hold: known lists plus transfers sent to your wallet
+fhew token find                       # list candidates with their source and status
+fhew token find --all-verified        # add the verified ones
+fhew token find --add 0x... 0x...     # add specific candidates
+fhew token find --no-scan             # known lists only
+fhew config --token-list-url https://example.org/tokens.json   # your own list ("none" clears)
 
 # List tracked tokens
 fhew token list
@@ -134,6 +145,36 @@ refused unless the command line itself says `-n mainnet` **and** `--mainnet`, so
 default network set in the config can never send real funds unasked. In a terminal
 without `--yes`, a Mainnet send asks you to retype the amount, as the terminal UI does.
 Exporting a raw private key is interactive only.
+
+Find tokens labels each candidate. **verified**: on a known list and it passes the
+ERC-7984 check. **unverified**: it sent your wallet a transfer but is on no list (anyone
+can send you a token, so only add ones you recognise). **not ERC-7984**: refused unless you
+pass `--force`. The history scan reads `ConfidentialTransfer` logs over RPC in chunks,
+remembers where it stopped (per wallet and network) and can be stopped with Ctrl+C (Esc in
+the terminal UI). The lists shipped with the wallet are empty for now: no official list of
+ERC-7984 token addresses could be verified (see [docs/token-lists.md](docs/token-lists.md)).
+
+### Doctor, Receive
+
+```bash
+fhew doctor            # exit code 1 if anything needs fixing
+fhew receive           # address and QR code; --eip681 puts the network in the QR too
+```
+
+### JSON output
+
+`fhew wallet list`, `token list`, `token find`, `balance`, `history`, `config --show`,
+`doctor`, `receive` and `send` accept `--json`: one JSON document on stdout, stable
+camelCase keys, amounts in base units as strings, no colours. Errors are
+`{"error": {"code": "...", "message": "..."}}` with exit code 1 (send errors after a
+broadcast also carry `txHash` and `explorerUrl`: check those before sending again). RPC URLs
+and keys are masked like in the text output. Prompts would break the JSON, so `balance`
+needs `--password-stdin`, and `send` needs `--password-stdin`, `--yes`, a recipient and an
+amount.
+
+```bash
+pass show my-wallet | fhew balance --json --password-stdin | jq '.tokens[].formatted'
+```
 
 ### Configuration
 

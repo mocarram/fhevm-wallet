@@ -138,15 +138,15 @@ pseudo-terminal against the mock backend.
 
 ## Phase 4: fhEVM features and smoothness
 
-- [ ] `fhew doctor` (Node, RPC + chain, relayer, ETH, ERC-7984 support per token, data perms)
-- [ ] ERC-7984 interface check when adding a token
-- [ ] Find tokens: scan ConfidentialTransfer events where the wallet is the recipient and a curated known-token list per network; one checkbox list (Space toggle, a all, Enter bulk-add); unverified tokens unselected and labelled
+- [x] `fhew doctor` (Node, RPC + chain, relayer, ETH, ERC-7984 support per token, data perms) (Phase 4a)
+- [x] ERC-7984 interface check when adding a token (Phase 4a)
+- [x] Find tokens: scan ConfidentialTransfer events where the wallet is the recipient and a curated known-token list per network; one checkbox list (Space toggle, a all, Enter bulk-add); unverified tokens unselected and labelled (Phase 4a)
 - [ ] One signature decrypts all tracked balances (session-scoped keypair + signature)
 - [ ] Decrypted amounts in history where the user is allowed to decrypt
 - [ ] Operators screen (view, grant with expiry, revoke)
 - [ ] Disclose a transfer amount
-- [ ] `--json` output on non-interactive commands
-- [ ] Receive screen with terminal QR code
+- [x] `--json` output on non-interactive commands (Phase 4a)
+- [x] Receive screen with terminal QR code (Phase 4a)
 - [x] First-run setup (wallet → network → token → gas) (done with the Phase 3 TUI)
 - [x] Repeat last send (`.`), friendlier amounts (`max`, `half`, `1k`, `1,250.50`) (done with the Phase 3 TUI)
 - [x] "Next time: fhew send …" hint after interactive sends (done with the Phase 3 TUI)
@@ -169,3 +169,10 @@ warning, lock/unlock, doctor output and `--json`.
 ## Not yet done (needs the user)
 
 - On-chain verification on Sepolia with a real ERC-7984 token and funded wallet.
+- Confirm the ERC-7984 interface id `0x4958f2a4` against a deployed token:
+  `cast call <token> "supportsInterface(bytes4)(bool)" 0x4958f2a4` should be true for an
+  OpenZeppelin v0.3.0+ token; then `fhew doctor` should show "(reports the interface id)".
+- Run `fhew token find` on Sepolia with a wallet that received a confidential transfer,
+  against the default public RPCs (chunking and range errors are only tested locally).
+- Fill the shipped known-token lists (`src/core/token/lists/`) with verified addresses,
+  see docs/token-lists.md; check whether Etherscan's logs API accepts topic-only queries.

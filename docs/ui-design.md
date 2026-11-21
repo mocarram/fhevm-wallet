@@ -40,10 +40,11 @@ This file is the text reference agents build against.
 | : | Command bar | not in text fields |
 | ? | Help for this screen | not in text fields |
 | L or l | Lock now | not in text fields |
-| / | Filter list (planned, Phase 4) | long lists |
+| / | Filter the list (Enter keeps, Esc clears) | Tokens, Address book, History, Find tokens |
 | e | What happened to the last send | Home, after a failed send |
 | p | Paste an address | Send › Recipient |
 | Space / a | Select one / all | multi-select lists (Remove tokens, Find tokens) |
+| r | Scan again | Find tokens |
 
 ## Home
 
@@ -69,7 +70,26 @@ the matching `fhew send …` command, and an offer to save new addresses.
 Settings › Network opens a two-item picker (Sepolia / Mainnet) rather than toggling on
 Enter, so Mainnet is never one accidental key press away. "Stay unlocked for" and
 "Send countdown" cycle through their choices on Enter. Tokens has "Remove tokens" (a
-multi-select list) and a disabled "Find tokens (coming soon)" slot for Phase 4.
+multi-select list) and "Find tokens".
+
+Adding a token runs the ERC-7984 check. A contract that fails opens "does not look like
+an ERC-7984 confidential token" with the reasons and two choices, "Don't add it"
+(default) and "Add anyway".
+
+Find tokens shows scan progress ("block X of Y (n%) · k found"; Esc stops it and keeps
+what was scanned), then one multi-select list. Each row: symbol, name, short address and
+its source, "known list" and/or "found in your history". Verified rows (known list +
+check passed) start selected; rows only found in the history are labelled "unverified" in
+yellow and start unselected. Contracts that fail the check are listed below, dimmed, as
+"not ERC-7984, not offered". Space toggles, `a` selects all, Enter adds the selection,
+`r` scans again from where it stopped.
+
+## Receive, Doctor
+
+Receive shows the address and a terminal QR code (half blocks, quiet zone) of the address,
+or of an EIP-681 link `ethereum:<address>@<chainId>` after "QR with network (EIP-681)".
+Doctor lists one row per check (Node, data folder, each RPC URL masked, relayer, ETH for
+gas, each tracked token's ERC-7984 check) with ✔ ! ✗ marks, the same as `fhew doctor`.
 
 ## Errors
 
