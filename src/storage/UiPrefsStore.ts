@@ -9,7 +9,9 @@
 
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import { isAddress } from 'ethers';
 import { z } from 'zod';
+import { MAX_EUINT64 } from '../core/token/limits.js';
 import { DATA_DIR, ensureDataDir } from './paths.js';
 import { writeSecureFile } from './secureFs.js';
 
@@ -18,16 +20,31 @@ export const UNLOCK_MINUTES_CHOICES = [0, 5, 15, 60] as const;
 /** Choices offered for "Send countdown" (seconds; 0 = off, except on mainnet). */
 export const COUNTDOWN_CHOICES = [0, 3, 5, 10] as const;
 
+/** An Ethereum address (any letter case that ethers accepts). */
+const AddressSchema = z.string().refine((v) => isAddress(v), 'not an address');
+
+/**
+ * Base units as a decimal string, 1 to 2^64 - 1. The file is user-editable, so a value
+ * like "1.5" must be dropped here rather than crash `BigInt()` in the UI later.
+ */
+const BaseUnitsSchema = z
+  .string()
+  .regex(/^[1-9]\d{0,19}$/)
+  // zod runs this even when the regex failed, so never hand BigInt() a non-integer.
+  .refine((v) => /^\d+$/.test(v) && BigInt(v) <= MAX_EUINT64, 'above the 64-bit limit');
+
 const LastSendSchema = z.object({
-  token: z.string(),
-  to: z.string(),
-  amount: z.string(),
+  token: AddressSchema,
+  to: AddressSchema,
+  amount: BaseUnitsSchema,
 });
 
+// Each sticky default is dropped on its own when malformed (`catch`), so one bad entry
+// never resets the rest of the preferences.
 const NetworkPrefsSchema = z.object({
-  lastToken: z.string().optional(),
-  lastRecipient: z.string().optional(),
-  lastSend: LastSendSchema.optional(),
+  lastToken: AddressSchema.optional().catch(undefined),
+  lastRecipient: AddressSchema.optional().catch(undefined),
+  lastSend: LastSendSchema.optional().catch(undefined),
 });
 
 const UiPrefsSchema = z.object({

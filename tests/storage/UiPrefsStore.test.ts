@@ -22,8 +22,12 @@ describe('UiPrefsStore', () => {
 
   it('round-trips sticky defaults per network with owner-only permissions', () => {
     const p = defaultUiPrefs();
-    p.networks.sepolia.lastToken = '0xabc';
-    p.networks.sepolia.lastSend = { token: '0xabc', to: '0xdef', amount: '25000000' };
+    p.networks.sepolia.lastToken = '0x91Be4C2a6d0f83B1e7c5a9d2f4E8b0C6D3d207AF';
+    p.networks.sepolia.lastSend = {
+      token: '0x91Be4C2a6d0f83B1e7c5a9d2f4E8b0C6D3d207AF',
+      to: '0x6e1d3a0B7C25F9e84d1a6b3c0e7F52a9d8c194fa',
+      amount: '25000000',
+    };
     p.countdownSeconds = 3;
     saveUiPrefs(p);
     const back = loadUiPrefs();
@@ -39,6 +43,34 @@ describe('UiPrefsStore', () => {
     expect(loadUiPrefs()).toEqual(defaultUiPrefs());
     writeFileSync(FILE(), JSON.stringify({ countdownSeconds: 9999 }));
     expect(loadUiPrefs()).toEqual(defaultUiPrefs());
+  });
+
+  it('drops malformed sticky entries one by one instead of crashing later', () => {
+    mkdirSync(join(homedir(), '.fhevm-wallet'), { recursive: true });
+    const good = '0x91Be4C2a6d0f83B1e7c5a9d2f4E8b0C6D3d207AF';
+    writeFileSync(
+      FILE(),
+      JSON.stringify({
+        countdownSeconds: 3,
+        networks: {
+          sepolia: { lastToken: good, lastSend: { token: good, to: good, amount: '1.5' } },
+          mainnet: { lastRecipient: 'bob', lastSend: { token: good, to: good, amount: '25' } },
+        },
+      }),
+    );
+    const p = loadUiPrefs();
+    expect(p.countdownSeconds).toBe(3);
+    expect(p.networks.sepolia.lastToken).toBe(good);
+    expect(p.networks.sepolia.lastSend).toBeUndefined();
+    expect(p.networks.mainnet.lastRecipient).toBeUndefined();
+    expect(p.networks.mainnet.lastSend?.amount).toBe('25');
+    for (const amount of ['0', '-1', '1e6', '18446744073709551616', '']) {
+      writeFileSync(
+        FILE(),
+        JSON.stringify({ networks: { sepolia: { lastSend: { token: good, to: good, amount } } } }),
+      );
+      expect(loadUiPrefs().networks.sepolia.lastSend).toBeUndefined();
+    }
   });
 
   it('refuses to save invalid values', () => {
