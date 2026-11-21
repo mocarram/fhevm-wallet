@@ -7,11 +7,12 @@
  * Amounts this wallet may not decrypt stay "encrypted" without an error.
  */
 
+import { parseUnits } from 'ethers';
+import { formatAmount } from '../format.js';
 import { shortAddress } from '../../core/send/recipient.js';
 import type { TokenEntry } from '../../core/token/TokenRegistry.js';
 import { decryptHistoryAmounts, knownAmount } from '../../core/token/historyAmounts.js';
 import { listTransactions, type Transaction } from '../../storage/TransactionStore.js';
-import { formatBalance } from '../../core/send/amount.js';
 import { describeError } from '../errors.js';
 import { effect, type Effect } from '../effects.js';
 import { isUnlocked, type AppState, type HistoryRow } from '../state.js';
@@ -59,7 +60,15 @@ export function toHistoryRow(
   let amount = t.amount === null ? 'encrypted' : `${sign}${t.amount}`;
   const known = t.amount === null ? knownAmount(t) : null;
   const token = tokens.find((x) => x.address.toLowerCase() === t.tokenAddress.toLowerCase());
-  if (known && token) amount = `${sign}${formatBalance(known.value, token.decimals)}`;
+  if (known && token) amount = `${sign}${formatAmount(known.value, token.decimals)}`;
+  else if (t.amount !== null && token) {
+    // A stored plain amount ("0.004") in the same style as decrypted ones ("+25.00").
+    try {
+      amount = `${sign}${formatAmount(parseUnits(t.amount, token.decimals), token.decimals)}`;
+    } catch {
+      // not a decimal number: shown as stored
+    }
+  }
   return {
     when: shortWhen(t.timestamp),
     kind,

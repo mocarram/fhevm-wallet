@@ -2,9 +2,8 @@
  * Balances (ETH and every tracked token) and the Unlock screen.
  */
 
-import { formatBalance } from '../../core/send/amount.js';
 import { shortAddress } from '../../core/send/recipient.js';
-import { age, formatEth, isLowGas } from '../format.js';
+import { age, formatAmount, formatEth, isLowGas } from '../format.js';
 import { decryptAll } from '../flows/data.js';
 import { startSend } from '../flows/send.js';
 import { unlock } from '../flows/wallet.js';
@@ -39,11 +38,7 @@ export const balancesScreen: ScreenDef = {
     const list: Line[] = [];
     for (const t of s.data.tokens) {
       const b = s.balances[t.address.toLowerCase()];
-      const shown = b
-        ? formatBalance(b.value, t.decimals)
-        : s.decrypting
-          ? 'decrypting…'
-          : 'locked';
+      const shown = b ? formatAmount(b.value, t.decimals) : s.decrypting ? 'decrypting…' : 'locked';
       list.push(
         line(
           '  ',

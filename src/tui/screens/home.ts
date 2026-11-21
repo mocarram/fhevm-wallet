@@ -4,9 +4,8 @@
  * numbers of the other items never move.
  */
 
-import { formatBalance } from '../../core/send/amount.js';
 import { QUIT } from '../effects.js';
-import { age, formatEth, isLowGas, sendsLeft, spinner } from '../format.js';
+import { age, formatAmount, formatEth, isLowGas, sendsLeft, spinner } from '../format.js';
 import { open } from '../nav.js';
 import type { MenuEntry, ScreenDef } from '../screen.js';
 import { isUnlocked, type AppState } from '../state.js';
@@ -35,7 +34,7 @@ export function balancesLines(s: AppState, cols = s.size.cols): Line[] {
     const b = s.balances[t.address.toLowerCase()];
     const refreshing = Boolean(s.refreshing[t.address.toLowerCase()]);
     if (b) {
-      out.push(seg(formatBalance(b.value, t.decimals), 'bold'));
+      out.push(seg(formatAmount(b.value, t.decimals), 'bold'));
       // A background re-decrypt keeps the old value on screen with a spinner beside it.
       if (refreshing) out.push(seg(` ${spinner(s.now)}`, 'cyan'));
       if (b.source === 'session') anySession = true;

@@ -2,11 +2,22 @@
  * Small display helpers shared by the status bar and screens: spinner, ETH, gas, ages.
  */
 
-import { formatBalance } from '../core/send/amount.js';
+import { formatBalance, formatExactAmount } from '../core/send/amount.js';
 import type { AppState } from './state.js';
 
 /** Braille spinner frames, advanced every 120 ms. */
 export const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+/**
+ * A token amount as the TUI shows it: exact (never rounded: 0.004 stays 0.004, it used
+ * to read "0.00"), thousands grouped, and at least two decimals so columns of whole
+ * amounts line up ("25.00").
+ */
+export function formatAmount(value: bigint, decimals: number): string {
+  const exact = formatExactAmount(value, decimals);
+  const [int, frac = ''] = exact.split('.');
+  return decimals === 0 ? int : `${int}.${frac.padEnd(Math.min(2, decimals), '0')}`;
+}
 
 /** Spinner frame for `now`. */
 export function spinner(now: number): string {

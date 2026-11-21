@@ -11,14 +11,14 @@
 import { recordTransferTransaction } from '../../core/token/TokenService.js';
 import { WalletTxError } from '../../core/token/txErrors.js';
 import { describeError } from '../errors.js';
-import { formatExactAmount, formatBalance, parseFriendlyAmount } from '../../core/send/amount.js';
+import { formatExactAmount, parseFriendlyAmount } from '../../core/send/amount.js';
 import { findLookAlike, parseAddressInput, shortAddress } from '../../core/send/recipient.js';
 import { resolveRecipient, resolveToken } from '../../core/send/resolve.js';
 import { formatTokenAmount } from '../../utils/formatting.js';
 import { loadUiPrefs, saveUiPrefs } from '../../storage/UiPrefsStore.js';
 import type { TokenEntry } from '../../core/token/TokenRegistry.js';
 import { effect, type Effect } from '../effects.js';
-import { formatEth, shortHash } from '../format.js';
+import { formatAmount, formatEth, shortHash } from '../format.js';
 import { open, openInstead, popTo } from '../nav.js';
 import {
   clearSecrets,
@@ -343,7 +343,7 @@ export function broadcast(s: AppState): Effect[] {
   s.send.prepared = undefined;
   s.send.preparedFor = undefined;
   const id = s.nextPendingId++;
-  const amountText = `${formatBalance(value, t.decimals)} ${t.symbol}`;
+  const amountText = `${formatAmount(value, t.decimals)} ${t.symbol}`;
   s.pending.push({ id, amountText, toLabel: recipientLabel(to) });
   const network = s.network;
   const from = s.wallet.address;
@@ -570,7 +570,7 @@ export function lastSendSummary(s: AppState): string | null {
   const t = s.data.tokens.find((x) => x.address.toLowerCase() === last.token.toLowerCase());
   if (!t) return null;
   const contact = s.data.contacts.find((c) => c.address.toLowerCase() === last.to.toLowerCase());
-  return `↻ ${formatBalance(BigInt(last.amount), t.decimals)} ${t.symbol} → ${contact?.name ?? shortAddress(last.to)}`;
+  return `↻ ${formatAmount(BigInt(last.amount), t.decimals)} ${t.symbol} → ${contact?.name ?? shortAddress(last.to)}`;
 }
 
 /** `:send <to> <amount> [token]` from the command bar. */

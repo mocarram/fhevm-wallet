@@ -4,7 +4,7 @@
  * The logic lives in flows/send.ts; these modules only draw and wire items to it.
  */
 
-import { formatBalance, formatExactAmount, hasAmbiguousComma } from '../../core/send/amount.js';
+import { formatExactAmount, hasAmbiguousComma } from '../../core/send/amount.js';
 import { formatTokenAmount } from '../../utils/formatting.js';
 import { matchesFilter } from '../components/list.js';
 import { shortAddress, splitForComparison } from '../../core/send/recipient.js';
@@ -28,7 +28,7 @@ import {
   countdownSeconds,
 } from '../flows/send.js';
 import { unlock } from '../flows/wallet.js';
-import { formatEth, spinner } from '../format.js';
+import { formatAmount, formatEth, spinner } from '../format.js';
 import { open, openFromRoot } from '../nav.js';
 import type { InputSpec, Item, MenuEntry, ScreenDef } from '../screen.js';
 import { back, goHome, isUnlocked, top, type AppState } from '../state.js';
@@ -66,7 +66,7 @@ export const sendTokenScreen: ScreenDef = {
     );
     const items: MenuEntry[] = shown.map((t) => {
       const b = knownBalance(s, t.address);
-      const bal = b ? formatBalance(b.value, t.decimals) : 'locked';
+      const bal = b ? formatAmount(b.value, t.decimals) : 'locked';
       return {
         label: `${pad(t.symbol, 8)} ${padLeft(bal, 16)}`,
         value: t.address.toLowerCase() === last ? 'last used' : '',
@@ -451,7 +451,7 @@ export const sendCountScreen: ScreenDef = {
     const total = cd?.total ?? 0;
     const amount =
       t && s.send.value !== undefined
-        ? `${formatBalance(s.send.value, t.decimals)} ${t.symbol}`
+        ? `${formatAmount(s.send.value, t.decimals)} ${t.symbol}`
         : '';
     return {
       body: [

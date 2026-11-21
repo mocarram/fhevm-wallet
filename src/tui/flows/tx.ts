@@ -12,10 +12,9 @@ import { describeExpiry, operatorWarning } from '../../core/send/operatorExpiry.
 import { shortAddress } from '../../core/send/recipient.js';
 import { WalletTxError } from '../../core/token/txErrors.js';
 import { setCachedAmounts } from '../../storage/AmountCache.js';
-import { formatBalance } from '../../core/send/amount.js';
 import { describeError } from '../errors.js';
 import { effect, type Effect } from '../effects.js';
-import { formatEth, shortHash } from '../format.js';
+import { formatAmount, formatEth, shortHash } from '../format.js';
 import { open, popTo } from '../nav.js';
 import { goHome, isUnlocked, lockWallet, type AppState, type TxAction } from '../state.js';
 import { dimLine, line, seg, type Line } from '../text.js';
@@ -239,7 +238,7 @@ export function broadcastTx(s: AppState): Effect[] {
           } catch {
             // the on-chain disclosure is what counts
           }
-          doneText = `✔ Disclosed ${t ? formatBalance(value, t.decimals) : value} ${t?.symbol ?? ''} publicly`;
+          doneText = `✔ Disclosed ${t ? formatAmount(value, t.decimals) : value} ${t?.symbol ?? ''} publicly`;
         }
         return (st) => {
           st.pending = st.pending.filter((p) => p.id !== id);

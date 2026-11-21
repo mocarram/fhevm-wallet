@@ -287,3 +287,19 @@ describe('nextTimeCommand', () => {
     );
   });
 });
+
+describe('exact amounts after Review', () => {
+  it('countdown, success notice, repeat row and history never round 0.004 to 0.00', async () => {
+    const h = new Harness({ unlocked: true });
+    await toReview(h, '0.004');
+    await h.keys('{enter}');
+    expect(h.text()).toMatch(/Sending 0\.004 cUSDC to bob in 5/);
+    await h.advance(5000);
+    await h.settle();
+    const t = h.text();
+    expect(t).toMatch(/✔ Sent 0\.004 cUSDC to bob/);
+    expect(t).toMatch(/↻ 0\.004 cUSDC → bob/);
+    expect(t).toMatch(/cUSDC 1,249\.996/);
+    expect(t).not.toMatch(/0\.00 cUSDC/);
+  });
+});
