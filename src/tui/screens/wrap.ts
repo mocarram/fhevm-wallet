@@ -87,11 +87,6 @@ const AMOUNT_SPEC = (label: string): InputSpec => ({
   maxLength: 40,
 });
 
-/** A value column that never runs into the label after it. */
-function col(text: string): string {
-  return pad(text, Math.max(18, Array.from(text).length + 2));
-}
-
 /** The Wrap or Unwrap screen for `top(s).params.token`. */
 function wrapView(s: AppState, mode: 'wrap' | 'unwrap'): ScreenView {
   const token = top(s).params.token ?? '';
@@ -118,6 +113,15 @@ function wrapView(s: AppState, mode: 'wrap' | 'unwrap'): ScreenView {
   const u = info.underlying;
   const pub = publicState(s, token);
   const conf = s.balances[token.toLowerCase()];
+  const pubText = pub ? formatAmount(pub.balance, u.decimals) : s.wrap.loading ? '…' : '?';
+  const confText = conf
+    ? formatAmount(conf.value, info.decimals)
+    : s.decrypting
+      ? 'decrypting…'
+      : 'locked';
+  // One width per column for both rows, so a long balance or symbol keeps them aligned.
+  const symW = Math.max(11, ...[u.symbol, info.symbol].map((x) => Array.from(x).length + 2));
+  const valW = Math.max(18, ...[pubText, confText].map((x) => Array.from(x).length + 2));
   const body: Line[] = [
     line(
       '  ',
@@ -130,19 +134,14 @@ function wrapView(s: AppState, mode: 'wrap' | 'unwrap'): ScreenView {
     ),
     line(
       '  ',
-      seg(pad(u.symbol, 11), 'bold'),
-      seg(col(pub ? formatAmount(pub.balance, u.decimals) : s.wrap.loading ? '…' : '?'), ''),
+      seg(pad(u.symbol, symW), 'bold'),
+      seg(pad(pubText, valW), ''),
       seg('public, in this wallet', 'dim'),
     ),
     line(
       '  ',
-      seg(pad(info.symbol, 11), 'bold'),
-      seg(
-        col(
-          conf ? formatAmount(conf.value, info.decimals) : s.decrypting ? 'decrypting…' : 'locked',
-        ),
-        conf?.source === 'session' ? 'green' : 'dim',
-      ),
+      seg(pad(info.symbol, symW), 'bold'),
+      seg(pad(confText, valW), conf?.source === 'session' ? 'green' : 'dim'),
       seg('confidential', 'dim'),
     ),
     dimLine(`  ${describeRate(info)}`),

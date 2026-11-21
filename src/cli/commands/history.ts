@@ -60,18 +60,19 @@ function formatShortDate(timestamp: string): string {
 }
 
 /**
- * Get transaction type icon
+ * The type column: plain text or a narrow symbol, never an emoji (they are double width
+ * in many terminals and break the table's alignment; see AGENTS.md).
  */
-function getTypeIcon(type: string): string {
+export function getTypeIcon(type: string): string {
   switch (type) {
     case 'mint':
-      return chalk.green('⬇');
+      return chalk.green('mint');
     case 'burn':
-      return chalk.red('🔥');
+      return chalk.red('burn');
     case 'eth':
-      return chalk.cyan('◆');
+      return chalk.cyan('eth');
     default:
-      return chalk.green('✔');
+      return chalk.green('transfer');
   }
 }
 

@@ -54,3 +54,15 @@ describe('history command early exits', () => {
     expect(out).toMatch(/No tokens tracked on sepolia/);
   });
 });
+
+describe('history type column (V5)', () => {
+  it('uses no emoji: wrap mints and unwrap burns are words', async () => {
+    const { getTypeIcon } = await import('../../src/cli/commands/history.js');
+    const plainText = (t: string) => t.replace(/\x1b\[[0-9;]*m/g, ''); // eslint-disable-line no-control-regex
+    expect(plainText(getTypeIcon('burn'))).toBe('burn');
+    expect(plainText(getTypeIcon('mint'))).toBe('mint');
+    for (const t of ['mint', 'burn', 'eth', 'transfer']) {
+      expect(plainText(getTypeIcon(t))).not.toMatch(/\p{Extended_Pictographic}/u);
+    }
+  });
+});

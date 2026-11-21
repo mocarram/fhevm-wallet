@@ -76,6 +76,19 @@ describe('Wrap', () => {
     expect(t).toMatch(/0\.000000123456789 DAI stays in your wallet \(below 1 cDAI unit\)\./);
   });
 
+  it('keeps the two balance columns aligned when one balance is long (V5)', async () => {
+    const h = new Harness({ unlocked: true });
+    await h.keys('b');
+    await h.keys('w');
+    const cusdc = h.backend.catalogue('sepolia')[0].address.toLowerCase();
+    h.s.balances[cusdc] = { value: 123_456_789_012_345_678n, at: h.now, source: 'session' };
+    const rows = h.text(120).split('\n');
+    const a = rows.find((r) => r.includes('public, in this wallet'))!;
+    const b = rows.find((r) => r.includes('confidential') && r.includes('cUSDC '))!;
+    expect(a.indexOf('public, in this wallet')).toBe(b.indexOf('confidential'));
+    expect(b).toMatch(/123,456,789,012\.345678/);
+  });
+
   it(':wrap 5 cusdc opens the screen with the amount filled in', async () => {
     const h = new Harness({ unlocked: true });
     await h.keys('b'); // learns the wrapper
