@@ -23,11 +23,12 @@ import {
   submitAmount,
   submitPastedAddress,
   submitRetype,
-  useContactInstead,
+  useMatchInstead,
   usePastedLookalike,
   countdownSeconds,
 } from '../flows/send.js';
 import { unlock } from '../flows/wallet.js';
+import { matchKind, matchPhrase } from '../flows/lookalike.js';
 import { formatAmount, formatEth, spinner } from '../format.js';
 import { open, openFromRoot } from '../nav.js';
 import type { InputSpec, Item, MenuEntry, ScreenDef } from '../screen.js';
@@ -162,44 +163,45 @@ export function comparedAddress(address: string, midStyle: string): Line {
 export const sendCheckScreen: ScreenDef = {
   crumb: ['Send', 'Recipient'],
   view: (s) => {
-    const { address = '', contact = '' } = top(s).params;
-    const saved = s.data.contacts.find((c) => c.name === contact);
+    const { address = '', match = '', label = '' } = top(s).params;
+    const kind = matchKind(label);
     const body: Line[] = [
       stepper(1, SEND_STEPS),
       BLANK,
       line(
         '  ',
         seg(
-          `✗ Careful: this looks like your contact ${contact}, but it is a different address.`,
+          `✗ Careful: this looks like ${matchPhrase(label)}, but it is a different address.`,
           'red bold',
         ),
       ),
       BLANK,
     ];
-    if (saved) {
-      body.push([
-        seg(`  ${pad(`${contact} (saved)`, 16)}`),
-        ...comparedAddress(saved.address, 'dim'),
-      ]);
-    }
+    const known =
+      kind === 'contact' ? `${label} (saved)` : kind === 'wallet' ? 'your wallet' : 'in history';
+    if (match) body.push([seg(`  ${pad(known, 16)}`), ...comparedAddress(match, 'dim')]);
     body.push([seg(`  ${pad('pasted', 16)}`), ...comparedAddress(address, 'red')]);
     body.push(
       BLANK,
       dimLine('  Scammers send tiny transfers from look-alike addresses so you copy'),
       dimLine('  the wrong one from your history. The start and end match on purpose.'),
     );
-    return {
-      body,
-      items: [
-        { label: `Send to ${contact} instead`, act: (st) => useContactInstead(st, contact) },
-        {
-          label: 'I checked it, use the pasted address',
-          act: (st) => usePastedLookalike(st, address),
-        },
-        backItem(),
-      ],
-      hint: 'enter select · esc back',
-    };
+    const items: Item[] = [];
+    // A history address may itself be the scammer's, so it is never offered instead.
+    if (kind !== 'history') {
+      items.push({
+        label: `Send to ${label} instead`,
+        act: (st) => useMatchInstead(st, match),
+      });
+    }
+    items.push(
+      {
+        label: 'I checked it, use the pasted address',
+        act: (st) => usePastedLookalike(st, address),
+      },
+      backItem(),
+    );
+    return { body, items, hint: 'enter select · esc back' };
   },
 };
 

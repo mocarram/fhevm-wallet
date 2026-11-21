@@ -192,7 +192,11 @@ export interface AppState {
     error?: string;
     /** Amounts are being decrypted in the background. */
     decrypting?: boolean;
+    /** What the last sync could not cover (shown once, see `seenNotices`). */
+    notice?: string;
   } | null;
+  /** Sync notices already shown this session, so each appears once. */
+  seenNotices: Set<string>;
   doctor: DoctorRow[] | null;
   /** Find tokens: progress while scanning, then the candidates. */
   find: {
@@ -282,6 +286,7 @@ export function initialState(opts: {
     doctor: null,
     tokenCheck: null,
     find: null,
+    seenNotices: new Set(),
     quit: false,
     size: { cols: 80, rows: 24 },
   };

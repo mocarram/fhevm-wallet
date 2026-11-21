@@ -29,17 +29,22 @@ export interface Snapshot {
   customRpc?: string;
   /** Lower-case addresses this wallet has sent to before, for the "first time" note. */
   knownRecipients: string[];
+  /** Every other address in this wallet's history (sent to or received from), for look-alikes. */
+  counterparties?: string[];
   dataDir: string;
 }
 
 /** Read the snapshot for `network` and the given wallet address (for history-based facts). */
 export function loadSnapshot(network: NetworkName, walletAddress?: string): Snapshot {
   const config = loadConfig();
-  const knownRecipients = walletAddress
-    ? listTransactions({ walletAddress, network, limit: 10_000 })
-        .filter((t) => t.from.toLowerCase() === walletAddress.toLowerCase())
-        .map((t) => t.to.toLowerCase())
-    : [];
+  const txs = walletAddress ? listTransactions({ walletAddress, network, limit: 10_000 }) : [];
+  const me = walletAddress?.toLowerCase();
+  const knownRecipients = txs
+    .filter((t) => t.from.toLowerCase() === me)
+    .map((t) => t.to.toLowerCase());
+  const counterparties = [
+    ...new Set(txs.map((t) => (t.from.toLowerCase() === me ? t.to : t.from).toLowerCase())),
+  ];
   return {
     wallets: listWallets().map((w) => ({ name: w.name, address: w.address })),
     defaultWallet: config.defaultWallet || undefined,
@@ -53,6 +58,7 @@ export function loadSnapshot(network: NetworkName, walletAddress?: string): Snap
     },
     customRpc: getEnvVar(RPC_ENV_KEYS[network]),
     knownRecipients,
+    counterparties,
     dataDir: DATA_DIR,
   };
 }

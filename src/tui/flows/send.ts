@@ -13,6 +13,7 @@ import { WalletTxError } from '../../core/token/txErrors.js';
 import { describeError } from '../errors.js';
 import { formatExactAmount, parseFriendlyAmount } from '../../core/send/amount.js';
 import { findLookAlike, parseAddressInput, shortAddress } from '../../core/send/recipient.js';
+import { tuiLookAlikeCandidates } from './lookalike.js';
 import { resolveRecipient, resolveToken } from '../../core/send/resolve.js';
 import { formatTokenAmount } from '../../utils/formatting.js';
 import { loadUiPrefs, saveUiPrefs } from '../../storage/UiPrefsStore.js';
@@ -162,17 +163,28 @@ function useAddress(s: AppState, address: string, how: 'push' | 'replace'): Effe
     };
     return go(s, 'send-amount');
   }
-  const lookalike = findLookAlike(address, s.data.contacts);
-  if (lookalike) return go(s, 'send-check', { address, contact: lookalike.name });
+  // Contacts, own wallets and history counterparties (address poisoning targets all).
+  const lookalike = findLookAlike(address, tuiLookAlikeCandidates(s));
+  if (lookalike) {
+    return go(s, 'send-check', { address, match: lookalike.address, label: lookalike.name });
+  }
   s.send.to = { address, isNew: isNewAddress(s, address) };
   return go(s, 'send-amount');
 }
 
-/** Look-alike stop: send to the saved contact instead. */
-export function useContactInstead(s: AppState, contactName: string): Effect[] {
-  const c = s.data.contacts.find((x) => x.name === contactName);
-  if (!c) return [];
-  s.send.to = { address: c.address, name: c.name, isNew: isNewAddress(s, c.address) };
+/**
+ * Look-alike stop: send to the address it imitates instead (a saved contact, or one of
+ * the user's own wallets).
+ */
+export function useMatchInstead(s: AppState, address: string): Effect[] {
+  const c = s.data.contacts.find((x) => x.address.toLowerCase() === address.toLowerCase());
+  const w = s.data.wallets.find((x) => x.address.toLowerCase() === address.toLowerCase());
+  if (!c && !w) return [];
+  s.send.to = {
+    address: c?.address ?? w!.address,
+    name: c?.name ?? `wallet ${w!.name}`,
+    isNew: isNewAddress(s, address),
+  };
   return openInstead(s, 'send-amount');
 }
 

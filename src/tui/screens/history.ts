@@ -74,6 +74,7 @@ export const historyScreen: ScreenDef = {
     if (!rows.length && !s.pending.length && !s.history?.loading)
       body.push(dimLine('  No transfers yet.'));
     const after: Line[] = [BLANK];
+    if (s.history?.notice) after.push(line('  ', seg(`! ${s.history.notice}`, 'yellow')));
     if (s.history?.loading)
       after.push(line('  ', seg(`${spinner(s.now)} Syncing with the network…`, 'cyan')));
     else if (s.history?.error) after.push(line('  ', seg(s.history.error, 'yellow')));

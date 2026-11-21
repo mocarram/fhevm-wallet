@@ -98,3 +98,18 @@ describe('command bar', () => {
     expect(h.s.send.to?.name).toBe('bob');
   });
 });
+
+describe('history sync notice', () => {
+  it('is shown once, not after every refresh', async () => {
+    const h = new Harness();
+    const sync = h.backend.syncHistory.bind(h.backend);
+    h.backend.syncHistory = async (...args) => ({
+      ...(await sync(...args)),
+      notice: 'History is limited to the last 50,000 blocks on public endpoints.',
+    });
+    await h.keys('h');
+    expect(h.text()).toMatch(/! History is limited to the last 50,000 blocks/);
+    await h.keys('3'); // Refresh
+    expect(h.text()).not.toMatch(/limited to the last/);
+  });
+});

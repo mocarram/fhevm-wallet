@@ -110,6 +110,8 @@ tui/
                   one draw per input chunk with only changed rows rewritten, drops the
                   key and destroys providers on exit
   index.ts        runTui(): picks the backend and network, starts the shell
+  storeWarnings.ts  damaged-store warnings → Home notice while the TUI runs (adapter
+                  for `setStoreWarningSink`, see the file)
 ```
 
 Rules: screens never do I/O in `view` (they render from `state.data`, a snapshot

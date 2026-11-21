@@ -426,10 +426,18 @@ export function loadHistory(s: AppState): Effect[] {
         if (st.history) st.history.rows = local;
       });
       try {
-        await deps.backend.syncHistory(wallet.address, network, tokens);
+        const result = await deps.backend.syncHistory(wallet.address, network, tokens);
+        // wip/fix-core adds `notice` to HistorySyncResult (what the sync could not cover,
+        // e.g. a public endpoint's block window); read it without depending on the type.
+        const notice = (result as { notice?: unknown } | undefined)?.notice;
         const synced = rows();
         return (st) => {
           st.history = { rows: synced, loading: false };
+          // Shown once per session for each distinct notice, not after every refresh.
+          if (typeof notice === 'string' && notice && !st.seenNotices.has(notice)) {
+            st.seenNotices.add(notice);
+            st.history.notice = notice;
+          }
           // Unlocked: decrypt the new amounts in the background.
           return decryptHistory(st);
         };

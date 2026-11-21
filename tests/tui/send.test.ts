@@ -370,3 +370,36 @@ describe('a send that ends unconfirmed', () => {
     expect(h.s.recheckAt).toBeNull();
   });
 });
+
+describe('look-alikes of own wallets and history addresses', () => {
+  it('names an own wallet and offers it instead', async () => {
+    const h = new Harness();
+    h.s.data.wallets = [{ name: 'savings', address: BOB.replace('91Be4C', '91Be4D') }];
+    const lookalike = BOB_LOOKALIKE.replace(/^0x91bE/, '0x91Be'); // same ends as savings
+    await h.keys('s', '{enter}', 'p');
+    h.s.inputs.paste = lookalike.toLowerCase();
+    h.s.data.contacts = [];
+    await h.keys('{enter}');
+    expect(h.screen).toBe('send-check');
+    const t = h.text();
+    expect(t).toMatch(/looks like your wallet "savings", but it is a different address/);
+    expect(t).toMatch(/1 {2}Send to your wallet "savings" instead/);
+    await h.keys('1');
+    expect(h.screen).toBe('send-amount');
+    expect(h.s.send.to?.address).toBe(h.s.data.wallets[0].address);
+  });
+
+  it('a history address is named but never offered instead', async () => {
+    const h = new Harness();
+    h.s.data.contacts = [];
+    h.s.data.counterparties = [BOB.toLowerCase()];
+    await h.keys('s', '{enter}', 'p');
+    h.s.inputs.paste = BOB_LOOKALIKE.toLowerCase();
+    await h.keys('{enter}');
+    expect(h.screen).toBe('send-check');
+    const t = h.text();
+    expect(t).toMatch(/looks like an address from your history/);
+    expect(t).not.toMatch(/instead/);
+    expect(t).toMatch(/1 {2}I checked it, use the pasted address/);
+  });
+});

@@ -29,6 +29,11 @@ import { coalesceBurst, InputParser, isBurst, type InputEvent } from './input.js
 import { lockWallet, type AppState } from './state.js';
 import { toAnsi } from './text.js';
 import { setSdkConsoleTuiActive } from '../core/fhe/sdkConsole.js';
+import {
+  installStoreWarningSink,
+  restoreStoreWarningSink,
+  storeWarningNotice,
+} from './storeWarnings.js';
 
 const ALT_ON = '\x1b[?1049h';
 const ALT_OFF = '\x1b[?1049l';
@@ -163,6 +168,7 @@ export function runShell(opts: ShellOptions): Promise<ShellResult> {
       setSdkConsoleTuiActive(false);
       state.send = {};
       restore();
+      restoreStoreWarningSink();
       try {
         clearProviderCache();
       } catch {
@@ -289,6 +295,12 @@ export function runShell(opts: ShellOptions): Promise<ShellResult> {
     };
 
     input.on('data', onData);
+    // A damaged data file is reported as a notice, not over the frame (storeWarnings.ts).
+    installStoreWarningSink((message) =>
+      apply((st) => {
+        st.notice = [...storeWarningNotice(message), ...(st.notice ?? [])];
+      }),
+    );
     output.on('resize', onResize);
     process.on('SIGINT', onSigint);
     process.on('SIGTERM', onSigterm);
