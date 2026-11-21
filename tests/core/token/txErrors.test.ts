@@ -309,6 +309,28 @@ describe('JSON-RPC errors from the endpoint itself', () => {
     expect(translateTxError(coalesce(-32000, 'Too Many Requests')).code).toBe('RPC_RATE_LIMITED');
   });
 
+  it('matches whole rate-limit phrases only', () => {
+    for (const m of [
+      'rate limit reached',
+      'Rate-limited',
+      'Too Many Requests',
+      'quota used up',
+      'HTTP 429',
+      'error -32005',
+      'request throttled',
+    ]) {
+      expect(translateTxError(coalesce(-32000, m)).code, m).toBe('RPC_RATE_LIMITED');
+    }
+    for (const m of [
+      'exceeds block gas limit',
+      'gas limit reached',
+      'max fee exceeded',
+      'over capacity soon',
+    ]) {
+      expect(translateTxError(coalesce(-32000, m)).code, m).not.toBe('RPC_RATE_LIMITED');
+    }
+  });
+
   it('an invalid key is RPC_AUTH', () => {
     expect(translateTxError(callError(-32000, 'invalid api key')).code).toBe('RPC_AUTH');
     expect(translateTxError(coalesce(-32001, 'Unauthorized')).code).toBe('RPC_AUTH');

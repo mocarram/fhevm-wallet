@@ -151,8 +151,13 @@ export function rpcErrorOf(err: unknown): RpcErrorReply | null {
   return { code: typeof rpc.code === 'number' ? rpc.code : null, message };
 }
 
-/** Error codes and wording providers use for "too many requests" or a used-up quota. */
-const RATE_LIMIT_RE = /rate|limit|exceed|quota|too many|throttl|capacity/i;
+/**
+ * Wording providers use for "too many requests" or a used-up quota. Whole phrases only:
+ * single words like "limit" or "exceed" also appear in unrelated errors ("exceeds block
+ * gas limit", "exceeds max transaction gas limit"), which must not read as throttling.
+ */
+export const RATE_LIMIT_RE =
+  /\brate[\s-]?limit|too many requests|\bquota\b|(?:^|\D)-32005\b|\b429\b|throttl/i;
 /** ...and for a missing, wrong or expired key. */
 const AUTH_RE =
   /unauthori[sz]ed|forbidden|invalid (?:api )?key|api key|not allowed|authenticat|permission denied/i;
