@@ -15,7 +15,7 @@ import { WalletTxError } from '../../core/token/txErrors.js';
 import { setCachedAmounts } from '../../storage/AmountCache.js';
 import { describeError } from '../errors.js';
 import { effect, type Effect } from '../effects.js';
-import { formatAmount, formatEth, shortHash } from '../format.js';
+import { formatAmount, formatFee, shortHash } from '../format.js';
 import { open, popTo } from '../nav.js';
 import { goHome, isUnlocked, lockWallet, type AppState, type TxAction } from '../state.js';
 import { dimLine, line, seg, type Line, link } from '../text.js';
@@ -177,7 +177,8 @@ export function confirmTx(s: AppState): Effect[] {
   if (!a) return [];
   if (!isUnlocked(s)) return open(s, 'tx-sign');
   if (!a.prepared) {
-    s.flash = [dimLine('  Still checking. One moment.')];
+    // Never confirm on a result the user has not seen: say to press Enter again.
+    s.flash = [dimLine('  Still checking. Press Enter again once the fee and the checks show.')];
     return txChecks(s);
   }
   const secs = countdownSeconds(s);
@@ -270,7 +271,7 @@ export function broadcastTx(s: AppState): Effect[] {
           const notice: Line[] = [
             line('  ', seg(doneText, 'green bold')),
             dimLine(
-              `    tx ${shortHash(result.txHash)} · fee up to ${formatEth(prepared.feeWei)} ETH`,
+              `    tx ${shortHash(result.txHash)} · fee up to ${formatFee(prepared.feeWei)} ETH`,
             ),
           ];
           if (a.kind === 'disclose-request') {

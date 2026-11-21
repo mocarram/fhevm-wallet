@@ -305,8 +305,11 @@ function handleKeyInner(s: AppState, key: Key, opts: KeyOptions): Effect[] {
     }
     if (inSetup(s)) {
       goHome(s, flashLine('Back at the start of this setup step.'));
-    } else {
+    } else if (s.stack.some((f) => /^(send-|tx-)/.test(f.id))) {
+      // Only a send or transaction in progress was "cancelled".
       goHome(s, flashLine('Cancelled. Back at Home. Nothing was signed.'));
+    } else {
+      goHome(s);
     }
     return [];
   }

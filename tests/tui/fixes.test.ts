@@ -315,3 +315,32 @@ describe('unlock failures other than a wrong password (N6)', () => {
     expect(h.s.fieldError?.[0]).toBe('That password did not unlock alice.');
   });
 });
+
+describe('small Review and status bar fixes (L4)', () => {
+  it('fees below 0.0001 ETH show two significant digits, never 0.0000', async () => {
+    const { formatFee } = await import('../../src/tui/format.js');
+    expect(formatFee(21_000_000_000_000n)).toBe('0.000021');
+    expect(formatFee(21_400_000_000_001n)).toBe('0.000022'); // an upper bound rounds up
+    expect(formatFee(300_000_000_000_000n)).toBe('0.0003');
+    expect(formatFee(5n)).toBe('0.000000000000000005');
+  });
+
+  it('the lock badge says 15m right after a 15-minute unlock, not 16m', async () => {
+    const h = new Harness();
+    h.s.signer = h.signer;
+    h.s.unlockedUntil = h.now + 15 * 60_000 + 800; // set a moment after the frame's clock
+    expect(h.text()).toMatch(/unlocked 15m/);
+    h.s.unlockedUntil = h.now + 15 * 60_000 - 5_000; // a few seconds later: still 15m
+    expect(h.text()).toMatch(/unlocked 15m/);
+    h.s.unlockedUntil = h.now + 30_000;
+    expect(h.text()).toMatch(/unlocked <1m/);
+  });
+
+  it('Ctrl+C on Balances with nothing in progress goes Home without "Cancelled"', async () => {
+    const h = new Harness({ unlocked: true });
+    await h.keys('b');
+    await h.keys('{ctrl-c}');
+    expect(h.screen).toBe('home');
+    expect(h.text()).not.toMatch(/Cancelled/);
+  });
+});

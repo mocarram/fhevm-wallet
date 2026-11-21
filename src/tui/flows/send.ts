@@ -19,7 +19,7 @@ import { formatTokenAmount } from '../../utils/formatting.js';
 import { loadUiPrefs, saveUiPrefs } from '../../storage/UiPrefsStore.js';
 import type { TokenEntry } from '../../core/token/TokenRegistry.js';
 import { effect, type Effect } from '../effects.js';
-import { formatAmount, formatEth, shortHash } from '../format.js';
+import { formatAmount, formatFee, shortHash } from '../format.js';
 import { open, openInstead, popTo } from '../nav.js';
 import {
   clearSecrets,
@@ -456,7 +456,7 @@ export function broadcast(s: AppState): Effect[] {
           const notice: Line[] = [
             line('  ', seg(`✔ Sent ${amountText} to ${recipientLabel(to)}`, 'green bold')),
             dimLine(
-              `    tx ${shortHash(result.txHash)} · fee up to ${formatEth(prepared.feeWei)} ETH · ${balanceCheckText(result.balanceCheck, t.symbol)}`,
+              `    tx ${shortHash(result.txHash)} · fee up to ${formatFee(prepared.feeWei)} ETH · ${balanceCheckText(result.balanceCheck, t.symbol)}`,
             ),
             line(seg('    Next time: ', 'dim'), seg(hint, 'cyan')),
           ];

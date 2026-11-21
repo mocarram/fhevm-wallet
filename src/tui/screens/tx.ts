@@ -6,7 +6,7 @@
 
 import { afterTxUnlock, confirmTx, stopTxCountdown } from '../flows/tx.js';
 import { unlock } from '../flows/wallet.js';
-import { formatEth, spinner } from '../format.js';
+import { formatEth, formatFee, spinner } from '../format.js';
 import type { InputSpec, Item, ScreenDef } from '../screen.js';
 import { goHome, isUnlocked, type AppState } from '../state.js';
 import { dimLine, line, seg, type Line } from '../text.js';
@@ -71,7 +71,7 @@ export const txReviewScreen: ScreenDef = {
       body.push(
         // The same wording as the send Review.
         line(
-          `  Fee       ≈ ${formatEth(a.prepared.feeWei)} ETH`,
+          `  Fee       ≈ ${formatFee(a.prepared.feeWei)} ETH`,
           seg(`   you have ${formatEth(a.prepared.ethBalanceWei)} ETH`, 'dim'),
         ),
         BLANK,

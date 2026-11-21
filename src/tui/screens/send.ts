@@ -29,7 +29,7 @@ import {
 } from '../flows/send.js';
 import { unlock } from '../flows/wallet.js';
 import { matchKind, matchPhrase } from '../flows/lookalike.js';
-import { formatAmount, formatEth, spinner } from '../format.js';
+import { formatAmount, formatEth, formatFee, spinner } from '../format.js';
 import { open, openFromRoot } from '../nav.js';
 import type { InputSpec, Item, MenuEntry, ScreenDef } from '../screen.js';
 import { back, goHome, isUnlocked, top, type AppState } from '../state.js';
@@ -298,7 +298,7 @@ export const sendReviewScreen: ScreenDef = {
     const prepared = isPrepared(s) ? s.send.prepared : undefined;
     const fee = prepared
       ? line(
-          `  Fee       ≈ ${formatEth(prepared.feeWei)} ETH`,
+          `  Fee       ≈ ${formatFee(prepared.feeWei)} ETH`,
           seg(`   you have ${s.eth ? formatEth(s.eth.wei) : '…'} ETH`, 'dim'),
         )
       : line('  Fee       ', seg('estimated after the simulation', 'dim'));

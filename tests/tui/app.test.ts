@@ -73,7 +73,8 @@ describe('Esc and Ctrl+C', () => {
     await h.keys('6', '1');
     await h.keys('{ctrl-c}');
     expect(h.screen).toBe('home');
-    expect(h.text()).toMatch(/Cancelled\. Back at Home/);
+    // Nothing was in progress there: Home, without "Cancelled … Nothing was signed" (L4).
+    expect(h.text()).not.toMatch(/Cancelled/);
     await h.keys('{ctrl-c}');
     expect(h.quitCalled).toBe(false);
     expect(h.text()).toMatch(/Ctrl\+C again to quit/);

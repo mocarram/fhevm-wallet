@@ -37,7 +37,7 @@ import {
   unconfirmedWrapWarning,
 } from '../../core/token/wrapHistory.js';
 import { effect, type Deps, type Effect } from '../effects.js';
-import { formatAmount, formatEth, shortHash } from '../format.js';
+import { formatAmount, formatFee, shortHash } from '../format.js';
 import { open, openFromRoot, openInstead } from '../nav.js';
 import type { Item } from '../screen.js';
 import { type AppState, type TxAction } from '../state.js';
@@ -501,7 +501,7 @@ export function startUnwrap(s: AppState, info: WrapperInfo, plan: UnwrapPlan): E
         ...(p
           ? [
               dimLine(
-                `  Step 2 costs about ${formatEth(p.finalizeFeeWei)} ETH more, checked when it is sent.`,
+                `  Step 2 costs about ${formatFee(p.finalizeFeeWei)} ETH more, checked when it is sent.`,
               ),
             ]
           : []),

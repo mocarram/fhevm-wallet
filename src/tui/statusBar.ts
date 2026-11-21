@@ -37,8 +37,16 @@ export function statusBar(s: AppState, cols: number): Line {
     addrText = ` ${shortAddress(s.wallet.address)}`;
     walletSeg = seg(` ${s.wallet.name}${addrText} `, 'bar');
     if (isUnlocked(s)) {
-      const mins = Math.max(1, Math.ceil((s.unlockedUntil! - s.now) / 60_000));
-      lockSeg = seg(`unlocked ${mins}m `, 'bar dim');
+      // Minutes left, rounded up (15m for the whole first minute after a 15-minute
+      // unlock) but never above the setting: the expiry is set a moment after the frame's
+      // clock, which made it read 16m. "<1m" in the last minute.
+      const left = s.unlockedUntil! - s.now;
+      const mins = Math.ceil(left / 60_000);
+      const cap = s.data.prefs.unlockMinutes > 0 ? s.data.prefs.unlockMinutes : mins;
+      lockSeg = seg(
+        left < 60_000 ? 'unlocked <1m ' : `unlocked ${Math.min(mins, cap)}m `,
+        'bar dim',
+      );
     } else {
       lockSeg = seg('locked ', 'bar dim');
     }
