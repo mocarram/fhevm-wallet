@@ -116,7 +116,7 @@ async function rpcRows(backend: Backend, network: NetworkName): Promise<DoctorRo
       id: 'rpc',
       status: 'fail',
       text: 'No RPC endpoint works for this network',
-      detail: `Check your connection, or set another URL: fhew config --rpc-${network} - (or Settings › RPC endpoints).`,
+      detail: `Check your connection, or set another URL: fhew config --rpc-${network} - (or Settings › RPC endpoint).`,
     });
   }
   return rows;

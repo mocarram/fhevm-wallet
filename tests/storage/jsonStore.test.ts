@@ -38,3 +38,32 @@ describe('damaged store files (M6)', () => {
     expect(warnings[0]).toMatch(/settings file/);
   });
 });
+
+describe('store warnings while the TUI owns the screen', () => {
+  it('go to the TUI sink, then back to stderr', async () => {
+    const { installStoreWarningSink, restoreStoreWarningSink } =
+      await import('../../src/tui/storeWarnings.js');
+    const tui: string[] = [];
+    installStoreWarningSink((m) => tui.push(m));
+    writeFileSync(join(getTestDataDir(), 'addressbook.json'), '{', { mode: 0o600 });
+    expect(listAddresses()).toEqual([]);
+    expect(tui[0]).toMatch(/address book .* moved to addressbook\.json\.corrupt-/);
+    restoreStoreWarningSink();
+    const written: string[] = [];
+    const orig = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string) => {
+      written.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      writeFileSync(join(getTestDataDir(), 'config.json'), '{"defaultNetwork": 42}', {
+        mode: 0o600,
+      });
+      loadConfig();
+    } finally {
+      process.stderr.write = orig;
+    }
+    expect(written.join('')).toMatch(/^Warning: Your settings file/);
+    expect(tui).toHaveLength(1);
+  });
+});

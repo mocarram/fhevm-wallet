@@ -1,46 +1,22 @@
 /**
  * What the send wizard checks a pasted address against for look-alikes: contacts, the
- * user's own wallets and the counterparties in their history.
- *
- * INTEGRATION ADAPTER: wip/fix-core adds `lookAlikeCandidates` to
- * src/core/send/recipient.ts with this exact signature and the same labels. When that
- * lands, delete `lookAlikeCandidates` below and re-export the core one; nothing else
- * changes.
+ * user's own wallets and the counterparties in their history. The list itself is core's
+ * `lookAlikeCandidates` (src/core/send/recipient.ts), shared with `fhew send`; this
+ * module only reads its labels back for the TUI's stop screen.
  */
 
-import type { ContactLike } from '../../core/send/recipient.js';
+import { lookAlikeCandidates, type ContactLike } from '../../core/send/recipient.js';
 import type { AppState } from '../state.js';
 
 /** Kinds of a look-alike match, for the wording on the stop screen. */
 export type MatchKind = 'contact' | 'wallet' | 'history';
 
-/** Label prefix the candidates use for own wallets (`your wallet "alice"`). */
+/** Label prefix core's candidates use for own wallets (`your wallet "alice"`). */
 const WALLET_PREFIX = 'your wallet "';
-/** Label the candidates use for history counterparties. */
+/** Label core's candidates use for history counterparties. */
 export const HISTORY_LABEL = 'an address from your history';
 
-/**
- * One list to check look-alikes against: contacts first, then the user's own wallets,
- * then addresses from history, each address once (same as core's on wip/fix-core).
- */
-export function lookAlikeCandidates(sources: {
-  contacts?: ContactLike[];
-  wallets?: Array<{ name: string; address: string }>;
-  counterparties?: string[];
-}): ContactLike[] {
-  const seen = new Set<string>();
-  const out: ContactLike[] = [];
-  const add = (name: string, address: string) => {
-    const k = address.toLowerCase();
-    if (!/^0x[0-9a-f]{40}$/.test(k) || seen.has(k)) return;
-    seen.add(k);
-    out.push({ name, address });
-  };
-  for (const c of sources.contacts ?? []) add(c.name, c.address);
-  for (const w of sources.wallets ?? []) add(`${WALLET_PREFIX}${w.name}"`, w.address);
-  for (const a of sources.counterparties ?? []) add(HISTORY_LABEL, a);
-  return out;
-}
+export { lookAlikeCandidates };
 
 /** The candidates for the TUI's current state. */
 export function tuiLookAlikeCandidates(s: AppState): ContactLike[] {

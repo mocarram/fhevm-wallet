@@ -427,14 +427,13 @@ export function loadHistory(s: AppState): Effect[] {
       });
       try {
         const result = await deps.backend.syncHistory(wallet.address, network, tokens);
-        // wip/fix-core adds `notice` to HistorySyncResult (what the sync could not cover,
-        // e.g. a public endpoint's block window); read it without depending on the type.
-        const notice = (result as { notice?: unknown } | undefined)?.notice;
+        // What the sync could not cover (a public endpoint's block window, say).
+        const notice = result.notice;
         const synced = rows();
         return (st) => {
           st.history = { rows: synced, loading: false };
           // Shown once per session for each distinct notice, not after every refresh.
-          if (typeof notice === 'string' && notice && !st.seenNotices.has(notice)) {
+          if (notice && !st.seenNotices.has(notice)) {
             st.seenNotices.add(notice);
             st.history.notice = notice;
           }
