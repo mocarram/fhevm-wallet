@@ -20,6 +20,10 @@ export const RPC_TIMEOUT_MS = 20_000;
 /** Timeout for a quick "which chain are you?" probe when the user sets a custom RPC. */
 export const RPC_PROBE_TIMEOUT_MS = 8_000;
 
+// Every FetchRequest ethers makes, including ones it builds itself, uses the abortable
+// transport, so no code path falls back to the one that leaves sockets open.
+FetchRequest.registerGetUrl(abortableGetUrl);
+
 /** Attempts on HTTP 429 (rate limited) before a request fails. */
 export const RPC_THROTTLE_ATTEMPTS = 3;
 

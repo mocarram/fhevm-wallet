@@ -96,6 +96,34 @@ describe('commands exit promptly when the RPC never answers', () => {
   });
 });
 
+describe('a redirect does not get around the transport', () => {
+  it('`fhew token add` via a 307 to a stalled RPC exits 1 promptly', async () => {
+    const { createServer: createHttp } = await import('http');
+    const redirector = createHttp((req, res) => {
+      req.resume();
+      res.statusCode = 307;
+      res.setHeader('location', stallUrl);
+      res.end();
+    });
+    await new Promise<void>((r) => redirector.listen(0, '127.0.0.1', () => r()));
+    const t = tempHome();
+    try {
+      const res = await runCliAsync(
+        ['token', 'add', TOKEN, '-n', 'sepolia'],
+        t.home,
+        { SEPOLIA_RPC_URL: `http://127.0.0.1:${(redirector.address() as AddressInfo).port}` },
+        40_000,
+      );
+      expect(res.ms).toBeLessThan(35_000);
+      expect(res.code).toBe(1);
+      expect(res.stdout + res.stderr).toMatch(/Could not reach the network/);
+    } finally {
+      t.cleanup();
+      redirector.close();
+    }
+  });
+});
+
 describe('failing commands set a non-zero exit code', () => {
   it.each([
     [['token', 'add', 'not-an-address', '-n', 'sepolia']],

@@ -4,6 +4,7 @@ import { AddressInfo } from 'net';
 import { BrowserProvider, FetchRequest, Network } from 'ethers';
 import {
   abortableGetUrl,
+  nextRedirect,
   withCredentialsAsHeader,
 } from '../../../src/core/network/abortableGetUrl.js';
 import {
@@ -136,8 +137,8 @@ describe('FailoverJsonRpcProvider', () => {
     provider.destroy();
   });
 
-  it('lets ethers follow a 307 redirect (the transport does not follow it alone)', async () => {
-    const target = await startNode('redirected', {});
+  /** A server that answers every request with a 307 to `target`. */
+  async function redirectTo(target: string) {
     let hops = 0;
     const redirector = createServer((req, res) => {
       hops++;
@@ -148,21 +149,69 @@ describe('FailoverJsonRpcProvider', () => {
     });
     await new Promise<void>((r) => redirector.listen(0, '127.0.0.1', () => r()));
     servers.push(redirector);
-    const from = `http://127.0.0.1:${(redirector.address() as AddressInfo).port}`;
+    return {
+      url: `http://127.0.0.1:${(redirector.address() as AddressInfo).port}`,
+      hops: () => hops,
+    };
+  }
 
-    // The raw transport hands the 307 back instead of following it itself...
-    const req = new FetchRequest(from);
+  it('follows a 307 inside the transport, keeping the method and body', async () => {
+    const target = await startNode('redirected', {});
+    const from = await redirectTo(target);
+    const req = new FetchRequest(from.url);
     req.timeout = 2_000;
+    req.body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId', params: [] });
+    req.setHeader('content-type', 'application/json');
     const raw = await abortableGetUrl(req);
-    expect(raw.statusCode).toBe(307);
-    expect(raw.headers.location).toBe(target);
+    expect(raw.statusCode).toBe(200); // ethers never sees the redirect
+    expect(calls.redirected).toEqual(['eth_chainId']);
 
-    // ...and ethers' own redirect handling (limit, https-to-http refusal) takes over.
-    const provider = new FailoverJsonRpcProvider([from], sepolia, 2_000);
+    const provider = new FailoverJsonRpcProvider([from.url], sepolia, 2_000);
     expect(await provider.getBlockNumber()).toBe(16);
-    expect(hops).toBeGreaterThanOrEqual(2); // chain check and the call both redirected
-    expect(calls.redirected).toEqual(['eth_chainId', 'eth_blockNumber']);
+    expect(from.hops()).toBeGreaterThanOrEqual(3);
     provider.destroy();
+  });
+
+  it('a redirect to an always-429 server still fails fast (3 tries, not 12)', async () => {
+    const limited = await startNode('limited-after-redirect', { status: 429 });
+    const from = await redirectTo(limited);
+    const provider = new FailoverJsonRpcProvider([from.url], sepolia, 15_000);
+    const started = Date.now();
+    await expect(provider.getBlockNumber()).rejects.toBeDefined();
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(calls['limited-after-redirect'].length).toBeLessThanOrEqual(3);
+    provider.destroy();
+  });
+
+  it('a redirect to a server that never answers ends at the request timeout', async () => {
+    const { createServer: createTcp } = await import('net');
+    const opened: import('net').Socket[] = [];
+    const stall = createTcp((sock) => {
+      opened.push(sock);
+      sock.on('error', () => {});
+    });
+    await new Promise<void>((r) => stall.listen(0, '127.0.0.1', () => r()));
+    const from = await redirectTo(`http://127.0.0.1:${(stall.address() as AddressInfo).port}`);
+    const provider = new FailoverJsonRpcProvider([from.url], sepolia, 1_500);
+    const started = Date.now();
+    // Our transport's own timer (not only ethers' deadline) ends it: TIMEOUT, on time.
+    await expect(provider.getBlockNumber()).rejects.toMatchObject({ code: 'TIMEOUT' });
+    expect(Date.now() - started).toBeLessThan(4_000);
+    expect(opened.length).toBeGreaterThan(0); // the redirect was followed
+    provider.destroy();
+    opened.forEach((x) => x.destroy());
+    stall.close();
+  });
+
+  it('refuses redirects from https to http and to other protocols', () => {
+    expect(() => nextRedirect('https://a.example/x', 'http://b.example/')).toThrow(
+      /unsupported redirect/,
+    );
+    expect(() => nextRedirect('http://a.example/x', 'file:///etc/passwd')).toThrow(
+      /unsupported redirect/,
+    );
+    expect(nextRedirect('http://a.example/x', 'https://b.example/y')).toBe('https://b.example/y');
+    expect(nextRedirect('https://a.example/x/y', '/z')).toBe('https://a.example/z');
   });
 
   it('sends user:password@ from the URL as a Basic Authorization header', async () => {

@@ -10,6 +10,30 @@
 
 import { makeError, type FetchCancelSignal, type FetchGetUrlFunc, type FetchRequest } from 'ethers';
 
+/** Status codes FetchRequest treats as redirects (303 too: same handling here). */
+const REDIRECT_CODES = new Set([301, 302, 303, 307, 308]);
+/** Redirect hops followed before giving up. */
+export const MAX_REDIRECTS = 5;
+
+/**
+ * Resolve a redirect target, refusing what ethers refuses: anything but http(s), and a
+ * move from https to plain http (which would send the request, key included, in clear).
+ * Credentials in the original URL are never carried over: the target's own are used.
+ */
+export function nextRedirect(current: string, location: string): string {
+  const target = new URL(location, current);
+  const from = new URL(current).protocol;
+  if (
+    (target.protocol !== 'https:' && target.protocol !== 'http:') ||
+    (from === 'https:' && target.protocol === 'http:')
+  ) {
+    throw makeError('unsupported redirect', 'UNSUPPORTED_OPERATION', {
+      operation: 'redirect',
+    });
+  }
+  return target.toString();
+}
+
 /** FetchGetUrlFunc for `FetchRequest.getUrlFunc`. */
 export const abortableGetUrl: FetchGetUrlFunc = async (
   req: FetchRequest,
@@ -22,22 +46,30 @@ export const abortableGetUrl: FetchGetUrlFunc = async (
     req.timeout,
   );
   timer.unref();
-  const { url, headers: requestHeaders } = withCredentialsAsHeader(req.url, req.headers);
   try {
-    const res = await fetch(url, {
-      method: req.method,
-      headers: requestHeaders,
-      body: req.body ?? undefined,
-      signal: controller.signal,
-      // Hand redirects back to ethers rather than following (or refusing) them here.
-      // FetchRequest follows them itself, with its redirect limit and its refusal to move
-      // from https to plain http. 'error' would be stricter but breaks providers that
-      // redirect legitimately (http -> https upgrades, regional endpoints), and 'follow'
-      // would skip ethers' checks. Credentials are never forwarded: ethers builds a new
-      // request for the Location URL, and the Authorization header below is derived only
-      // from the original URL.
-      redirect: 'manual',
-    });
+    let current = req.url;
+    let res: Response;
+    // Follow redirects here, not in ethers: FetchRequest.redirect() builds a fresh request
+    // that drops this transport and our 429 limit, so a redirected request would again
+    // leave sockets open and retry 12 times. Same rules as ethers: http(s) only, never
+    // from https to plain http, the method and body kept, and a hop limit.
+    for (let hop = 0; ; hop++) {
+      const { url, headers } = withCredentialsAsHeader(current, req.headers);
+      res = await fetch(url, {
+        method: req.method,
+        headers,
+        body: req.body ?? undefined,
+        signal: controller.signal,
+        redirect: 'manual',
+      });
+      const location = res.headers.get('location');
+      if (!REDIRECT_CODES.has(res.status) || !location) break;
+      await res.body?.cancel(); // free the socket before the next hop
+      if (hop >= MAX_REDIRECTS) {
+        throw makeError('too many redirects', 'SERVER_ERROR', { request: req } as never);
+      }
+      current = nextRedirect(current, location);
+    }
     const body = new Uint8Array(await res.arrayBuffer());
     const headers: Record<string, string> = {};
     res.headers.forEach((value, name) => (headers[name.toLowerCase()] = value));
@@ -50,6 +82,9 @@ export const abortableGetUrl: FetchGetUrlFunc = async (
   } catch (err) {
     // Abort with our reason: rethrow the ethers-shaped TIMEOUT / CANCELLED error.
     if (controller.signal.aborted) throw controller.signal.reason;
+    // Our own refusals (a bad redirect) are already ethers-shaped.
+    if ((err as { code?: unknown }).code === 'UNSUPPORTED_OPERATION') throw err;
+    if ((err as { code?: unknown }).code === 'SERVER_ERROR') throw err;
     // Connection-level failure. The cause ("connect ECONNREFUSED 127.0.0.1:8545") has no
     // path or query, so it is safe to keep; the request URL is deliberately left out.
     const cause = (err as { cause?: { message?: string } }).cause?.message;
