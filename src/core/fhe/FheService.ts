@@ -17,6 +17,7 @@ import {
 import { getEip1193Provider } from '../network/ProviderFactory.js';
 import { withTimeout } from '../../utils/timeout.js';
 import { FHE_INIT_TIMEOUT_MS } from './timeouts.js';
+import { quietSdk } from './sdkConsole.js';
 
 // Cache instances per chain ID
 const fheInstanceCache = new Map<bigint, FhevmInstance>();
@@ -62,7 +63,9 @@ export async function getFheInstance(chainId: bigint): Promise<FhevmInstance> {
   }
 
   const instance = await withTimeout(
-    createInstance(config),
+    // createInstance prints a deprecation notice (and TFHE init notes) to the console;
+    // captured so they never corrupt the TUI or --json output. See sdkConsole.ts.
+    quietSdk(() => createInstance(config)),
     FHE_INIT_TIMEOUT_MS,
     'Connecting to the Zama relayer',
   );

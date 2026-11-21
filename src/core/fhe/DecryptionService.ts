@@ -7,6 +7,8 @@ import { getFheInstance } from './FheService.js';
 import { FHE_OPERATION_TIMEOUT_MS } from './timeouts.js';
 import { withTimeout } from '../../utils/timeout.js';
 import { CHAIN_IDS, NetworkName } from '../network/NetworkConfig.js';
+import { quietSdk } from './sdkConsole.js';
+import type { DecryptAuth, DecryptAuthority, HandlePair } from './DecryptSession.js';
 
 export interface ReencryptionParams {
   publicKey: string;
@@ -106,15 +108,17 @@ export async function decryptBalance(
 
   // Request user decrypt from the Gateway
   const results = await withTimeout(
-    fheInstance.userDecrypt(
-      [{ handle: handleHex, contractAddress }],
-      privateKey,
-      publicKey,
-      signature,
-      [contractAddress],
-      wallet.address,
-      startTimestamp,
-      durationDays,
+    quietSdk(() =>
+      fheInstance.userDecrypt(
+        [{ handle: handleHex, contractAddress }],
+        privateKey,
+        publicKey,
+        signature,
+        [contractAddress],
+        wallet.address,
+        startTimestamp,
+        durationDays,
+      ),
     ),
     FHE_OPERATION_TIMEOUT_MS,
     'Decrypting the balance',
@@ -164,5 +168,100 @@ export async function prepareReencryption(
     signature,
     contractAddresses,
     userAddress: wallet.address,
+  };
+}
+
+/** Turn an SDK clear value into a bigint (euint → bigint, ebool → 0/1). */
+function clearToBigint(v: bigint | boolean | string): bigint {
+  if (typeof v === 'bigint') return v;
+  if (typeof v === 'boolean') return v ? 1n : 0n;
+  return BigInt(v);
+}
+
+/**
+ * The relayer-backed authority behind `DecryptSession` on Sepolia and Mainnet: one
+ * keypair + EIP-712 signature per group of contracts, and batched userDecrypt calls.
+ */
+export function relayerDecryptAuthority(network: NetworkName): DecryptAuthority {
+  const chainId = network === 'mainnet' ? CHAIN_IDS.MAINNET : CHAIN_IDS.SEPOLIA;
+  return {
+    async authorize(signer, contracts, startTimestamp, durationDays) {
+      const fhe = await getFheInstance(chainId);
+      const { publicKey, privateKey } = fhe.generateKeypair();
+      const eip712 = fhe.createEIP712(publicKey, contracts, startTimestamp, durationDays);
+      // ethers adds EIP712Domain itself and refuses it in `types`.
+      const { EIP712Domain: _domain, ...types } = eip712.types as Record<string, unknown>;
+      const signature = await signer.signTypedData(
+        eip712.domain as Record<string, unknown>,
+        types as Record<string, Array<{ name: string; type: string }>>,
+        eip712.message as Record<string, unknown>,
+      );
+      return {
+        publicKey,
+        privateKey,
+        signature,
+        contracts,
+        userAddress: signer.address,
+        startTimestamp,
+        durationDays,
+      };
+    },
+    async userDecrypt(auth: DecryptAuth, pairs: HandlePair[]) {
+      const fhe = await getFheInstance(chainId);
+      const results = await withTimeout(
+        quietSdk(() =>
+          fhe.userDecrypt(
+            pairs.map((p) => ({ handle: p.handle, contractAddress: p.contractAddress })),
+            auth.privateKey,
+            auth.publicKey,
+            auth.signature,
+            auth.contracts,
+            auth.userAddress,
+            auth.startTimestamp,
+            auth.durationDays,
+          ),
+        ),
+        FHE_OPERATION_TIMEOUT_MS,
+        'Decrypting',
+      );
+      const out: Record<string, bigint> = {};
+      for (const [handle, v] of Object.entries(results)) {
+        out[handle.toLowerCase()] = clearToBigint(v as bigint | boolean | string);
+      }
+      return out;
+    },
+  };
+}
+
+/** A public decryption with the KMS proof that `FHE.checkSignatures` verifies on-chain. */
+export interface PublicDecryption {
+  value: bigint;
+  /** `decryptionProof` from the relayer: KMS signatures plus extra data. */
+  proof: string;
+}
+
+/**
+ * Publicly decrypt one handle through the relayer (it must have been made publicly
+ * decryptable on-chain first, e.g. by `requestDiscloseEncryptedAmount`). The SDK checks
+ * the ACL and the KMS signature threshold before returning.
+ */
+export async function publicDecryptHandle(
+  handle: string,
+  network: NetworkName,
+): Promise<PublicDecryption> {
+  const chainId = network === 'mainnet' ? CHAIN_IDS.MAINNET : CHAIN_IDS.SEPOLIA;
+  const fhe = await getFheInstance(chainId);
+  const res = await withTimeout(
+    quietSdk(() => fhe.publicDecrypt([handle])),
+    FHE_OPERATION_TIMEOUT_MS,
+    'Public decryption',
+  );
+  const entry = Object.entries(res.clearValues).find(
+    ([h]) => h.toLowerCase() === handle.toLowerCase(),
+  );
+  if (!entry) throw new Error('Public decryption returned no value for this handle.');
+  return {
+    value: clearToBigint(entry[1] as bigint | boolean | string),
+    proof: res.decryptionProof,
   };
 }
