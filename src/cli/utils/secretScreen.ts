@@ -92,7 +92,7 @@ export async function showSecretScreen(
         if (Date.now() - openedAt < ignoreInputMs) return;
         const text = chunk === undefined ? '' : chunk.toString();
         // Enter wipes; Ctrl+C and Ctrl+D (raw mode delivers them as bytes) too.
-        if (/[\r\n\x03\x04]/.test(text)) resolve();
+        if (['\r', '\n', '\x03', '\x04'].some((c) => text.includes(c))) resolve();
       };
       // If stdin closes there is no key to wait for; wipe rather than hang.
       onEnd = () => resolve();
