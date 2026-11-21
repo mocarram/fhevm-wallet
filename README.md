@@ -62,7 +62,8 @@ contact stops the send; a first-time address is flagged; after the send you can 
 On Mainnet you retype the amount and a countdown always runs before broadcasting.
 
 Try the UI without any network or funds against the offline simulation (a `MOCK` badge is
-shown). Use a throwaway data folder so simulated tokens and history stay out of your real one:
+shown). It needs a throwaway data folder, so simulated tokens and history stay out of your
+real one (it refuses to run on `~/.fhevm-wallet`):
 
 ```bash
 FHEW_BACKEND=mock FHEVM_WALLET_HOME=$(mktemp -d) fhew

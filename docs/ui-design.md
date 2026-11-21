@@ -11,6 +11,7 @@ This file is the text reference agents build against.
  fhEVM Wallet  Home › Send › Review          [Sepolia] alice 0x3f9A…C21d unlocked 15m 0.4210 ETH
                                               ^ red MAINNET badge on mainnet; yellow ETH when low;
                                                 "⠋ 1 pending" segment while a send confirms
+ With FHEW_BACKEND=mock, "MOCK · simulated, no real funds" follows the brand on the left.
  <result of the last action, if any>
 
  <screen body>

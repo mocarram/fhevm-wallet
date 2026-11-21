@@ -71,7 +71,10 @@ tests/e2e/                 end-to-end runs of dist/index.js in a throwaway HOME
 default and must print a visible `MOCK` badge in the status bar. Knobs:
 `FHEW_MOCK_LATENCY_MS`, `FHEW_MOCK_CONFIRM_MS`, `FHEW_MOCK_ETH` and
 `FHEW_MOCK_FAIL=simulate|unconfirmed|reverted|replaced|rpc` (failures go through the real
-error translation). Keystores, contacts, tokens and settings always use the real storage.
+error translation). Keystores, contacts, tokens and settings always use the real storage,
+so the mock refuses to start unless `FHEVM_WALLET_HOME` is set to a folder other than
+`~/.fhevm-wallet` (use `FHEVM_WALLET_HOME=$(mktemp -d)`). The TUI shows
+"MOCK · simulated, no real funds" right after the brand in the status bar.
 
 ## Terminal UI (src/tui)
 
@@ -87,7 +90,8 @@ tui/
   flows/          logic shared by screens (send, wallet, data, manage); no drawing
   components/     reusable menu and multi-select list (Space, a, Enter)
   effects.ts      Effect = described I/O, run by the shell with Deps (backend, …)
-  errors.ts       describeError: the ONLY way a TUI error reaches the screen
+  errors.ts       describeError: the ONLY way a TUI error reaches the screen; wording
+                  and redaction delegate to src/cli/utils/userError.ts
   statusBar.ts, commandParser.ts, text.ts (styled segments → ANSI), keys.ts
   shell.ts        thin I/O: alternate screen, raw keys, resize, timer, restore on
                   quit/crash/signals, drops the key and destroys providers on exit
