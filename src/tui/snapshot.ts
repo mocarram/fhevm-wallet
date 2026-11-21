@@ -13,6 +13,7 @@ import { getEnvVar, DATA_DIR } from '../storage/paths.js';
 import { listTransactions } from '../storage/TransactionStore.js';
 import { loadUiPrefs, type UiPrefs } from '../storage/UiPrefsStore.js';
 import { RPC_ENV_KEYS } from '../core/network/rpcSettings.js';
+import { stripUnsafeChars } from '../utils/text.js';
 
 /** What the screens need from local storage. */
 export interface Snapshot {
@@ -42,7 +43,8 @@ export function loadSnapshot(network: NetworkName, walletAddress?: string): Snap
   return {
     wallets: listWallets().map((w) => ({ name: w.name, address: w.address })),
     defaultWallet: config.defaultWallet || undefined,
-    contacts: listAddresses().map((c) => ({ name: c.name, address: c.address })),
+    // addressbook.json is user-editable: never let a name carry escapes or invisible text.
+    contacts: listAddresses().map((c) => ({ name: stripUnsafeChars(c.name), address: c.address })),
     tokens: listTokens(network),
     prefs: loadUiPrefs(),
     keys: {

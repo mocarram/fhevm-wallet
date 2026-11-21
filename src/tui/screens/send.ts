@@ -4,7 +4,8 @@
  * The logic lives in flows/send.ts; these modules only draw and wire items to it.
  */
 
-import { formatBalance, formatExactAmount } from '../../core/send/amount.js';
+import { formatBalance, formatExactAmount, hasAmbiguousComma } from '../../core/send/amount.js';
+import { formatTokenAmount } from '../../utils/formatting.js';
 import { shortAddress, splitForComparison } from '../../core/send/recipient.js';
 import {
   afterSignUnlock,
@@ -284,6 +285,10 @@ export const sendReviewScreen: ScreenDef = {
         seg(`${formatExactAmount(s.send.value, t.decimals)} ${t.symbol}`, 'yellow bold'),
         seg('   encrypted on-chain', 'dim'),
       ),
+      // The same amount ungrouped and in base units, so "1,500" cannot be misread.
+      dimLine(
+        `            = ${formatTokenAmount(s.send.value, t.decimals, t.decimals)} ${t.symbol} · ${s.send.value} base units`,
+      ),
       line(
         '  Network   ',
         s.network === 'mainnet'
@@ -294,6 +299,17 @@ export const sendReviewScreen: ScreenDef = {
       BLANK,
       checksLine(s),
     ];
+    if (hasAmbiguousComma(s.inputs.amount ?? '')) {
+      body.push(
+        BLANK,
+        line(
+          seg(
+            `  ! You typed "${s.inputs.amount?.trim()}": commas group thousands here. For a decimal amount, use a point (1.5).`,
+            'yellow',
+          ),
+        ),
+      );
+    }
     if (to.lookalike) {
       body.push(
         BLANK,
@@ -344,7 +360,11 @@ export const sendSignScreen: ScreenDef = {
       BLANK,
       inputLine(s, SIGN_SPEC),
       BLANK,
-      dimLine(`  ${unlockMinutesText(s)} Your next sends skip this step while unlocked.`),
+      dimLine(
+        s.data.prefs.unlockMinutes === 0
+          ? '  Unlocks for this send only, then locks again (Settings › Stay unlocked for).'
+          : `  ${unlockMinutesText(s)} Your next sends skip this step while unlocked.`,
+      ),
     ],
     input: SIGN_SPEC,
     items: [

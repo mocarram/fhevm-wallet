@@ -116,6 +116,15 @@ export function formatExactAmount(value: bigint, decimals: number): string {
 }
 
 /**
+ * True when `input` uses commas without a decimal point ("1,500"): read as thousands
+ * here, but in many locales a comma is the decimal mark, so the UI should point it out.
+ */
+export function hasAmbiguousComma(input: string): boolean {
+  const t = input.trim();
+  return t.includes(',') && !t.includes('.');
+}
+
+/**
  * Format a balance for compact display: exactly `precision` decimals (truncated), grouped thousands.
  * Used on Home and in lists where the exact value is not needed.
  */

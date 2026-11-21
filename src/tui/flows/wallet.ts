@@ -52,25 +52,29 @@ export function unlock(
     return [];
   }
   s.busy = 'Unlocking';
-  const screen = s.stack[s.stack.length - 1].id;
+  // The screen that asked. If the user leaves it (Esc, Ctrl+C) before the keystore is
+  // decrypted, the unlock is abandoned: nobody is waiting for it any more.
+  const requester = s.stack[s.stack.length - 1];
   return [
     effect('unlock', async (deps) => {
       try {
         const signer = await loadWallet(wallet.name, password);
         return (st) => {
           delete st.inputs.unlock;
+          if (st.stack[st.stack.length - 1] !== requester) return;
           st.busy = null;
           if (st.wallet?.address !== wallet.address) return;
           st.signer = signer;
           st.unlockedUntil = deps.now() + unlockDurationMs(st.data.prefs.unlockMinutes);
-          if (st.stack[st.stack.length - 1].id === screen && st.stack.length > 1) st.stack.pop();
+          if (st.stack.length > 1) st.stack.pop();
           if (after === 'balances') return decryptAll(st);
           if (after === 'review' && onReview) return onReview(st);
         };
       } catch {
         return (st) => {
-          st.busy = null;
           delete st.inputs.unlock;
+          if (st.stack[st.stack.length - 1] !== requester) return;
+          st.busy = null;
           st.fieldError = [
             `That password did not unlock ${wallet.name}.`,
             'Check it and try again. Nothing was signed.',

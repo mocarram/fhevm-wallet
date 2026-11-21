@@ -21,6 +21,7 @@ import { effect, type Effect } from '../effects.js';
 import { formatEth, shortHash } from '../format.js';
 import { open, openInstead, popTo } from '../nav.js';
 import {
+  clearSecrets,
   frame,
   goHome,
   isUnlocked,
@@ -216,7 +217,11 @@ export function reviewChecks(s: AppState): Effect[] {
         const at = deps.now();
         return (st) => {
           st.send.checking = false;
-          if (draftKey(st) !== key) return; // the draft changed meanwhile; checks are stale
+          // Locked meanwhile: the prepared transfer holds the wallet, so it is dropped.
+          if (st.signer !== signer || !isUnlocked(st)) return;
+          // The draft changed meanwhile: these checks are stale. Check the new draft if
+          // its Review is showing, so it never waits on "Simulating…" forever.
+          if (draftKey(st) !== key) return onReview(st) ? reviewChecks(st) : undefined;
           st.send.prepared = prepared;
           st.send.preparedFor = key;
           st.eth = { wei: prepared.ethBalanceWei, at };
@@ -230,13 +235,17 @@ export function reviewChecks(s: AppState): Effect[] {
         const error = describeError(err, { action: 'send' });
         return (st) => {
           st.send.checking = false;
-          if (draftKey(st) !== key) return;
+          if (draftKey(st) !== key) return onReview(st) ? reviewChecks(st) : undefined;
           st.errorView = { error, afterBroadcast: false, showRaw: false };
           if (st.stack[st.stack.length - 1].id === 'send-review') return open(st, 'send-error');
         };
       }
     }),
   ];
+}
+
+function onReview(s: AppState): boolean {
+  return s.stack[s.stack.length - 1].id === 'send-review';
 }
 
 /** After unlocking on the Sign step: back on Review, now with fee and checks. */
@@ -338,6 +347,8 @@ export function broadcast(s: AppState): Effect[] {
   const hint = nextTimeCommand(s, t, to, value);
   const lockAfter = s.data.prefs.unlockMinutes === 0;
   goHome(s, [dimLine('  Sending. Keep working; the status bar shows when it confirms.')]);
+  // "Every action": the send holds what it needs, so the key goes as soon as it starts.
+  if (lockAfter) lockWallet(s);
 
   return [
     effect('broadcast', async (deps) => {
@@ -351,7 +362,8 @@ export function broadcast(s: AppState): Effect[] {
               if (p) p.txHash = txHash;
             }),
         });
-        // Local bookkeeping must never turn a confirmed transfer into an error.
+        // Local bookkeeping must never turn a confirmed transfer into an error, and one
+        // failing (history) must not skip the other (repeat-last-send).
         try {
           recordTransferTransaction({
             tokenAddress: t.address,
@@ -363,12 +375,12 @@ export function broadcast(s: AppState): Effect[] {
             network,
             blockNumber: result.blockNumber,
           });
-          saveSticky(network, {
-            lastSend: { token: t.address, to: to.address, amount: value.toString() },
-          });
         } catch {
           // ignored: history is a convenience
         }
+        saveSticky(network, {
+          lastSend: { token: t.address, to: to.address, amount: value.toString() },
+        });
         const at = deps.now();
         return (st) => {
           st.pending = st.pending.filter((p) => p.id !== id);
@@ -395,7 +407,6 @@ export function broadcast(s: AppState): Effect[] {
           }
           st.notice = notice;
           if (st.stack.length === 1) st.flash = null; // the "Sending…" line is now outdated
-          if (lockAfter && st.countdown === null) lockWallet(st);
           return [reload(st), refreshEth(st)];
         };
       } catch (err) {
@@ -474,6 +485,7 @@ function prefilledReview(
   origin: 'command' | 'repeat',
   flash: Line[],
 ): Effect[] {
+  clearSecrets(s);
   const ti = s.data.tokens.findIndex((x) => x.address === t.address);
   const ci = s.data.contacts.findIndex((c) => c.address.toLowerCase() === to.address.toLowerCase());
   s.send = { token: t.address, to, value, origin };
@@ -501,19 +513,49 @@ export function repeatLastSend(s: AppState): Effect[] {
     return [];
   }
   const contact = s.data.contacts.find((c) => c.address.toLowerCase() === last.to.toLowerCase());
-  const to: Recipient = contact
-    ? { address: contact.address, name: contact.name, isNew: false }
-    : { address: last.to, isNew: false };
   const value = BigInt(last.amount);
+  const amountText = formatTokenAmount(value, t.decimals, t.decimals);
+  // Not a contact (any more): the same look-alike and first-time checks as a paste.
+  if (!contact) {
+    const fx = prefilledFromAddress(s, t, last.to, value, amountText, 'repeat');
+    s.flash = [dimLine('  Repeating your last send. Check it and confirm.')];
+    return fx;
+  }
   return prefilledReview(
     s,
     t,
-    to,
+    { address: contact.address, name: contact.name, isNew: false },
     value,
-    formatTokenAmount(value, t.decimals, t.decimals),
+    amountText,
     'repeat',
     [dimLine('  Repeating your last send. Check it and confirm.')],
   );
+}
+
+/**
+ * Prefill a send to a raw address. It goes through the same look-alike stop and
+ * first-time note as a pasted one, then on to Review.
+ */
+function prefilledFromAddress(
+  s: AppState,
+  t: TokenEntry,
+  address: string,
+  value: bigint,
+  amountText: string,
+  origin: 'command' | 'repeat',
+): Effect[] {
+  clearSecrets(s);
+  s.send = { token: t.address, value, origin };
+  s.inputs.amount = amountText;
+  s.inputs.paste = address;
+  s.stack = [frame('home'), frame('send-token'), frame('send-to'), frame('send-paste')];
+  s.notice = null;
+  s.fieldError = null;
+  const effects = useAddress(s, address, 'push');
+  if (s.stack[s.stack.length - 1].id === 'send-amount') {
+    return [...effects, ...open(s, 'send-review'), ...reviewChecks(s)];
+  }
+  return effects;
 }
 
 /** The last send on this network, for the Home shortcut. */
@@ -555,19 +597,7 @@ export function commandSend(
   const ar = parseFriendlyAmount(args.amount, { decimals: t.decimals, balance: bal?.value });
   if (!ar.ok) return fail(`  ${ar.error} ${ar.hint}`);
 
-  if (!rr.contact) {
-    // A raw address goes through the same look-alike and first-time checks as a paste.
-    s.send = { token: t.address, value: ar.value, origin: 'command' };
-    s.inputs.amount = args.amount;
-    s.inputs.paste = rr.address;
-    s.stack = [frame('home'), frame('send-token'), frame('send-to'), frame('send-paste')];
-    s.notice = null;
-    const effects = useAddress(s, rr.address, 'push');
-    if (s.stack[s.stack.length - 1].id === 'send-amount') {
-      return [...effects, ...open(s, 'send-review'), ...reviewChecks(s)];
-    }
-    return effects;
-  }
+  if (!rr.contact) return prefilledFromAddress(s, t, rr.address, ar.value, args.amount, 'command');
   return prefilledReview(
     s,
     t,

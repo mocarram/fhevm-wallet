@@ -6,7 +6,13 @@ import { peekCachedBalance } from '../../core/token/BalanceCache.js';
 import { describeError } from '../errors.js';
 import { effect, type Effect } from '../effects.js';
 import { loadSnapshot } from '../snapshot.js';
-import { isUnlocked, lockWallet, type AppState, type BalanceEntry } from '../state.js';
+import {
+  isUnlocked,
+  lockWallet,
+  sendInProgress,
+  type AppState,
+  type BalanceEntry,
+} from '../state.js';
 import { line, seg } from '../text.js';
 
 /** Re-read wallets, contacts, tokens, prefs and cached balances from disk. */
@@ -106,7 +112,11 @@ export function decryptAll(s: AppState, force = false): Effect[] {
             ...failures.map((f) => line(seg(`    ${f}`, 'dim'))),
           ];
         }
-        if (lockAfter && st.signer === signer && st.countdown === null) lockWallet(st);
+        // "Every action": lock once done, unless a send is being reviewed or signed with
+        // this unlock (the send locks itself once it is broadcast or cancelled).
+        if (lockAfter && st.signer === signer && st.countdown === null && !sendInProgress(st)) {
+          lockWallet(st);
+        }
       };
     }),
   ];
@@ -115,11 +125,8 @@ export function decryptAll(s: AppState, force = false): Effect[] {
 /** Lock now (the `L` key): drop the decrypted wallet and anything signed with it. */
 export function lockNow(s: AppState, reason = 'Locked.'): void {
   if (!s.wallet) return;
+  // Also drops any prepared transfer, so nothing can be sent without the password again.
   lockWallet(s);
-  // A prepared transfer holds the connected wallet; drop it so nothing can be sent
-  // without the password again.
-  s.send.prepared = undefined;
-  s.send.preparedFor = undefined;
   s.flash = [
     line('  ', seg(`${reason} Your password is needed for the next send or decrypt.`, 'yellow')),
   ];

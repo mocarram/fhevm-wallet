@@ -47,7 +47,8 @@ export function normalizeKey(str: string | undefined, key: RawKey | undefined): 
   if (key?.meta) return null;
   if (typeof str === 'string' && str.length === 1) {
     const code = str.charCodeAt(0);
-    if (code >= 0x20 && code !== 0x7f) return str;
+    // Not C0, DEL or C1 controls (0x80-0x9f: some terminals act on them like ESC).
+    if (code >= 0x20 && code !== 0x7f && !(code >= 0x80 && code <= 0x9f)) return str;
   }
   return null;
 }

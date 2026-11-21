@@ -251,6 +251,8 @@ export function back(s: AppState): void {
 
 /** Return to the root screen (Home, or the current start of setup) with an optional message. */
 export function goHome(s: AppState, flash: Line[] | null = null): void {
+  // "Every action" mode: leaving a send that was unlocked for it locks again.
+  if (s.data.prefs.unlockMinutes === 0 && sendInProgress(s)) lockWallet(s);
   s.stack = [frame(s.stack[0].id)];
   s.flash = flash;
   s.fieldError = null;
@@ -263,6 +265,14 @@ export function goHome(s: AppState, flash: Line[] | null = null): void {
 export function lockWallet(s: AppState): void {
   s.signer = null;
   s.unlockedUntil = null;
+  // A prepared transfer holds the connected wallet: it must not outlive the unlock.
+  s.send.prepared = undefined;
+  s.send.preparedFor = undefined;
+}
+
+/** True while a send draft is being reviewed or signed (the countdown included). */
+export function sendInProgress(s: AppState): boolean {
+  return s.stack.some((f) => f.id === 'send-review');
 }
 
 /** Whether the wallet is unlocked right now. */

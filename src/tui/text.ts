@@ -4,6 +4,8 @@
  * colour out of screen code means render output can be asserted without escape codes.
  */
 
+import { stripUnsafeChars } from '../utils/text.js';
+
 /** Semantic styles, mapped to colours in `toAnsi`. */
 export type Style =
   | 'dim'
@@ -118,7 +120,11 @@ const CODES: Record<Style, string> = {
  */
 export function toAnsi(l: Line, color: boolean): string {
   return l
-    .map((s) => {
+    .map((raw) => {
+      // Last line of defence: no segment (contact names, token symbols, error text) may
+      // carry control, bidi or invisible characters to the terminal. Each is replaced by
+      // one space, so column widths stay as measured.
+      const s = { ...raw, t: stripUnsafeChars(raw.t) };
       const styles = s.s ?? [];
       const codes = color
         ? styles.map((st) => CODES[st])
