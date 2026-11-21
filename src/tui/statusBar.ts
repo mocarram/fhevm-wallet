@@ -1,6 +1,6 @@
 /**
  * The status bar on top of every screen:
- * brand, breadcrumb, [MOCK], pending spinner, network badge, wallet, lock state, ETH.
+ * brand, [MOCK badge], breadcrumb, pending spinner, network badge, wallet, lock state, ETH.
  */
 
 import { shortAddress } from '../core/send/recipient.js';
@@ -22,7 +22,6 @@ export function statusBar(s: AppState, cols: number): Line {
   const brand = seg(' fhEVM Wallet ', 'bar bold');
   const crumb = breadcrumb(s);
   const right: Seg[] = [];
-  if (s.backendKind === 'mock') right.push(seg(' MOCK ', 'mock'));
   if (s.pending.length)
     right.push(seg(` ${spinner(s.now)} ${s.pending.length} pending `, 'pending'));
   right.push(s.network === 'mainnet' ? seg(' MAINNET ', 'mainnet') : seg(' Sepolia ', 'net'));
@@ -47,7 +46,14 @@ export function statusBar(s: AppState, cols: number): Line {
       : seg(' … ETH ', 'bar dim');
   }
 
-  const build = (crumbText: string, withAddr: boolean): Line => {
+  // The mock badge sits right after the brand, on the left, so it survives any shrinking
+  // or clipping: nobody should mistake the simulation for real funds (or the reverse).
+  const mockLong = seg(' MOCK · simulated, no real funds ', 'mock');
+  const mockShort = seg(' MOCK ', 'mock');
+
+  const build = (crumbText: string, withAddr: boolean, longMock = true): Line => {
+    const head: Seg[] = [brand];
+    if (s.backendKind === 'mock') head.push(longMock ? mockLong : mockShort);
     const parts: Seg[] = [...right];
     if (walletSeg) {
       parts.push(withAddr || !s.wallet ? walletSeg : seg(` ${s.wallet.name} `, 'bar'));
@@ -55,15 +61,21 @@ export function statusBar(s: AppState, cols: number): Line {
     if (lockSeg) parts.push(lockSeg);
     if (ethSeg) parts.push(ethSeg);
     const crumbSeg = seg(` ${crumbText} `, 'bar');
-    const used = lineWidth([brand, crumbSeg, ...parts]);
+    const used = lineWidth([...head, crumbSeg, ...parts]);
     const gap = Math.max(1, cols - used);
-    return [brand, { ...crumbSeg, t: crumbSeg.t + ' '.repeat(gap) }, ...parts];
+    return [...head, { ...crumbSeg, t: crumbSeg.t + ' '.repeat(gap) }, ...parts];
   };
 
   // Shrink in steps until it fits: drop the address, then shorten the breadcrumb.
   const last = crumb.split(' › ').slice(-1)[0];
-  for (const attempt of [build(crumb, true), build(crumb, false), build(last, false)]) {
+  const attempts = [
+    build(crumb, true),
+    build(crumb, false),
+    build(last, false),
+    build(last, false, false),
+  ];
+  for (const attempt of attempts) {
     if (lineWidth(attempt) <= cols) return attempt;
   }
-  return build(last, false);
+  return build(last, false, false);
 }

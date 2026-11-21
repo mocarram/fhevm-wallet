@@ -10,7 +10,7 @@ import { getEnvVar } from '../../src/storage/paths.js';
 import { render } from '../../src/tui/app.js';
 import { SCREENS } from '../../src/tui/screens/registry.js';
 import { breadcrumb, statusBar } from '../../src/tui/statusBar.js';
-import { plain } from '../../src/tui/text.js';
+import { plain, toAnsi } from '../../src/tui/text.js';
 import { wipeTestDataDir } from '../helpers/dataDir.js';
 import { Harness, STRANGER } from './harness.js';
 
@@ -39,13 +39,13 @@ describe('status bar', () => {
     h.s.eth = { wei: 421n * 10n ** 15n, at: h.now };
     h.s.stack.push({ id: 'send-review', cur: 0, params: {} });
     expect(breadcrumb(h.s)).toBe('Home › Send › Review');
-    const bar = plain(statusBar(h.s, 120));
+    const bar = plain(statusBar(h.s, 140));
     expect(bar).toMatch(/MOCK/);
     expect(bar).toMatch(/Sepolia/);
     expect(bar).toMatch(/alice 0x/);
     expect(bar).toMatch(/unlocked 15m/);
     expect(bar).toMatch(/0\.4210 ETH/);
-    expect(Array.from(bar).length).toBe(120);
+    expect(Array.from(bar).length).toBe(140);
   });
 
   it('uses the red MAINNET style, yellow low ETH, and a pending spinner', () => {
@@ -58,6 +58,21 @@ describe('status bar', () => {
     expect(segs.find((g) => g.t.includes('ETH'))?.s).toContain('low');
     expect(plain(segs)).toMatch(/1 pending/);
     expect(plain(segs)).toMatch(/locked/);
+  });
+
+  it('puts an unmissable MOCK badge right after the brand, at every width', () => {
+    const h = new Harness({ unlocked: true });
+    const wide = plain(statusBar(h.s, 120));
+    expect(wide).toMatch(/^ fhEVM Wallet {2}MOCK · simulated, no real funds /);
+    for (const cols of [100, 80, 60, 40, 30]) {
+      const bar = statusBar(h.s, cols);
+      expect(plain(bar).slice(0, 30)).toMatch(/MOCK/);
+      expect(bar.find((g) => g.t.includes('MOCK'))?.s).toContain('mock');
+    }
+    // Still marked without colour (NO_COLOR): reverse video.
+    expect(toAnsi(statusBar(h.s, 120), false)).toMatch(/\x1b\[7;1m MOCK/);
+    h.s.backendKind = 'real';
+    expect(plain(statusBar(h.s, 120))).not.toMatch(/MOCK/);
   });
 
   it('shrinks to fit narrow terminals', () => {

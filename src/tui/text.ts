@@ -104,7 +104,8 @@ const CODES: Record<Style, string> = {
   mainnet: '41;97;1',
   low: '43;30',
   pending: '48;5;94;97',
-  mock: '45;97;1',
+  // Bold bright yellow on magenta; also kept (as reverse video) without colour.
+  mock: '45;93;1',
   secret: '47;30',
   big: '1',
   cursor: '7',
@@ -112,7 +113,8 @@ const CODES: Record<Style, string> = {
 
 /**
  * Convert a line to an ANSI string. With `color` false only the text is kept, except
- * that selection and the cursor stay visible via reverse video (they carry meaning).
+ * that selection, the cursor and the MOCK badge stay visible via reverse video (they
+ * carry meaning).
  */
 export function toAnsi(l: Line, color: boolean): string {
   return l
@@ -120,7 +122,9 @@ export function toAnsi(l: Line, color: boolean): string {
       const styles = s.s ?? [];
       const codes = color
         ? styles.map((st) => CODES[st])
-        : styles.filter((st) => st === 'sel' || st === 'cursor').map((st) => CODES[st]);
+        : styles
+            .filter((st) => st === 'sel' || st === 'cursor' || st === 'mock')
+            .map((st) => (st === 'mock' ? '7;1' : CODES[st]));
       return codes.length ? `${ESC}${codes.join(';')}m${s.t}${ESC}0m` : s.t;
     })
     .join('');
