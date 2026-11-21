@@ -163,47 +163,51 @@ export function registerBalanceCommand(program: Command): void {
 
           // One signature for every token and one batched request (DecryptSession).
           const session = new RealBackend().newDecryptSession(wallet, network);
-          await fillBalances(dynamicTable, session, tokens, Boolean(options.refresh));
+          try {
+            await fillBalances(dynamicTable, session, tokens, Boolean(options.refresh));
 
-          dynamicTable.stop();
+            dynamicTable.stop();
 
-          // Show interactive menu after displaying balances (not in scripts: stdin is
-          // the password pipe there, and nobody is there to answer).
-          let continueLoop = Boolean(process.stdin.isTTY) && !options.passwordStdin;
-          while (continueLoop) {
-            console.log('');
-            const action = await prompts.select({
-              message: 'What would you like to do?',
-              choices: [
-                { name: 'Refresh', value: 'refresh' },
-                { name: 'Force decrypt', value: 'force' },
-                { name: 'Back', value: 'back' },
-              ],
-            });
-
-            if (action === 'back') {
-              continueLoop = false;
-            } else if (action === 'refresh' || action === 'force') {
-              const forceRefresh = action === 'force';
-
-              // Refresh ETH balance
-              const refreshedEthBalance = await provider.getBalance(wallet.address);
-              const refreshedEthFormatted = formatTokenAmount(refreshedEthBalance, 18);
-
-              // Refresh balances
-              const refreshTable = new DynamicBalanceTable({
-                tokens,
-                header: headerLines,
-                ethBalance: refreshedEthFormatted,
+            // Show interactive menu after displaying balances (not in scripts: stdin is
+            // the password pipe there, and nobody is there to answer).
+            let continueLoop = Boolean(process.stdin.isTTY) && !options.passwordStdin;
+            while (continueLoop) {
+              console.log('');
+              const action = await prompts.select({
+                message: 'What would you like to do?',
+                choices: [
+                  { name: 'Refresh', value: 'refresh' },
+                  { name: 'Force decrypt', value: 'force' },
+                  { name: 'Back', value: 'back' },
+                ],
               });
-              refreshTable.start();
 
-              await fillBalances(refreshTable, session, tokens, forceRefresh);
+              if (action === 'back') {
+                continueLoop = false;
+              } else if (action === 'refresh' || action === 'force') {
+                const forceRefresh = action === 'force';
 
-              refreshTable.stop();
+                // Refresh ETH balance
+                const refreshedEthBalance = await provider.getBalance(wallet.address);
+                const refreshedEthFormatted = formatTokenAmount(refreshedEthBalance, 18);
+
+                // Refresh balances
+                const refreshTable = new DynamicBalanceTable({
+                  tokens,
+                  header: headerLines,
+                  ethBalance: refreshedEthFormatted,
+                });
+                refreshTable.start();
+
+                await fillBalances(refreshTable, session, tokens, forceRefresh);
+
+                refreshTable.stop();
+              }
             }
+          } finally {
+            // The decrypt signature lives no longer than the command, also when it fails.
+            session.clear();
           }
-          session.clear(); // the decrypt signature lives no longer than the command
         } catch (err) {
           process.exitCode = 1;
           console.log(error(describeError(err, 'Could not load balances')));
