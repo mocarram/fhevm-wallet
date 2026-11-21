@@ -3,8 +3,6 @@
  */
 
 import chalk from 'chalk';
-import { maskUrlsInText, redactSecrets } from './redact.js';
-import { stripUnsafeChars } from './text.js';
 
 /**
  * Format network name for display (adds beta tag for mainnet)
@@ -117,33 +115,4 @@ export function dim(text: string): string {
  */
 export function bold(text: string): string {
   return chalk.bold(text);
-}
-
-/**
- * Extract a short error message from a verbose error
- * Looks for HTTP status codes or returns a truncated message
- */
-export function shortErrorMessage(err: unknown): string {
-  if (!(err instanceof Error)) {
-    return 'Failed';
-  }
-
-  const message = err.message;
-
-  // Check for "Unexpected response status XXX" pattern (SDK errors)
-  const unexpectedMatch = message.match(/Unexpected response status (\d{3})/i);
-  if (unexpectedMatch) {
-    return `HTTP ${unexpectedMatch[1]}`;
-  }
-
-  // Check for HTTP status codes in the message
-  const statusMatch = message.match(/status[:\s]+(\d{3})/i);
-  if (statusMatch) {
-    return `HTTP ${statusMatch[1]}`;
-  }
-
-  // First line only, with secrets and URL paths masked: ethers messages can include the
-  // RPC request URL, which often embeds an API key.
-  const firstLine = message.split('\n')[0];
-  return stripUnsafeChars(maskUrlsInText(redactSecrets(firstLine))).slice(0, 200);
 }

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { FetchRequest } from 'ethers';
-import { describeError, safeText } from '../../../src/cli/utils/userError.js';
+import { describeError, describeErrorShort, safeText } from '../../../src/cli/utils/userError.js';
 import { WalletTxError } from '../../../src/core/token/txErrors.js';
 import { maskUrl, maskUrlsInText } from '../../../src/utils/redact.js';
 
@@ -8,6 +8,7 @@ const KEY = 'PATHKEY0123456789abcdef';
 
 afterEach(() => {
   delete process.env.SEPOLIA_RPC_URL;
+  delete process.env.FHEW_DEBUG;
 });
 
 describe('maskUrl', () => {
@@ -78,5 +79,36 @@ describe('describeError', () => {
 
   it('strips control characters and keeps one line', () => {
     expect(safeText('line one\u001b[2J\nline two')).toBe('line one [2J');
+  });
+});
+
+describe('describeError with FHEW_DEBUG=1', () => {
+  it('adds redacted technical details on their own line', () => {
+    process.env.SEPOLIA_RPC_URL = `https://rpc.example/qn/${KEY}`;
+    process.env.FHEW_DEBUG = '1';
+    const err = Object.assign(
+      new Error(`could not decode result data (info={ "responseBody": "for /qn/${KEY}" })`),
+      { code: 'BAD_DATA', shortMessage: 'could not decode result data' },
+    );
+    const out = describeError(err);
+    expect(out.split('\n')[0]).toBe('could not decode result data');
+    expect(out).toMatch(/\nTechnical details: could not decode/);
+    expect(out).not.toContain(KEY);
+  });
+
+  it('leaves details out unless asked', () => {
+    expect(describeError(new Error('a\nb'))).toBe('a');
+  });
+});
+
+describe('describeErrorShort', () => {
+  it('uses the wallet title for known failures and never adds details', () => {
+    process.env.FHEW_DEBUG = '1';
+    expect(describeErrorShort(Object.assign(new Error('x'), { code: 'NETWORK_ERROR' }))).toBe(
+      'Could not reach the network.',
+    );
+    expect(describeErrorShort(new Error("Relayer didn't response correctly. Bad JSON."))).toBe(
+      "Zama's relayer could not complete the request.",
+    );
   });
 });

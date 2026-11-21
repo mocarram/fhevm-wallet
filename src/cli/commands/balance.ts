@@ -20,11 +20,10 @@ import {
   error,
   warning,
   bold,
-  shortErrorMessage,
 } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
 import { DynamicBalanceTable } from '../utils/DynamicBalanceTable.js';
-import { describeError } from '../utils/userError.js';
+import { describeError, describeErrorShort } from '../utils/userError.js';
 
 export function registerBalanceCommand(program: Command): void {
   program
@@ -168,7 +167,7 @@ export function registerBalanceCommand(program: Command): void {
               const formatted = formatTokenAmount(balance, tokens[i].decimals);
               dynamicTable.setSuccess(i, formatted);
             } catch (err) {
-              dynamicTable.setError(i, shortErrorMessage(err));
+              dynamicTable.setError(i, describeErrorShort(err));
             }
           }
 
@@ -217,7 +216,7 @@ export function registerBalanceCommand(program: Command): void {
                   const formatted = formatTokenAmount(balance, tokens[i].decimals);
                   refreshTable.setSuccess(i, formatted);
                 } catch (err) {
-                  refreshTable.setError(i, shortErrorMessage(err));
+                  refreshTable.setError(i, describeErrorShort(err));
                 }
               }
 
@@ -226,7 +225,7 @@ export function registerBalanceCommand(program: Command): void {
           }
         } catch (err) {
           process.exitCode = 1;
-          console.log(error(shortErrorMessage(err)));
+          console.log(error(describeError(err, 'Could not load balances')));
         }
       },
     );

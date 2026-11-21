@@ -10,16 +10,23 @@
 import {
   sanitizeContractText,
   translateTxError,
+  wantsErrorDetails,
   WalletTxError,
 } from '../../core/token/txErrors.js';
 import { maskUrlsInText, redactSecrets } from '../../utils/redact.js';
 
 /**
- * Connection-level codes that `translateTxError` words well in any context. Send-specific
- * codes (reverts, nonces) are left out: send flows use `formatTxError` themselves, and
- * "the send failed" would be wrong for, say, adding a token.
+ * Translations that read well in any context: the network or the relayer is the problem,
+ * whatever was being attempted. Send-specific ones (reverts, nonces) are left out: send
+ * flows use `formatTxError` themselves, and "the send failed" would be wrong for, say,
+ * adding a token.
  */
-const TRANSLATED_CODES = new Set(['NETWORK_ERROR', 'TIMEOUT', 'SERVER_ERROR', 'WRONG_CHAIN']);
+const GENERIC_CODES = new Set([
+  'RPC_UNAVAILABLE',
+  'WRONG_CHAIN',
+  'RELAYER_TIMEOUT',
+  'RELAYER_UNAVAILABLE',
+]);
 
 /** Strip anything that could carry a secret or terminal escapes from a message. */
 export function safeText(text: string, max = 300): string {
@@ -27,27 +34,76 @@ export function safeText(text: string, max = 300): string {
   return sanitizeContractText(maskUrlsInText(redactSecrets(firstLine)), max);
 }
 
+/** The wallet's own explanation of `err`, if it has one that fits any context. */
+function walletExplanation(err: unknown): WalletTxError | null {
+  if (err instanceof WalletTxError) return err;
+  const t = translateTxError(err);
+  return GENERIC_CODES.has(t.code) ? t : null;
+}
+
+/** Options for `describeError`. */
+export interface DescribeOptions {
+  /** Append redacted technical details. Defaults to FHEW_DEBUG=1. */
+  details?: boolean;
+}
+
 /**
  * A short, redacted, plain-English description of `err`, or `fallback` when there is
- * nothing useful to say. Wallet errors keep their title and hint; ethers errors are
- * translated; anything else is reduced to its first line with secrets and URLs masked.
+ * nothing useful to say. Wallet errors keep their title and hint; network and relayer
+ * failures are translated; anything else is reduced to its first line with secrets and
+ * URLs masked. With FHEW_DEBUG=1 the redacted original text follows on its own line.
  */
-export function describeError(err: unknown, fallback = 'Something went wrong.'): string {
+export function describeError(
+  err: unknown,
+  fallback = 'Something went wrong.',
+  opts: DescribeOptions = {},
+): string {
   const prompt = describePromptError(err);
   if (prompt) return prompt;
-  if (err instanceof WalletTxError) return safeText(`${err.message} ${err.hint}`, 400);
-  const e = err as { code?: unknown; shortMessage?: unknown; message?: unknown } | null;
-  if (e && typeof e.code === 'string' && TRANSLATED_CODES.has(e.code)) {
-    const t = translateTxError(err);
-    return safeText(`${t.message} ${t.hint}`, 400);
+  const explained = walletExplanation(err);
+  let text: string;
+  if (explained) {
+    text = safeText(`${explained.message} ${explained.hint}`, 400);
+  } else {
+    const e = err as { shortMessage?: unknown; message?: unknown } | null;
+    // ethers puts a URL-free summary in shortMessage; the full message has request details.
+    const summary =
+      (e && typeof e.shortMessage === 'string' && e.shortMessage) ||
+      (e && typeof e.message === 'string' && e.message) ||
+      (typeof err === 'string' ? err : '');
+    text = (summary ? safeText(summary) : '') || fallback;
   }
-  // ethers puts a URL-free summary in shortMessage; the full message has request details.
-  const text =
-    (e && typeof e.shortMessage === 'string' && e.shortMessage) ||
-    (e && typeof e.message === 'string' && e.message) ||
-    (typeof err === 'string' ? err : '');
-  const clean = text ? safeText(text) : '';
-  return clean || fallback;
+  const details = (opts.details ?? wantsErrorDetails()) ? technicalDetails(err) : '';
+  return details ? `${text}\nTechnical details: ${details}` : text;
+}
+
+/**
+ * A few words for a table cell: the wallet's title for known failures, else the first
+ * line of the message, cut short. Never includes technical details.
+ */
+export function describeErrorShort(err: unknown, max = 60): string {
+  const explained = walletExplanation(err);
+  if (explained) return safeText(explained.message, max);
+  return safeText(describeError(err, 'Failed', { details: false }), max);
+}
+
+/**
+ * The original error text for FHEW_DEBUG=1, redacted (keys, configured RPC URL pieces)
+ * and stripped of terminal escapes, on one line. The host part of URLs is kept: it helps
+ * and is not secret.
+ */
+export function technicalDetails(err: unknown, max = 2000): string {
+  let raw: string;
+  if (err instanceof WalletTxError) raw = err.raw;
+  else if (err instanceof Error) raw = err.message;
+  else {
+    try {
+      raw = JSON.stringify(err) ?? String(err);
+    } catch {
+      raw = String(err);
+    }
+  }
+  return sanitizeContractText(redactSecrets(raw).replace(/\s*\n\s*/g, ' | '), max);
 }
 
 /** What a prompt library throws when stdin is closed, not a TTY, or Ctrl+C was pressed. */

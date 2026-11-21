@@ -57,7 +57,6 @@ import {
   error,
   warning,
   bold,
-  shortErrorMessage,
 } from '../../utils/formatting.js';
 import {
   isValidWalletName,
@@ -71,7 +70,7 @@ import {
 import { addAddress, listAddresses, removeAddress } from '../../storage/AddressBook.js';
 import { DynamicBalanceTable } from '../utils/DynamicBalanceTable.js';
 import { displayHistoryInteractive } from './history.js';
-import { describeError } from '../utils/userError.js';
+import { describeError, describeErrorShort } from '../utils/userError.js';
 import { maskUrl } from '../../utils/redact.js';
 
 type MenuChoice =
@@ -1319,7 +1318,7 @@ async function handleBalance(): Promise<void> {
       const formatted = formatTokenAmount(balance, tokens[i].decimals);
       dynamicTable.setSuccess(i, formatted);
     } catch (err) {
-      dynamicTable.setError(i, shortErrorMessage(err));
+      dynamicTable.setError(i, describeErrorShort(err));
     }
   }
 
@@ -1368,7 +1367,7 @@ async function handleBalance(): Promise<void> {
           const formatted = formatTokenAmount(balance, tokens[i].decimals);
           refreshTable.setSuccess(i, formatted);
         } catch (err) {
-          refreshTable.setError(i, shortErrorMessage(err));
+          refreshTable.setError(i, describeErrorShort(err));
         }
       }
 

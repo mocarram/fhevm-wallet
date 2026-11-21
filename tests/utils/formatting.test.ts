@@ -4,7 +4,6 @@ import {
   formatNetworkName,
   formatTokenAmount,
   parseTokenAmount,
-  shortErrorMessage,
 } from '../../src/utils/formatting.js';
 
 describe('formatNetworkName', () => {
@@ -59,34 +58,5 @@ describe('formatTokenAmount / parseTokenAmount', () => {
 
   it('throws on multiple decimal points', () => {
     expect(() => parseTokenAmount('1.2.3', 6)).toThrow(/Invalid amount format/);
-  });
-});
-
-describe('shortErrorMessage', () => {
-  it('returns "Failed" for non-Error inputs', () => {
-    expect(shortErrorMessage('boom')).toBe('Failed');
-    expect(shortErrorMessage(undefined)).toBe('Failed');
-  });
-
-  it('extracts an unexpected-status code', () => {
-    expect(shortErrorMessage(new Error('Unexpected response status 503 from relayer'))).toBe(
-      'HTTP 503',
-    );
-  });
-
-  it('extracts a generic status code', () => {
-    expect(shortErrorMessage(new Error('Request failed with status: 404 Not Found'))).toBe(
-      'HTTP 404',
-    );
-  });
-
-  it('returns first line for plain errors', () => {
-    expect(shortErrorMessage(new Error('first line\nsecond line'))).toBe('first line');
-  });
-
-  it('strips terminal escapes and masks URLs (regression)', () => {
-    const out = shortErrorMessage(new Error('bad \u001b[2J https://rpc.example/v2/KEY123456789 x'));
-    expect(out).not.toContain('\u001b');
-    expect(out).not.toContain('KEY123456789');
   });
 });
