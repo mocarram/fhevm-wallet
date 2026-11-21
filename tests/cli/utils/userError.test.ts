@@ -87,12 +87,12 @@ describe('describeError with FHEW_DEBUG=1', () => {
     process.env.SEPOLIA_RPC_URL = `https://rpc.example/qn/${KEY}`;
     process.env.FHEW_DEBUG = '1';
     const err = Object.assign(
-      new Error(`could not decode result data (info={ "responseBody": "for /qn/${KEY}" })`),
-      { code: 'BAD_DATA', shortMessage: 'could not decode result data' },
+      new Error(`something odd (info={ "responseBody": "for /qn/${KEY}" })`),
+      { code: 'UNSUPPORTED_OPERATION', shortMessage: 'something odd' },
     );
     const out = describeError(err);
-    expect(out.split('\n')[0]).toBe('could not decode result data');
-    expect(out).toMatch(/\nTechnical details: could not decode/);
+    expect(out.split('\n')[0]).toBe('something odd');
+    expect(out).toMatch(/\nTechnical details: something odd/);
     expect(out).not.toContain(KEY);
   });
 

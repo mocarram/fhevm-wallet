@@ -23,6 +23,10 @@ import { maskUrlsInText, redactSecrets } from '../../utils/redact.js';
  */
 const GENERIC_CODES = new Set([
   'RPC_UNAVAILABLE',
+  'RPC_ERROR',
+  'RPC_RATE_LIMITED',
+  'RPC_AUTH',
+  'RPC_BAD_ANSWER',
   'WRONG_CHAIN',
   'RELAYER_TIMEOUT',
   'RELAYER_UNAVAILABLE',

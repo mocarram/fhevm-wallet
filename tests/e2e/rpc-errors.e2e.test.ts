@@ -212,7 +212,7 @@ describe.skipIf(!hasPython)('`fhew balance` in a terminal against RPC errors', (
 // The sweep past the password prompt: every way a provider echoes the request back, for
 // the commands that load the wallet. None of the output may contain the path key or the
 // query key, with or without FHEW_DEBUG.
-type EchoMode = '500' | 'chain-then-500' | 'rpc-error' | '429';
+type EchoMode = '500' | 'chain-then-500' | 'rpc-error' | 'rpc-auth' | 'rpc-quota' | '429';
 let echoAny: Server;
 let echoAnyBase = '';
 let mode: EchoMode = '500';
@@ -230,15 +230,18 @@ beforeAll(async () => {
         res.end(JSON.stringify(msgs.length === 1 ? reply(msgs[0]) : msgs.map(reply)));
         return;
       }
-      if (mode === 'rpc-error') {
+      if (mode.startsWith('rpc-')) {
+        // HTTP 200 with a JSON-RPC error, as Infura, Alchemy and QuickNode answer.
+        const error =
+          mode === 'rpc-quota'
+            ? { code: -32005, message: `daily request count exceeded ${echo}` }
+            : mode === 'rpc-auth'
+              ? { code: -32000, message: `invalid api key ${echo}` }
+              : { code: -32000, message: echo };
         const reply = (m: { id: number; method: string }) =>
           m.method === 'eth_chainId'
             ? { jsonrpc: '2.0', id: m.id, result: '0xaa36a7' }
-            : {
-                jsonrpc: '2.0',
-                id: m.id,
-                error: { code: -32000, message: `invalid api key ${echo}` },
-              };
+            : { jsonrpc: '2.0', id: m.id, error };
         res.end(JSON.stringify(msgs.length === 1 ? reply(msgs[0]) : msgs.map(reply)));
         return;
       }
@@ -266,10 +269,56 @@ function inPty(home: string, args: string[], env: Record<string, string>) {
   });
 }
 
+/** What every command must say for each kind of failure (never "not a token"). */
+const WORDING: Record<EchoMode, RegExp> = {
+  '500': /Could not reach the network/,
+  'chain-then-500': /Could not reach the network/,
+  '429': /Could not reach the network/,
+  'rpc-error': /The RPC endpoint returned an error: internal error for/,
+  'rpc-auth': /Your RPC endpoint refused the request/,
+  'rpc-quota': /Your RPC endpoint is limiting requests/,
+};
+const MODES = Object.keys(WORDING) as EchoMode[];
+
+/** Checks shared by every run: plain words for the failure, no key, no raw ethers text. */
+function expectSafe(out: string, m: EchoMode, debug = '0') {
+  expect(out).toMatch(WORDING[m]);
+  expect(out).not.toMatch(/not a token contract|not an ERC-7984 token/);
+  // Raw ethers text only ever appears under "Technical details" with FHEW_DEBUG=1.
+  if (debug !== '1') expect(out).not.toMatch(/could not coalesce|missing revert data|params\.map/);
+  expect(out).not.toContain(KEY);
+  expect(out).not.toContain(QKEY);
+}
+
+describe('token add and history against every RPC failure', () => {
+  it.each(MODES)('%s', async (m) => {
+    mode = m;
+    const t = homeWithWallet();
+    try {
+      const env = { SEPOLIA_RPC_URL: keyUrl(echoAnyBase) };
+      const add = await runCliAsync(
+        ['token', 'add', TOKEN.replace('de7', 'de8'), '-n', 'sepolia'],
+        t.home,
+        env,
+      );
+      expect(add.code).toBe(1);
+      expectSafe(add.stdout + add.stderr, m);
+      const hist = await runCliAsync(
+        ['history', '-a', '0x000000000000000000000000000000000000dEaD', '-n', 'sepolia'],
+        t.home,
+        env,
+      );
+      expect(hist.code).toBe(1);
+      expectSafe(hist.stdout + hist.stderr, m);
+    } finally {
+      t.cleanup();
+    }
+  });
+});
+
 describe.skipIf(!hasPython)('secrets sweep past the password prompt', () => {
-  const modes: EchoMode[] = ['500', 'chain-then-500', 'rpc-error', '429'];
-  it.each(modes)(
-    'balance and send against an RPC that echoes the key (%s)',
+  it.each(MODES)(
+    'balance (plain, -t, -r) and send against an RPC that echoes the key (%s)',
     async (m) => {
       mode = m;
       const t = homeWithWallet();
@@ -278,6 +327,7 @@ describe.skipIf(!hasPython)('secrets sweep past the password prompt', () => {
           const env = { SEPOLIA_RPC_URL: keyUrl(echoAnyBase), FHEW_DEBUG: debug };
           const runs = [
             await inPty(t.home, ['balance', '-w', 'w', '-n', 'sepolia'], env),
+            await inPty(t.home, ['balance', '-w', 'w', '-n', 'sepolia', '-t', TOKEN, '-r'], env),
             await inPty(
               t.home,
               ['send', '0x000000000000000000000000000000000000dEaD', '1', '-t', TOKEN, '-w', 'w'],
@@ -287,14 +337,13 @@ describe.skipIf(!hasPython)('secrets sweep past the password prompt', () => {
           for (const res of runs) {
             expect(res.out).toMatch(/Wallet loaded/); // got past the password prompt
             expect(res.code).toBe(1);
-            expect(res.out).not.toContain(KEY);
-            expect(res.out).not.toContain(QKEY);
+            expectSafe(res.out, m, debug);
           }
         }
       } finally {
         t.cleanup();
       }
     },
-    150_000,
+    200_000,
   );
 });

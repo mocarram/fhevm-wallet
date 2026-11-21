@@ -43,6 +43,7 @@ const fakeProvider = {
   send: vi.fn(),
   getFeeData: vi.fn(),
   getBalance: vi.fn(),
+  getCode: vi.fn(async () => '0x'),
 };
 vi.mock('../../../src/core/network/ProviderFactory.js', () => ({
   getProvider: vi.fn(() => fakeProvider),
@@ -780,5 +781,51 @@ describe('TokenService reads from an address that is not a token', () => {
       forceRefresh: true,
     }).catch((e) => e);
     expect(err).toBeInstanceOf(DecryptionFailedError);
+  });
+});
+
+describe('TokenService: an RPC error is not "not a token"', () => {
+  const rateLimited = () =>
+    Object.assign(new Error('missing revert data'), {
+      code: 'CALL_EXCEPTION',
+      action: 'call',
+      data: null,
+      info: { error: { code: -32005, message: 'daily request count exceeded' } },
+    });
+
+  it('getTokenInfo passes a JSON-RPC error through for the RPC wording', async () => {
+    const err = rateLimited();
+    contractStubs.name.mockRejectedValueOnce(err);
+    const { getTokenInfo } = await import('../../../src/core/token/TokenService.js');
+    await expect(getTokenInfo(TOKEN, 'sepolia')).rejects.toBe(err);
+  });
+
+  it('an empty revert is "not a token" only when the address has no code', async () => {
+    const empty = () =>
+      Object.assign(new Error('missing revert data'), {
+        code: 'CALL_EXCEPTION',
+        action: 'call',
+        data: null,
+      });
+    const { getTokenInfo } = await import('../../../src/core/token/TokenService.js');
+    fakeProvider.getCode.mockResolvedValueOnce('0x6080');
+    contractStubs.name.mockRejectedValueOnce(empty());
+    await expect(getTokenInfo(TOKEN, 'sepolia')).rejects.not.toMatchObject({
+      code: 'NOT_A_TOKEN',
+    });
+    fakeProvider.getCode.mockResolvedValueOnce('0x');
+    contractStubs.name.mockRejectedValueOnce(empty());
+    await expect(getTokenInfo(TOKEN, 'sepolia')).rejects.toMatchObject({ code: 'NOT_A_TOKEN' });
+  });
+
+  it('a malformed eth_getLogs reply is RPC_BAD_ANSWER, not a raw TypeError', async () => {
+    const { getWalletTransactionsViaRPC } = await import('../../../src/core/token/TokenService.js');
+    const getBlockNumber = vi.fn(async () => {
+      throw new TypeError('params.map is not a function');
+    });
+    Object.assign(fakeProvider, { getBlockNumber });
+    await expect(
+      getWalletTransactionsViaRPC(RECIPIENT, [TOKEN], new Map(), 'sepolia'),
+    ).rejects.toMatchObject({ code: 'RPC_BAD_ANSWER' });
   });
 });

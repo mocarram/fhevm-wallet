@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { ERC7984_INTERFACE } from '../../../src/core/token/TokenService.js';
 import {
   DecryptionFailedError,
+  isEmptyRevert,
+  isNoContractAnswer,
   WalletTxError,
   formatTxError,
   sentButUnconfirmed,
@@ -287,5 +289,59 @@ describe('WalletTxError raw details', () => {
     expect(e.raw).toContain('https://rpc.example/…');
     expect(e.raw).not.toContain('SOMETHINGLONG');
     expect(e.raw).not.toContain('\u001b');
+  });
+});
+
+describe('JSON-RPC errors from the endpoint itself', () => {
+  /** What ethers throws for eth_call when the node answers {"error": {...}}. */
+  const callError = (code: number, message: string) =>
+    ethersError(
+      { code: 'CALL_EXCEPTION', action: 'call', data: null, info: { error: { code, message } } },
+      'missing revert data',
+    );
+  const coalesce = (code: number, message: string) =>
+    ethersError({ code: 'UNKNOWN_ERROR', error: { code, message } }, 'could not coalesce error');
+
+  it('a quota or rate-limit reply is RPC_RATE_LIMITED', () => {
+    expect(translateTxError(callError(-32005, 'daily request count exceeded')).code).toBe(
+      'RPC_RATE_LIMITED',
+    );
+    expect(translateTxError(coalesce(-32000, 'Too Many Requests')).code).toBe('RPC_RATE_LIMITED');
+  });
+
+  it('an invalid key is RPC_AUTH', () => {
+    expect(translateTxError(callError(-32000, 'invalid api key')).code).toBe('RPC_AUTH');
+    expect(translateTxError(coalesce(-32001, 'Unauthorized')).code).toBe('RPC_AUTH');
+  });
+
+  it('anything else is RPC_ERROR with the redacted reason', () => {
+    process.env.SEPOLIA_RPC_URL = 'https://rpc.example/qn/QNSECRETTOKEN77aa88bb/';
+    try {
+      const t = translateTxError(
+        coalesce(
+          -32603,
+          'internal failure /qn/QNSECRETTOKEN77aa88bb/?x=1 key=QNSECRETTOKEN77aa88bb',
+        ),
+      );
+      expect(t.code).toBe('RPC_ERROR');
+      expect(t.message).toMatch(/^The RPC endpoint returned an error: internal failure/);
+      expect(t.message).not.toContain('QNSECRETTOKEN77aa88bb');
+    } finally {
+      delete process.env.SEPOLIA_RPC_URL;
+    }
+  });
+
+  it('a revert is still the contract talking, not the endpoint', () => {
+    const t = translateTxError(callError(3, 'execution reverted'));
+    expect(t.code).not.toMatch(/^RPC_/);
+  });
+
+  it('isNoContractAnswer only trusts BAD_DATA; isEmptyRevert excludes RPC errors', () => {
+    expect(isNoContractAnswer(callError(-32005, 'limit'))).toBe(false);
+    expect(isNoContractAnswer(ethersError({ code: 'BAD_DATA', value: '0x' }))).toBe(true);
+    expect(isEmptyRevert(callError(-32005, 'limit'))).toBe(false);
+    expect(isEmptyRevert(ethersError({ code: 'CALL_EXCEPTION', action: 'call', data: null }))).toBe(
+      true,
+    );
   });
 });

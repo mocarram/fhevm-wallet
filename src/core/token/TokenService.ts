@@ -15,6 +15,7 @@ import {
 } from 'ethers';
 import {
   DecryptionFailedError,
+  isEmptyRevert,
   isNoContractAnswer,
   sentButUnconfirmed,
   translateTxError,
@@ -250,6 +251,26 @@ function getTokenContract(tokenAddress: string, network: NetworkName, signer?: S
 }
 
 /**
+ * Whether a failed read means "there is no such contract (function) here". `0x` back
+ * (BAD_DATA) does. A revert with no data only does when the address has no code: ethers
+ * reports a JSON-RPC error from the endpoint in the same shape, and that is the RPC's
+ * problem, not the token's. If the code check itself fails, say nothing about the token.
+ */
+async function answeredLikeNoContract(
+  err: unknown,
+  address: string,
+  network: NetworkName,
+): Promise<boolean> {
+  if (isNoContractAnswer(err)) return true;
+  if (!isEmptyRevert(err)) return false;
+  try {
+    return (await getProvider(network).getCode(address)) === '0x';
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Get token information (name, symbol, decimals)
  */
 export async function getTokenInfo(tokenAddress: string, network: NetworkName): Promise<TokenInfo> {
@@ -265,7 +286,7 @@ export async function getTokenInfo(tokenAddress: string, network: NetworkName): 
   } catch (err) {
     // `0x` back from name() & co. means there is no token here (an account, another kind
     // of contract, or a token on a different network). Say that, not "could not decode".
-    if (isNoContractAnswer(err)) {
+    if (await answeredLikeNoContract(err, tokenAddress, network)) {
       throw new WalletTxError(
         'NOT_A_TOKEN',
         `That address is not a token contract on ${network}.`,
@@ -308,7 +329,7 @@ export async function getEncryptedBalance(
         ? await contract.confidentialBalanceOf(userAddress)
         : await contract.confidentialBalanceOf(userAddress, { blockTag });
   } catch (err) {
-    if (isNoContractAnswer(err)) {
+    if (await answeredLikeNoContract(err, tokenAddress, network)) {
       throw new WalletTxError(
         'NOT_ERC7984',
         `That address is not an ERC-7984 token on ${network}.`,
@@ -833,6 +854,32 @@ export async function getWalletTransactionsViaRPC(
   tokenMap: Map<string, { symbol: string }>,
   network: NetworkName,
   startBlock: number = 0,
+): Promise<WalletTransaction[]> {
+  try {
+    return await scanTransferLogs(walletAddress, tokenAddresses, tokenMap, network, startBlock);
+  } catch (err) {
+    // A malformed eth_getLogs reply surfaces as a TypeError deep inside ethers
+    // ("params.map is not a function"). Say what happened instead.
+    if (err instanceof TypeError && !/fetch failed/i.test(err.message)) {
+      throw new WalletTxError(
+        'RPC_BAD_ANSWER',
+        'The RPC endpoint sent an answer the wallet could not read.',
+        'Its reply to the transaction-history query did not have the expected shape.',
+        'Try again, or set an Etherscan API key or another RPC URL with fhevm-wallet config.',
+        err.message,
+      );
+    }
+    throw err;
+  }
+}
+
+/** The eth_getLogs scan behind `getWalletTransactionsViaRPC`. */
+async function scanTransferLogs(
+  walletAddress: string,
+  tokenAddresses: string[],
+  tokenMap: Map<string, { symbol: string }>,
+  network: NetworkName,
+  startBlock: number,
 ): Promise<WalletTransaction[]> {
   const provider = getProvider(network);
   const currentBlock = await provider.getBlockNumber();

@@ -31,6 +31,10 @@ export type TxErrorCode =
   | 'RELAYER_TIMEOUT'
   | 'RELAYER_UNAVAILABLE'
   | 'NOT_A_TOKEN'
+  | 'RPC_ERROR'
+  | 'RPC_RATE_LIMITED'
+  | 'RPC_AUTH'
+  | 'RPC_BAD_ANSWER'
   | 'UNKNOWN';
 
 /** A user-facing transaction error. `raw` is only shown when the user asks for details. */
@@ -100,15 +104,90 @@ export function isRelayerError(err: unknown): boolean {
 }
 
 /**
- * True when a read call got no usable answer from `address`: ethers' BAD_DATA ("could not
- * decode result data", typically `0x` from an address with no code) or a call that
- * reverted with no data at all. Both mean "no such function here": not a contract, or
- * not this kind of contract.
+ * True when a read call got `0x` back: ethers' BAD_DATA ("could not decode result data").
+ * That is what an address with no code (or a contract without that function and a
+ * silent fallback) returns. A revert with no data is *not* enough on its own: ethers
+ * gives a JSON-RPC error (rate limit, bad key) the same CALL_EXCEPTION shape, so callers
+ * confirm "no contract" with eth_getCode (see TokenService).
  */
 export function isNoContractAnswer(err: unknown): boolean {
+  return ((err ?? {}) as EthersLikeError).code === 'BAD_DATA';
+}
+
+/** A revert with no data and no JSON-RPC error behind it: maybe no contract at all. */
+export function isEmptyRevert(err: unknown): boolean {
   const e = (err ?? {}) as EthersLikeError;
-  if (e.code === 'BAD_DATA') return true;
-  return e.code === 'CALL_EXCEPTION' && e.action === 'call' && (e.data === null || e.data === '0x');
+  return (
+    e.code === 'CALL_EXCEPTION' &&
+    e.action === 'call' &&
+    (e.data === null || e.data === undefined || e.data === '0x') &&
+    rpcErrorOf(err) === null
+  );
+}
+
+/** A JSON-RPC error object the node sent back (`{"error": {code, message}}`). */
+export interface RpcErrorReply {
+  code: number | null;
+  message: string;
+}
+
+/**
+ * The node's own JSON-RPC error behind an ethers error, unless it is a revert (which is
+ * the contract's answer, not the endpoint's). ethers keeps it under `info.error` (calls
+ * and estimates: CALL_EXCEPTION) or `error` (UNKNOWN_ERROR "could not coalesce error").
+ */
+export function rpcErrorOf(err: unknown): RpcErrorReply | null {
+  const e = (err ?? {}) as {
+    code?: unknown;
+    error?: { code?: unknown; message?: unknown };
+    info?: { error?: { code?: unknown; message?: unknown } };
+  };
+  if (e.code !== 'CALL_EXCEPTION' && e.code !== 'UNKNOWN_ERROR') return null;
+  const rpc = e.info?.error ?? e.error;
+  if (!rpc || typeof rpc !== 'object') return null;
+  const message = typeof rpc.message === 'string' ? rpc.message : '';
+  if (/revert/i.test(message)) return null;
+  if (!message && typeof rpc.code !== 'number') return null;
+  return { code: typeof rpc.code === 'number' ? rpc.code : null, message };
+}
+
+/** Error codes and wording providers use for "too many requests" or a used-up quota. */
+const RATE_LIMIT_RE = /rate|limit|exceed|quota|too many|throttl|capacity/i;
+/** ...and for a missing, wrong or expired key. */
+const AUTH_RE =
+  /unauthori[sz]ed|forbidden|invalid (?:api )?key|api key|not allowed|authenticat|permission denied/i;
+
+/** Translate a JSON-RPC error from the endpoint itself into plain words. */
+function rpcReplyError(reply: RpcErrorReply, raw: string): WalletTxError {
+  if (reply.code === -32005 || RATE_LIMIT_RE.test(reply.message)) {
+    return new WalletTxError(
+      'RPC_RATE_LIMITED',
+      'Your RPC endpoint is limiting requests.',
+      'It answered that the rate limit or daily quota of this endpoint is used up.',
+      'Wait a while, or set an RPC URL with a higher limit (fhevm-wallet config --rpc-sepolia -).',
+      raw,
+    );
+  }
+  if (AUTH_RE.test(reply.message)) {
+    return new WalletTxError(
+      'RPC_AUTH',
+      'Your RPC endpoint refused the request.',
+      'The API key in the RPC URL may be missing, wrong or expired.',
+      'Check the key with your provider, then set the URL again (fhevm-wallet config --rpc-sepolia -).',
+      raw,
+    );
+  }
+  // The reason is the provider's text: redact and sanitise it before showing it.
+  const reason = sanitizeContractText(maskUrlsInText(redactSecrets(reply.message)), 160);
+  return new WalletTxError(
+    'RPC_ERROR',
+    reason
+      ? `The RPC endpoint returned an error: ${reason}`
+      : 'The RPC endpoint returned an error.',
+    `It answered with JSON-RPC error ${reply.code ?? 'without a code'} instead of a result.`,
+    'Try again. If it keeps happening, check the RPC URL or use another endpoint.',
+    raw,
+  );
 }
 
 /** Shape of the ethers v6 error fields we look at. All optional: errors come from many places. */
@@ -332,6 +411,24 @@ export function translateTxError(err: unknown, opts: TranslateOptions = {}): Wal
       'Not enough ETH to pay the network fee.',
       'Every transaction needs a little ETH for gas, even though token amounts are encrypted.',
       'Add ETH to this wallet (on Sepolia, use a faucet) and try again.',
+      raw,
+    );
+  }
+
+  // The endpoint itself answered with a JSON-RPC error (rate limit, bad key, an internal
+  // error). ethers wraps those as CALL_EXCEPTION or UNKNOWN_ERROR "could not coalesce
+  // error"; neither means the contract said anything.
+  const reply = rpcErrorOf(err);
+  if (reply) return rpcReplyError(reply, raw);
+
+  // An answer the wallet could not read at all (malformed JSON-RPC result). Callers
+  // that can tell "no contract" apart (`0x` from an empty address) do so first.
+  if (e.code === 'BAD_DATA') {
+    return new WalletTxError(
+      'RPC_BAD_ANSWER',
+      'The RPC endpoint sent an answer the wallet could not read.',
+      'Its reply did not have the shape a JSON-RPC node returns.',
+      'Try again, or use another RPC endpoint.',
       raw,
     );
   }

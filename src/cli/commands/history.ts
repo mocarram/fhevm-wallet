@@ -172,7 +172,8 @@ async function syncTransactions(
 
 /**
  * Handle sync errors gracefully and offer recovery options.
- * Returns true only if a retry synced; the CLI command exits 1 otherwise.
+ * Returns true if a retry synced or the user chose to skip; the CLI command exits 1
+ * otherwise.
  */
 async function handleSyncError(
   err: unknown,
@@ -294,8 +295,8 @@ async function handleSyncError(
       return false;
     }
   }
-  // 'skip' action: do nothing, proceed to show cached transactions
-  return false;
+  // 'skip': the user chose to go on with the saved history, which is not a failure.
+  return action === 'skip';
 }
 
 /**
