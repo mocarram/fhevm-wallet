@@ -313,6 +313,8 @@ export const WALLET_DATA_ENTRIES = [
   'ui-prefs.json',
   'token-lists.json',
   'scan-state.json',
+  'wrappers.json',
+  'unwraps.json',
   '.fhew-mock',
 ] as const;
 
