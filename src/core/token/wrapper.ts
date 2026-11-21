@@ -33,7 +33,7 @@ import type { DecryptSession } from '../fhe/DecryptSession.js';
 import { normaliseHandle } from '../fhe/DecryptSession.js';
 import type { EthCall } from './erc7984Check.js';
 import { sanitizeTokenName, sanitizeTokenSymbol } from './tokenText.js';
-import { rpcErrorOf, translateTxError, WalletTxError } from './txErrors.js';
+import { isContractNoAnswer, translateTxError, WalletTxError } from './txErrors.js';
 import type { TxErrorCode } from './txErrors.js';
 import { getDecryptedBalance, prepareTokenCall, type PreparedCall } from './TokenService.js';
 import { MAX_EUINT64 } from './limits.js';
@@ -116,22 +116,6 @@ export interface WrapState {
   allowance: bigint;
   /** Confidential units the wrapper can still mint, when it reports its supply. */
   supplyRoom?: bigint;
-}
-
-/**
- * True for an error that means "the contract did not answer", not "the RPC failed".
- * BAD_DATA only counts when the node returned `0x` ("could not decode result data"):
- * ethers also reports a batch the node dropped ("missing response for request", e.g.
- * an RPC that limits batch sizes) as BAD_DATA, and that must never read as "not a
- * wrapper".
- */
-function isContractNoAnswer(err: unknown): boolean {
-  const e = (err ?? {}) as { code?: unknown; shortMessage?: unknown; message?: unknown };
-  if (e.code === 'BAD_DATA') {
-    const text = `${String(e.shortMessage ?? '')} ${String(e.message ?? '')}`;
-    return /could not decode result data/i.test(text) && !/missing response/i.test(text);
-  }
-  return e.code === 'CALL_EXCEPTION' && rpcErrorOf(err) === null;
 }
 
 /** Decode `fn`'s single return value, or null when it does not decode. */

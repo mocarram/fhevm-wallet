@@ -131,6 +131,18 @@ export function isNoContractAnswer(err: unknown): boolean {
 }
 
 /**
+ * True for an error that means "the contract did not answer", not "the RPC failed":
+ * `0x` back (`isNoContractAnswer`), or a revert that is not a JSON-RPC error from the
+ * endpoint (`rpcErrorOf`). Shared by the ERC-7984 check and the wrapper check, so a
+ * dropped batch or a rate limit never reads as "not a token" or "not a wrapper".
+ */
+export function isContractNoAnswer(err: unknown): boolean {
+  const code = (err as { code?: unknown })?.code;
+  if (code === 'BAD_DATA') return isNoContractAnswer(err);
+  return code === 'CALL_EXCEPTION' && rpcErrorOf(err) === null;
+}
+
+/**
  * ethers' BAD_DATA "missing response for request": the endpoint's reply had no entry for
  * this request, e.g. nodies answers a JSON-RPC batch of more than 10 with one error
  * ("Batch too large"). That is the endpoint failing, never the contract answering `0x`.

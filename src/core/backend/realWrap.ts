@@ -12,8 +12,8 @@
  * in between is kept by the caller (`unwrapPending.ts`), not here.
  */
 
-import { MainnetConfig, SepoliaConfig } from '@zama-fhe/relayer-sdk/node';
 import type { NetworkName } from '../network/NetworkConfig.js';
+import { RELAYER_NETWORKS } from '../fhe/relayerConfig.js';
 import { normaliseHandle, type DecryptSession } from '../fhe/DecryptSession.js';
 import { publicDecryptHandle } from '../fhe/DecryptionService.js';
 import {
@@ -60,9 +60,12 @@ export const WRAP_GAS_ESTIMATE = 900_000n;
 export const APPROVE_GAS_ESTIMATE = 150_000n;
 export const FINALIZE_GAS_ESTIMATE = 650_000n;
 
-/** The Zama ACL contract for a network. */
+/**
+ * The Zama ACL contract for a network, from relayerConfig.ts: importing the SDK here
+ * would load it (and its WebAssembly) at start-up for every command.
+ */
 function aclAddress(network: NetworkName): string {
-  return (network === 'mainnet' ? MainnetConfig : SepoliaConfig).aclContractAddress;
+  return RELAYER_NETWORKS[network].aclContractAddress;
 }
 
 /** Price per gas a prepared call was priced at. */

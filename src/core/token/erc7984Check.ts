@@ -22,7 +22,7 @@
  */
 
 import { getAddress, id, Interface } from 'ethers';
-import { isNoContractAnswer, rpcErrorOf } from './txErrors.js';
+import { isContractNoAnswer } from './txErrors.js';
 import { sanitizeTokenName, sanitizeTokenSymbol } from './tokenText.js';
 import type { TokenInfo } from './TokenService.js';
 
@@ -96,13 +96,6 @@ export interface TokenCheck {
   problems: string[];
   /** Things worth knowing that do not block adding it. */
   warnings: string[];
-}
-
-/** True for an error that means "the contract did not answer", not "the RPC failed". */
-function isContractNoAnswer(err: unknown): boolean {
-  const code = (err as { code?: unknown })?.code;
-  if (code === 'BAD_DATA') return isNoContractAnswer(err);
-  return code === 'CALL_EXCEPTION' && rpcErrorOf(err) === null;
 }
 
 /** Call and return the raw result, or null when the contract reverted / returned nothing. */
