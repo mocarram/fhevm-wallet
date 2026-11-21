@@ -49,14 +49,15 @@ function runTui(
   steps: Step[],
   env: Record<string, string> = {},
   args: string[] = [],
+  [cols, rows]: [number, number] = [100, 34],
 ): string[] {
   const script = join(work, `script-${Math.random().toString(36).slice(2)}.json`);
   writeFileSync(
     script,
     JSON.stringify({
       argv: [process.execPath, CLI, ...args],
-      cols: 100,
-      rows: 34,
+      cols,
+      rows,
       env: {
         PATH: process.env.PATH ?? '',
         HOME: home,
@@ -372,6 +373,35 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
       { raw_last: ['\u001b[?2004h', '\u001b[?2004l'] },
     ]);
   });
+
+  for (const size of [
+    [80, 24],
+    [60, 20],
+  ] as Array<[number, number]>) {
+    it(`Receive at ${size.join('x')} keeps the address and never clips the QR`, () => {
+      const screens = runTui(
+        freshHome(),
+        [
+          { expect: 'Balances' },
+          { keys: 'r' },
+          { expect: 'Copy address' },
+          { keys: '2' },
+          { expect: 'QR with the address only' },
+          { keys: CTRL_C },
+          { keys: '0' },
+          { exit: 0 },
+        ],
+        {},
+        [],
+        size,
+      );
+      for (const sc of screens.slice(1, 3)) {
+        expect(sc).toMatch(/0x[0-9a-fA-F]{40}/);
+        expect(sc).toMatch(/The QR code needs a \d+x\d+ terminal/);
+        expect(sc).not.toMatch(/[▀▄]/);
+      }
+    });
+  }
 
   it('Esc answers at once and a key typed right after it is not lost', () => {
     runTui(freshHome(), [

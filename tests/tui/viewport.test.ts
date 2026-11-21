@@ -123,3 +123,50 @@ describe('long lists (200 rows)', () => {
     expect(t).toMatch(/Pick the tokens to stop tracking/);
   });
 });
+
+describe('Receive never clips the QR code', () => {
+  const sizes: Array<[number, number]> = [
+    [80, 24],
+    [60, 20],
+    [100, 34],
+    [100, 40],
+  ];
+  for (const eip of [false, true]) {
+    for (const [cols, rows] of sizes) {
+      it(`${eip ? 'EIP-681' : 'address'} QR at ${cols}x${rows}`, async () => {
+        const h = new Harness();
+        await h.keys('r');
+        if (eip) await h.keys('2');
+        const t = h.text(cols, rows);
+        const lines = t.split('\n');
+        expect(lines).toHaveLength(rows);
+        // The full address is always on screen, and the menu too.
+        expect(t).toContain(h.s.wallet!.address.slice(0, Math.min(42, cols - 3)));
+        expect(t).toMatch(/Copy address/);
+        expect(t).toMatch(/Back/);
+        const qrRows = lines.filter((l) => /[█▀▄]/.test(l));
+        if (qrRows.length) {
+          // Drawn whole: the caption under it is on screen and no row was cut.
+          expect(t).toMatch(/QR: /);
+          expect(qrRows.every((l) => !l.endsWith('…'))).toBe(true);
+          expect(qrRows.length).toBeGreaterThanOrEqual(17);
+        } else {
+          expect(t).toMatch(/The QR code needs a \d+x\d+ terminal/);
+        }
+      });
+    }
+  }
+});
+
+it('Receive at 100x34 shows both QR codes; a flash makes room by hiding it', async () => {
+  const h = new Harness();
+  await h.keys('r');
+  expect(h.text(100, 34)).toMatch(/QR: the address only/);
+  await h.keys('2');
+  expect(h.text(100, 34)).toMatch(/QR: ethereum:/);
+  await h.keys('3'); // faucet links
+  const t = h.text(100, 34);
+  expect(t).toMatch(/faucets/);
+  expect(t).toMatch(/The QR code needs/);
+  expect(t.split('\n')).toHaveLength(34);
+});

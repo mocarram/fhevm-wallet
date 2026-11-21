@@ -63,14 +63,34 @@ export const receiveScreen: ScreenDef = {
       const text = eip
         ? eip681(s.wallet.address, NETWORK_CONFIGS[s.network].chainIdNumber)
         : s.wallet.address;
-      body.push(...qrLines(text).map((l) => line('  ', l)));
-      body.push(
-        dimLine(
-          eip
-            ? `  QR: ${text} (wallet apps that read EIP-681 pick the network too)`
-            : '  QR: the address only. Check the network with the sender.',
-        ),
-      );
+      const qr = qrLines(text);
+      const qrWidth = Array.from(qr[0] ?? '').length + 2;
+      // The QR is drawn only when all of it fits with the address and the menu: a
+      // clipped code does not scan (it lost a finder pattern at 80x24). Status bar and
+      // hint take 4 rows, this body 5 more, the menu a row per item and a gap, and a
+      // flash or notice above the body its own rows.
+      const menuRows = (s.network === 'sepolia' ? 4 : 3) + 1;
+      const above = (s.flash ? s.flash.length + 1 : 0) + (s.notice ? 2 : 0);
+      const free = s.size.rows - 4 - 5 - menuRows - above;
+      if (qr.length <= free && qrWidth <= s.size.cols) {
+        body.push(...qr.map((l) => line('  ', l)));
+        body.push(
+          dimLine(
+            eip
+              ? `  QR: ${text} (wallet apps that read EIP-681 pick the network too)`
+              : '  QR: the address only. Check the network with the sender.',
+          ),
+        );
+      } else {
+        const needRows = s.size.rows + (qr.length - free);
+        const needCols = Math.max(s.size.cols, qrWidth);
+        body.push(
+          dimLine(
+            `  The QR code needs a ${needCols}x${needRows} terminal. Enlarge this window to show it,`,
+          ),
+          dimLine('  or copy the address above (it is complete).'),
+        );
+      }
     }
     const items: Item[] = [
       copyAddressItem(),
