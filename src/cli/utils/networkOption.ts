@@ -28,3 +28,15 @@ export function adoptTypedNetwork(actionCommand: Command): void {
     actionCommand.setOptionValue('network', value);
   }
 }
+
+/**
+ * Arguments to parse: `fhew -n sepolia` (only the network option, no subcommand) starts
+ * the terminal UI on that network, like `fhew interactive -n sepolia`, instead of
+ * printing the help. `args` is `process.argv.slice(2)`.
+ */
+export function withDefaultCommand(args: string[]): string[] {
+  const onlyNetwork =
+    (args.length === 2 && (args[0] === '-n' || args[0] === '--network')) ||
+    (args.length === 1 && args[0].startsWith('--network='));
+  return onlyNetwork ? ['interactive', ...args] : args;
+}

@@ -11,6 +11,7 @@
 import {
   assertCommandSupportsMock,
   assertNotMockDataDir,
+  commandName,
   MockDataDirError,
   prepareMockDataDir,
   unknownBackendProblem,
@@ -26,6 +27,13 @@ import {
 import { takeInvalidRpcSettings } from './core/network/NetworkConfig.js';
 import { applyNoColor } from './utils/formatting.js';
 import { safeText } from './cli/utils/userError.js';
+
+/** True for '' (no command), help, or a command or alias the program defines. */
+async function isKnownCommand(name: string): Promise<boolean> {
+  if (name === '' || name === 'help') return true;
+  const { createProgram } = await import('./cli/index.js');
+  return createProgram().commands.some((c) => c.name() === name || c.aliases().includes(name));
+}
 
 // Tables and messages honour NO_COLOR (chalk itself does not read it).
 applyNoColor();
@@ -47,7 +55,11 @@ try {
   // Decided from the launch environment, after the trust check and before any .env file
   // is read.
   if (wantsMock()) {
-    assertCommandSupportsMock(process.argv);
+    // An unknown command is left to commander ("unknown command"); it would not reach
+    // the network either way, and "would use the real network" misled. The command list
+    // is loaded only here, so the real backend's start-up stays light.
+    const name = commandName(process.argv);
+    if (await isKnownCommand(name)) assertCommandSupportsMock(process.argv);
     prepareMockDataDir();
   } else {
     assertNotMockDataDir();

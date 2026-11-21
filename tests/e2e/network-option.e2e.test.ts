@@ -21,7 +21,7 @@ afterEach(() => cleanup());
 function home(defaultNetwork: 'sepolia' | 'mainnet', withTokens = true): string {
   const t = tempHome();
   cleanup = t.cleanup;
-  const set = runCli(['config', '--network', defaultNetwork], t.home);
+  const set = runCli(['config', '--default-network', defaultNetwork], t.home);
   expect(set.stdout).toMatch(`Default network set to ${defaultNetwork}`);
   if (withTokens) {
     const dir = join(t.home, '.fhevm-wallet');
@@ -51,10 +51,21 @@ const tokensIn = (h: string) =>
   }>;
 
 describe('-n/--network after the subcommand is used', () => {
-  it('config --network sets the default network', () => {
+  it('config --default-network sets the default; config -n refuses instead', () => {
     const h = home('mainnet', false);
     expect(runCli(['config', '--show'], h).stdout).toMatch(/Default network: mainnet/);
-    runCli(['config', '--network', 'sepolia'], h);
+    runCli(['config', '--default-network', 'sepolia'], h);
+    expect(runCli(['config', '--show'], h).stdout).toMatch(/Default network: sepolia/);
+    // -n (or the old --network) no longer changes the default silently.
+    for (const args of [
+      ['config', '-n', 'mainnet'],
+      ['config', '--network', 'mainnet', '--show'],
+      ['-n', 'mainnet', 'config'],
+    ]) {
+      const res = runCli(args, h);
+      expect(res.code).toBe(1);
+      expect(res.stdout).toMatch(/fhew config --default-network mainnet/);
+    }
     expect(runCli(['config', '--show'], h).stdout).toMatch(/Default network: sepolia/);
   });
 

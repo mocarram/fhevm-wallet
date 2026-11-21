@@ -42,7 +42,7 @@ bun add -g fhevm-wallet
 ## Usage
 
 Run `fhevm-wallet` or the shorter alias `fhew` to start the interactive terminal UI
-(`fhew interactive` does the same):
+(`fhew interactive` does the same; `fhew -n mainnet` starts it on that network):
 
 ```bash
 fhew
@@ -212,8 +212,8 @@ pass show my-wallet | fhew balance --json --password-stdin | jq '.tokens[].forma
 # View current configuration
 fhew config --show
 
-# Set default network
-fhew config --network sepolia
+# Set the default network (-n only picks the network for one command; config refuses it)
+fhew config --default-network sepolia
 
 # Set RPC endpoints (https only; the wallet checks the chain ID before saving).
 # Use - to type the URL hidden, so its key stays out of your shell history.

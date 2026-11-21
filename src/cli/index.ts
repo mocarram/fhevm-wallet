@@ -22,7 +22,7 @@ import { saveEnvVar, settingSource, SettingSource } from '../storage/paths.js';
 import { setCustomRpc } from '../core/network/rpcSettings.js';
 import { clearProviderCache } from '../core/network/ProviderFactory.js';
 import { describeError } from './utils/userError.js';
-import { adoptTypedNetwork } from './utils/networkOption.js';
+import { adoptTypedNetwork, typedNetwork } from './utils/networkOption.js';
 import { maskUrl } from '../utils/redact.js';
 import { validateTokenListUrl } from '../core/token/tokenLists.js';
 import { enterJsonMode, printJson, printJsonError } from './utils/json.js';
@@ -135,7 +135,7 @@ export function createProgram(): Command {
   program
     .command('config')
     .description('View or update configuration')
-    .option('--network <network>', 'Set default network')
+    .option('--default-network <network>', 'Set the default network (sepolia or mainnet)')
     .option('--show', 'Show current configuration')
     .option('--rpc-mainnet <url>', rpcOptionHelp('Mainnet'))
     .option('--rpc-sepolia <url>', rpcOptionHelp('Sepolia'))
@@ -147,18 +147,34 @@ export function createProgram(): Command {
     )
     .option('--json', 'With --show (or no other option): print machine-readable JSON')
     .action(
-      async (options: {
-        network?: string;
-        show?: boolean;
-        rpcMainnet?: string;
-        rpcSepolia?: string;
-        etherscanKey?: string | true;
-        zamaKey?: string | true;
-        tokenListUrl?: string;
-        json?: boolean;
-      }) => {
+      async (
+        options: {
+          defaultNetwork?: string;
+          show?: boolean;
+          rpcMainnet?: string;
+          rpcSepolia?: string;
+          etherscanKey?: string | true;
+          zamaKey?: string | true;
+          tokenListUrl?: string;
+          json?: boolean;
+        },
+        command: Command,
+      ) => {
+        // `fhew config -n mainnet` used to set the default network silently (the global
+        // -n was adopted as config's --network). -n picks the network of one command, and
+        // config has none: refuse it and name the option that changes the default.
+        const typed = typedNetwork(command);
+        if (typed !== undefined) {
+          const message = `-n/--network picks the network for one command; config has none. To change the default network, run: fhew config --default-network ${typed}`;
+          if (options.json) printJsonError('INVALID_OPTION', message);
+          else {
+            console.log(chalk.red(message));
+            process.exitCode = 1;
+          }
+          return;
+        }
         const hasSetOption =
-          options.network ||
+          options.defaultNetwork ||
           options.rpcMainnet ||
           options.rpcSepolia ||
           options.etherscanKey ||
@@ -219,14 +235,14 @@ export function createProgram(): Command {
           return;
         }
 
-        if (options.network) {
-          if (!isValidNetwork(options.network)) {
+        if (options.defaultNetwork) {
+          if (!isValidNetwork(options.defaultNetwork)) {
             console.log(chalk.red('Invalid network. Use "sepolia" or "mainnet"'));
             process.exitCode = 1;
             return;
           }
-          updateConfig({ defaultNetwork: options.network as NetworkName });
-          console.log(chalk.green(`Default network set to ${options.network}`));
+          updateConfig({ defaultNetwork: options.defaultNetwork as NetworkName });
+          console.log(chalk.green(`Default network set to ${options.defaultNetwork}`));
         }
 
         if (options.tokenListUrl) {

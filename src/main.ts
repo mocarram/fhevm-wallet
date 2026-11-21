@@ -8,6 +8,7 @@
 import { createProgram, runInteractiveMode } from './cli/index.js';
 import { describeError } from './cli/utils/userError.js';
 import { clearProviderCache } from './core/network/ProviderFactory.js';
+import { withDefaultCommand } from './cli/utils/networkOption.js';
 
 // Last line of defence: an error no command caught must not print its raw message or
 // stack, which for ethers errors includes the RPC URL and its API key.
@@ -47,7 +48,7 @@ if (process.argv.length <= 2) {
   runInteractiveMode().catch(failSafely);
 } else {
   program
-    .parseAsync(process.argv)
+    .parseAsync([...process.argv.slice(0, 2), ...withDefaultCommand(process.argv.slice(2))])
     .catch(failSafely)
     .finally(() => {
       // The command has printed its result. Relayer SDK requests take no AbortSignal, so

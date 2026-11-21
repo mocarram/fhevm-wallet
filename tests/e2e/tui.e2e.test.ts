@@ -341,6 +341,16 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     expect(screens.join('\n')).not.toMatch(/Transfer confirmed/);
   });
 
+  it('fhew -n mainnet (no command) starts the terminal UI on Mainnet, not the help', () => {
+    const screens = runTui(
+      freshHome(),
+      [{ expect: 'Balances' }, { expect: ' MAINNET ' }, { keys: '0' }, { exit: 0 }],
+      {},
+      ['-n', 'mainnet'],
+    );
+    expect(screens.join('\n')).not.toMatch(/Usage:/);
+  });
+
   it('fhew interactive -n mainnet starts on Mainnet (the flag after the command)', () => {
     const screens = runTui(
       freshHome(),
@@ -617,6 +627,11 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     const bal = run(['balance'], { HOME: home, FHEVM_WALLET_HOME: mockDir, FHEW_BACKEND: 'mock' });
     expect(bal.status).toBe(1);
     expect(bal.stderr).toMatch(/would use the real network/);
+    // An unknown command is just that, not "would use the real network".
+    const typo = run(['balanse'], { HOME: home, FHEVM_WALLET_HOME: mockDir, FHEW_BACKEND: 'mock' });
+    expect(typo.status).toBe(1);
+    expect(typo.stderr).toMatch(/unknown command 'balanse'/);
+    expect(typo.stderr).not.toMatch(/real network/);
     // A real folder with data is never turned into a mock folder.
     const realDir = join(home, 'real-data');
     expect(run(['wallet', 'list'], { HOME: home, FHEVM_WALLET_HOME: realDir }).status).toBe(0);

@@ -1,6 +1,10 @@
 import { Command } from 'commander';
 import { describe, expect, it } from 'vitest';
-import { adoptTypedNetwork, typedNetwork } from '../../../src/cli/utils/networkOption.js';
+import {
+  adoptTypedNetwork,
+  typedNetwork,
+  withDefaultCommand,
+} from '../../../src/cli/utils/networkOption.js';
 
 /** A program shaped like ours: a global -n and subcommands with their own. */
 function program(seen: Record<string, unknown>) {
@@ -34,5 +38,19 @@ describe('adoptTypedNetwork', () => {
     expect(seen.list).toBeUndefined();
     await program(seen).parseAsync(['node', 'fhew', '-n', 'sepolia', 'wallet']);
     expect(seen.wallet).toBe('sepolia');
+  });
+});
+
+describe('withDefaultCommand', () => {
+  it('starts the terminal UI for `fhew -n <network>` alone', () => {
+    expect(withDefaultCommand(['-n', 'sepolia'])).toEqual(['interactive', '-n', 'sepolia']);
+    expect(withDefaultCommand(['--network', 'mainnet'])).toEqual([
+      'interactive',
+      '--network',
+      'mainnet',
+    ]);
+    expect(withDefaultCommand(['--network=sepolia'])).toEqual(['interactive', '--network=sepolia']);
+    expect(withDefaultCommand(['-n', 'sepolia', 'balance'])).toEqual(['-n', 'sepolia', 'balance']);
+    expect(withDefaultCommand(['--help'])).toEqual(['--help']);
   });
 });
