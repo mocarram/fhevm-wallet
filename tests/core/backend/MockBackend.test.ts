@@ -231,15 +231,37 @@ describe('MockBackend: one-signature decrypt, history amounts, operators, disclo
     await expect(m.prepareDisclose(signer, t.address, h, 'sepolia')).rejects.toMatchObject({
       code: 'PUBLIC_DECRYPT_PENDING',
     });
-    await (await m.prepareDiscloseRequest(signer, t.address, h, 'sepolia')).send();
+    // Not in history: refused unless the caller vouches for it (receipt or typed word).
+    await expect(m.prepareDiscloseRequest(signer, t.address, h, 'sepolia')).rejects.toMatchObject({
+      code: 'DISCLOSE_UNKNOWN_HANDLE',
+    });
+    await (
+      await m.prepareDiscloseRequest(signer, t.address, h, 'sepolia', { vouched: true })
+    ).send();
     expect(await m.discloseStage(t.address, h, 'sepolia')).toBe('requested');
     const d = await m.prepareDisclose(signer, t.address, h, 'sepolia');
     expect(d.value).toBe(42n);
     await d.send();
     expect(await m.discloseStage(t.address, h, 'sepolia')).toBe('disclosed');
     await expect(
-      m.prepareDiscloseRequest(Wallet.createRandom(), t.address, h, 'sepolia'),
+      m.prepareDiscloseRequest(Wallet.createRandom(), t.address, h, 'sepolia', { vouched: true }),
     ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+  });
+
+  it('refuses an earlier balance handle passed as a raw handle', async () => {
+    // Regression: only the current balance handle was refused, but the holder keeps ACL
+    // access to its earlier ones, so an old balance could be published for good.
+    const m = new MockBackend(instant);
+    const t = m.catalogue('sepolia')[0];
+    const priv = m as unknown as {
+      balanceHandle(n: string, token: string, wallet: string): string;
+    };
+    const old = priv.balanceHandle('sepolia', t.address, signer.address);
+    await (await m.prepareTransfer(signer, t.address, RECIPIENT, 1n, 'sepolia')).send();
+    expect(priv.balanceHandle('sepolia', t.address, signer.address)).not.toBe(old);
+    await expect(m.prepareDiscloseRequest(signer, t.address, old, 'sepolia')).rejects.toMatchObject(
+      { code: 'DISCLOSE_UNKNOWN_HANDLE' },
+    );
   });
 
   it("refuses to disclose the wallet's own balance handle", async () => {

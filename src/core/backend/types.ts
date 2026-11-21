@@ -18,6 +18,7 @@ import type { KnownToken } from '../token/tokenLists.js';
 import type { ScanOptions, ScanResult } from '../token/tokenScan.js';
 import type { BalanceBatch, SendHooks, TokenInfo, TransferResult } from '../token/TokenService.js';
 import type { DecryptSession } from '../fhe/DecryptSession.js';
+import type { DiscloseRequestOptions } from '../token/txErrors.js';
 
 export type { BalanceBatch } from '../token/TokenService.js';
 
@@ -209,12 +210,18 @@ export interface Backend {
   /** Where an amount handle is in the disclosure flow. */
   discloseStage(tokenAddress: string, handle: string, network: NetworkName): Promise<DiscloseStage>;
 
-  /** Step 1: simulate `requestDiscloseEncryptedAmount(handle)`. Nothing is signed. */
+  /**
+   * Step 1: simulate `requestDiscloseEncryptedAmount(handle)`. Nothing is signed. Refuses
+   * the current balance handle (`DISCLOSE_IS_BALANCE`) and, unless `opts.vouched`, any
+   * handle that is no transfer amount of this wallet in local history
+   * (`DISCLOSE_UNKNOWN_HANDLE`): the holder can still use its earlier balance handles.
+   */
   prepareDiscloseRequest(
     signer: UnlockedSigner,
     tokenAddress: string,
     handle: string,
     network: NetworkName,
+    opts?: DiscloseRequestOptions,
   ): Promise<PreparedTx>;
 
   /**

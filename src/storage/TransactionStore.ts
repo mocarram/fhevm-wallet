@@ -207,6 +207,31 @@ export function listTransactions(options: {
 }
 
 /**
+ * True when `handle` is the amount handle of a stored transfer from or to `walletAddress`
+ * on `network` (and that transfer's token is `tokenAddress`).
+ */
+export function isTransferAmountHandle(options: {
+  walletAddress: string;
+  network: NetworkName;
+  tokenAddress: string;
+  handle: string;
+}): boolean {
+  const h = normaliseHex32(options.handle);
+  const token = options.tokenAddress.toLowerCase();
+  return listTransactions({ ...options, limit: Number.MAX_SAFE_INTEGER }).some(
+    (t) =>
+      t.amountHandle !== undefined &&
+      t.tokenAddress.toLowerCase() === token &&
+      normaliseHex32(t.amountHandle) === h,
+  );
+}
+
+/** Lower-case 0x + 64 hex digits, whatever the padding or case of `hex`. */
+function normaliseHex32(hex: string): string {
+  return '0x' + hex.replace(/^0x/i, '').toLowerCase().padStart(64, '0');
+}
+
+/**
  * Get transactions with encrypted amounts (for decrypt option)
  */
 export function getEncryptedTransactions(options: {

@@ -38,7 +38,11 @@ import {
 import { getAmountEntry } from '../../storage/AmountCache.js';
 import { syncTransactions } from '../token/historySync.js';
 import { checkErc7984, type TokenCheck } from '../token/erc7984Check.js';
-import { pendingPublicDecryption, translateTxError } from '../token/txErrors.js';
+import {
+  pendingPublicDecryption,
+  translateTxError,
+  type DiscloseRequestOptions,
+} from '../token/txErrors.js';
 import { knownTokens } from '../token/tokenLists.js';
 import {
   scanIncoming,
@@ -203,8 +207,9 @@ export class RealBackend implements Backend {
     tokenAddress: string,
     handle: string,
     network: NetworkName,
+    opts?: DiscloseRequestOptions,
   ): Promise<PreparedTx> {
-    return toPreparedTx(await prepareDiscloseRequest(signer, tokenAddress, handle, network));
+    return toPreparedTx(await prepareDiscloseRequest(signer, tokenAddress, handle, network, opts));
   }
 
   async prepareDisclose(

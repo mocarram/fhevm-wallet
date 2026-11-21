@@ -895,6 +895,28 @@ describe('TokenService batch decrypt and disclosure calls', () => {
     contractStubs.getFunction.mockImplementation(() => fn);
     const { prepareDiscloseRequest } = await import('../../../src/core/token/TokenService.js');
     const h = '0x' + 'a'.repeat(60) + '0500';
+    // Unknown handles are refused: the holder keeps ACL access to earlier balances.
+    await expect(
+      prepareDiscloseRequest(signingWallet as never, TOKEN, h, 'sepolia'),
+    ).rejects.toMatchObject({ code: 'DISCLOSE_UNKNOWN_HANDLE' });
+    expect(fn.estimateGas).not.toHaveBeenCalled();
+    // A transfer amount from local history goes ahead.
+    const { upsertTransactions } = await import('../../../src/storage/TransactionStore.js');
+    upsertTransactions([
+      {
+        txHash: '0x' + '1'.repeat(64),
+        type: 'transfer',
+        tokenAddress: TOKEN,
+        tokenSymbol: 'cTOK',
+        from: '0x' + '9'.repeat(40),
+        to: USER,
+        amount: null,
+        amountHandle: h.toUpperCase().replace('0X', '0x'),
+        network: 'sepolia',
+        blockNumber: 1,
+        timestamp: new Date(0).toISOString(),
+      },
+    ]);
     const p = await prepareDiscloseRequest(signingWallet as never, TOKEN, h, 'sepolia');
     expect(contractStubs.getFunction).toHaveBeenCalledWith(
       'requestDiscloseEncryptedAmount(bytes32)',

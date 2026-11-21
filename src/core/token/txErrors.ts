@@ -37,6 +37,7 @@ export type TxErrorCode =
   | 'RPC_BAD_ANSWER'
   | 'PUBLIC_DECRYPT_PENDING'
   | 'DISCLOSE_IS_BALANCE'
+  | 'DISCLOSE_UNKNOWN_HANDLE'
   | 'UNKNOWN';
 
 /** A user-facing transaction error. `raw` is only shown when the user asks for details. */
@@ -637,4 +638,28 @@ export function discloseIsBalanceError(): WalletTxError {
     'Disclosing it would make your whole balance public, for good.',
     'Pass the transaction hash of the transfer you want to disclose.',
   );
+}
+
+/**
+ * Refusal to disclose a handle that is no known transfer amount of this wallet. The
+ * holder keeps ACL access to its earlier balance handles, so an unchecked handle could
+ * publish an old balance for good.
+ */
+export function discloseUnknownHandleError(): WalletTxError {
+  return new WalletTxError(
+    'DISCLOSE_UNKNOWN_HANDLE',
+    "That handle is not a transfer amount in this wallet's history.",
+    'It could be an earlier balance of this wallet; disclosing it would publish that for good.',
+    'Pass the transaction hash of the transfer, or run `fhew history` first to sync it.',
+  );
+}
+
+/** Options for disclosure step 1. */
+export interface DiscloseRequestOptions {
+  /**
+   * The caller already checked the handle some other way: it came from the transfer's
+   * receipt, or the user typed an explicit confirmation. Otherwise the handle must be a
+   * transfer amount in local history.
+   */
+  vouched?: boolean;
 }

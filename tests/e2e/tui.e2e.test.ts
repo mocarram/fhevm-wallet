@@ -638,6 +638,18 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     expect(doc(['disclose', tx.txHash, '--password-stdin', '--yes']).json.status).toBe(
       'alreadyDisclosed',
     );
+    // A raw handle that is no transfer in history (say, an earlier balance) is refused
+    // without a terminal, before the password is read.
+    const raw = doc([
+      'disclose',
+      '0x' + 'ab'.repeat(32),
+      '--token',
+      'cUSDC',
+      '--password-stdin',
+      '--yes',
+    ]);
+    expect(raw.res.status).toBe(1);
+    expect(raw.json.error.code).toBe('DISCLOSE_UNKNOWN_HANDLE');
 
     const set = doc(['operator', 'set', 'bob', '--for', '1d', '--password-stdin', '--yes']);
     expect(set.res.status).toBe(0);

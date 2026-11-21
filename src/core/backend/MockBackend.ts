@@ -29,7 +29,11 @@ import {
   type DecryptAuthority,
 } from '../fhe/DecryptSession.js';
 import { getAmountEntry } from '../../storage/AmountCache.js';
-import { getTransactionByHash, listTransactions } from '../../storage/TransactionStore.js';
+import {
+  getTransactionByHash,
+  isTransferAmountHandle,
+  listTransactions,
+} from '../../storage/TransactionStore.js';
 import { getCachedBalance } from '../token/BalanceCache.js';
 import type { NetworkName } from '../network/NetworkConfig.js';
 import { NETWORK_CONFIGS } from '../network/NetworkConfig.js';
@@ -39,6 +43,8 @@ import {
   sentButUnconfirmed,
   translateTxError,
   discloseIsBalanceError,
+  discloseUnknownHandleError,
+  type DiscloseRequestOptions,
   WalletTxError,
 } from '../token/txErrors.js';
 import { ERC7984_INTERFACE, type TokenInfo } from '../token/TokenService.js';
@@ -485,10 +491,18 @@ export class MockBackend implements Backend {
     tokenAddress: string,
     handle: string,
     network: NetworkName,
+    opts: DiscloseRequestOptions = {},
   ): Promise<PreparedTx> {
     const h = normaliseHandle(handle);
     if (h === this.balanceHandle(network, tokenAddress, signer.address)) {
       throw discloseIsBalanceError();
+    }
+    // Same rule as the real backend: earlier balance handles stay usable by the holder.
+    if (
+      !opts.vouched &&
+      !isTransferAmountHandle({ walletAddress: signer.address, network, tokenAddress, handle })
+    ) {
+      throw discloseUnknownHandleError();
     }
     this.recallHandle(h, network, signer.address);
     if (!this.handles.get(h)?.allowed.has(signer.address.toLowerCase())) {

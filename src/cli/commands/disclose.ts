@@ -28,10 +28,11 @@ import { listTokens } from '../../core/token/TokenRegistry.js';
 import { formatTxError, translateTxError } from '../../core/token/txErrors.js';
 import { getCachedAmount, setCachedAmounts } from '../../storage/AmountCache.js';
 import { getTransactionByHash, listTransactions } from '../../storage/TransactionStore.js';
-import { bold } from '../../utils/formatting.js';
+import { bold, warning } from '../../utils/formatting.js';
 import { MAINNET_OPTION_HELP } from '../utils/mainnetGuard.js';
 import { PASSWORD_STDIN_HELP } from '../utils/passwordInput.js';
 import { printJson } from '../utils/json.js';
+import { prompts } from '../utils/prompts.js';
 import {
   confirmAndSend,
   fail,
@@ -140,6 +141,25 @@ async function disclose(ref: string, options: DiscloseOptions): Promise<void> {
     console.log(chalk.green('This amount is already public: you disclosed it earlier.'));
     return;
   }
+  // A raw handle can be one of this wallet's earlier balances (the holder keeps ACL access
+  // to them): publishing it would reveal that balance for good. Ask for the word typed out.
+  if (target.source === 'raw') {
+    const why =
+      "That handle is not a transfer amount in this wallet's history. It could be an earlier balance, which disclosing would publish for good.";
+    if (options.yes || options.json || !process.stdin.isTTY || options.passwordStdin) {
+      return fail(
+        `${why} Pass the transfer's transaction hash, or run \`fhew history\` first to sync it.`,
+        'DISCLOSE_UNKNOWN_HANDLE',
+      );
+    }
+    console.log(warning(why));
+    const typed = await prompts.input({
+      message: `Type ${RAW_HANDLE_CONFIRMATION} if you are sure it is a transfer amount:`,
+    });
+    if (typed.trim().toLowerCase() !== RAW_HANDLE_CONFIRMATION) {
+      return fail('Stopped. Nothing was signed or sent.', 'CANCELLED');
+    }
+  }
   const wallet = await unlockWallet(walletRef.name, network, options.passwordStdin);
   if (!wallet) return;
 
@@ -149,7 +169,10 @@ async function disclose(ref: string, options: DiscloseOptions): Promise<void> {
     request ? { requestTxHash: request.txHash, requestExplorerUrl: request.explorerUrl } : {};
   if (stage === 'private') {
     const req = await prepareWithSpinner('Simulating step 1 (disclosure request)...', () =>
-      backend.prepareDiscloseRequest(wallet, token.address, handle, network),
+      // History handles are checked by the backend; the others were checked above.
+      backend.prepareDiscloseRequest(wallet, token.address, handle, network, {
+        vouched: target.source !== 'history',
+      }),
     );
     if (!req) return;
     // Show what will become public before anything is signed.
@@ -279,6 +302,14 @@ async function knownAmount(
   }
 }
 
+/** Where a disclosure target came from: only `raw` is unchecked. */
+interface Target extends AmountRequest {
+  source: 'history' | 'receipt' | 'raw';
+}
+
+/** The word to type to disclose a handle that is no known transfer amount. */
+const RAW_HANDLE_CONFIRMATION = 'disclose';
+
 /** Resolve a tx hash or handle to (token, handle): local history first, then the receipt. */
 async function findTarget(
   ref: string,
@@ -286,19 +317,23 @@ async function findTarget(
   network: 'mainnet' | 'sepolia',
   options: DiscloseOptions,
   backend: ReturnType<typeof createBackend>,
-): Promise<AmountRequest | null> {
+): Promise<Target | null> {
   const byHash = getTransactionByHash(ref);
-  if (byHash?.amountHandle) return { token: byHash.tokenAddress, handle: byHash.amountHandle };
+  if (byHash?.amountHandle) {
+    return { token: byHash.tokenAddress, handle: byHash.amountHandle, source: 'history' };
+  }
   const byHandle = listTransactions({ walletAddress: wallet, network, limit: 10_000 }).find(
     (t) => t.amountHandle?.toLowerCase() === ref.toLowerCase(),
   );
-  if (byHandle) return { token: byHandle.tokenAddress, handle: byHandle.amountHandle! };
+  if (byHandle) {
+    return { token: byHandle.tokenAddress, handle: byHandle.amountHandle!, source: 'history' };
+  }
   const tokens = listTokens(network).map((t) => t.address);
   const found = await backend.findTransferHandle(ref, wallet, tokens, network).catch(() => null);
-  if (found) return found;
+  if (found) return { ...found, source: 'receipt' };
   if (options.token) {
     const t = pickToken(network, options.token);
-    return t ? { token: t.address, handle: ref } : null;
+    return t ? { token: t.address, handle: ref, source: 'raw' } : null;
   }
   fail(
     'No confidential transfer of this wallet found for that hash. Run `fhew history` first, or pass the amount handle with --token.',

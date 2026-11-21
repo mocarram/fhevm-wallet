@@ -16,6 +16,8 @@ import {
 import {
   DecryptionFailedError,
   discloseIsBalanceError,
+  discloseUnknownHandleError,
+  type DiscloseRequestOptions,
   isEmptyRevert,
   isNoContractAnswer,
   sentButUnconfirmed,
@@ -29,7 +31,7 @@ import { decryptBalance } from '../fhe/DecryptionService.js';
 import { CHAIN_IDS } from '../network/NetworkConfig.js';
 import { logEvent, type AuditEvent } from '../../storage/AuditLog.js';
 import { normaliseHandle, type DecryptSession } from '../fhe/DecryptSession.js';
-import { recordLocalTransaction } from '../../storage/TransactionStore.js';
+import { isTransferAmountHandle, recordLocalTransaction } from '../../storage/TransactionStore.js';
 import { getCachedBalance, setCachedBalance, invalidateBalance } from './BalanceCache.js';
 import { MAX_EUINT64 } from './limits.js';
 
@@ -1280,10 +1282,18 @@ export async function prepareDiscloseRequest(
   tokenAddress: string,
   handle: string,
   network: NetworkName,
+  opts: DiscloseRequestOptions = {},
 ): Promise<PreparedCall> {
   // The contract would accept the wallet's own balance handle and publish the balance.
   const balance = await getEncryptedBalance(tokenAddress, wallet.address, network);
   if (normaliseHandle(balance) === normaliseHandle(handle)) throw discloseIsBalanceError();
+  // ...and any earlier balance handle too: only known transfer amounts go ahead.
+  if (
+    !opts.vouched &&
+    !isTransferAmountHandle({ walletAddress: wallet.address, network, tokenAddress, handle })
+  ) {
+    throw discloseUnknownHandleError();
+  }
   return prepareTokenCall(wallet, tokenAddress, network, {
     fn: 'requestDiscloseEncryptedAmount(bytes32)',
     args: [normaliseHandle(handle)],

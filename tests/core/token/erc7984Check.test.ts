@@ -88,7 +88,12 @@ describe('checkErc7984', () => {
     const r = await checkErc7984(fakeCall(good), TOKEN);
     expect(r.compliant).toBe(true);
     expect(r.erc165).toBe('yes');
-    expect(r.info).toEqual({ address: TOKEN, name: 'Confidential USD', symbol: 'cUSD', decimals: 6 });
+    expect(r.info).toEqual({
+      address: TOKEN,
+      name: 'Confidential USD',
+      symbol: 'cUSD',
+      decimals: 6,
+    });
     expect(r.problems).toEqual([]);
   });
 

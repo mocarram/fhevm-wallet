@@ -226,6 +226,10 @@ Every unit of work goes through this loop until it comes out clean:
 - Transactions other than transfers (operators, disclosure) use `prepareTokenCall` in
   `TokenService` (chain check, simulation, fee, ETH check, then `signAndBroadcast`) and,
   in the TUI, `src/tui/flows/tx.ts` (review, confirm, countdown, background broadcast).
+- Disclosure step 1 refuses the wallet's current balance handle and any handle that is
+  no transfer amount of the wallet in local history (the holder keeps ACL access to its
+  earlier balance handles). Callers pass `{ vouched: true }` only for a handle taken from
+  the transfer's receipt or after the user typed `disclose` at a terminal.
 - With `FHEW_BACKEND=mock` only commands that route every network call through the
   Backend may run (`MOCK_COMMANDS` in `src/core/backend/mockGuard.ts`).
 - Set `FHEW_DEBUG=1` to print redacted technical details under error messages
