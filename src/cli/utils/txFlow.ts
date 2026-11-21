@@ -3,6 +3,10 @@
  * (`fhew operator set|revoke`, `fhew disclose`): pick the wallet and token, unlock, and
  * the send-safety tail (summary with fee → explicit confirm or --yes → sign and
  * broadcast → SENT_UNCONFIRMED keeps the hash, never "try again").
+ *
+ * With `--json` (`startJsonOutput`) human output moves to stderr, `fail` prints
+ * `{"error": {code, message}}` on stdout, and an error after the broadcast carries
+ * `txHash` and `explorerUrl` (check those before trying again).
  */
 
 import { formatEther } from 'ethers';
@@ -17,21 +21,70 @@ import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.j
 import { error, formatNetworkName, warning } from '../../utils/formatting.js';
 import { isValidNetwork } from '../../utils/validation.js';
 import { MAINNET_GUARD_CODE, mainnetGuardProblem } from './mainnetGuard.js';
+import { jsonErrorOf, printJson } from './json.js';
 import { walletPassword } from './passwordInput.js';
 import { prompts } from './prompts.js';
 import { describeError } from './userError.js';
 
-/** Print an error and mark the command as failed. `code` is used by --json output. */
-export function fail(message: string, _code = 'ERROR'): void {
+/** Set by `startJsonOutput`: errors go out as JSON on stdout. */
+let jsonMode = false;
+
+/**
+ * Switch this command to `--json` output: console.log goes to stderr (summaries, notes),
+ * so stdout carries only the JSON document. Returns the function that switches back.
+ */
+export function startJsonOutput(): () => void {
+  jsonMode = true;
+  const original = console.log;
+  console.log = (...args: unknown[]) => console.error(...args);
+  return () => {
+    console.log = original;
+    jsonMode = false;
+  };
+}
+
+/** True while `--json` output is on (see `startJsonOutput`). */
+export function isJsonOutput(): boolean {
+  return jsonMode;
+}
+
+/**
+ * Print an error and mark the command as failed. With --json: `{"error": {code, message,
+ * ...extra}}` (extra holds `txHash`/`explorerUrl` once something was broadcast).
+ */
+export function fail(message: string, code = 'ERROR', extra: Record<string, string> = {}): void {
   process.exitCode = 1;
-  console.log(error(message));
+  if (jsonMode) printJson({ error: { code, message, ...extra } });
+  else console.log(error(message));
+}
+
+/** `fail` for a caught error: the wallet's own code with --json, a translated message. */
+export function failWith(err: unknown, fallback: string): void {
+  if (jsonMode) {
+    const e = jsonErrorOf(err, fallback);
+    return fail(e.message, e.code);
+  }
+  fail(describeError(err, fallback));
+}
+
+/**
+ * With --json nobody can answer a prompt: require `--yes` and `--password-stdin` up
+ * front. False (and PROMPT_NOT_ALLOWED printed) when one is missing.
+ */
+export function jsonPromptsCovered(options: { yes?: boolean; passwordStdin?: boolean }): boolean {
+  if (!jsonMode || (options.yes && options.passwordStdin)) return true;
+  fail(
+    'With --json, pass --yes and --password-stdin: there is nobody to answer prompts.',
+    'PROMPT_NOT_ALLOWED',
+  );
+  return false;
 }
 
 /** The network from `-n`, or the default. Null (and an error printed) when invalid. */
 export function pickNetwork(option?: string): NetworkName | null {
   if (!option) return getDefaultNetwork();
   if (!isValidNetwork(option)) {
-    fail('Invalid network. Use "sepolia" or "mainnet"');
+    fail('Invalid network. Use "sepolia" or "mainnet"', 'INVALID_NETWORK');
     return null;
   }
   return option;
@@ -64,19 +117,23 @@ export function mainnetAllowed(
 export function pickToken(network: NetworkName, text?: string): TokenEntry | null {
   const tokens = listTokens(network);
   if (!tokens.length) {
-    fail(`No tokens tracked on ${network}. Add one with: fhevm-wallet token add <address>`);
+    fail(
+      `No tokens tracked on ${network}. Add one with: fhevm-wallet token add <address>`,
+      'NO_TOKENS',
+    );
     return null;
   }
   if (!text) {
     if (tokens.length === 1) return tokens[0];
     fail(
       `Several tokens are tracked. Pick one with --token (${tokens.map((t) => t.symbol).join(', ')}).`,
+      'TOKEN_AMBIGUOUS',
     );
     return null;
   }
   const r = resolveToken(text, tokens);
   if (!r.ok) {
-    fail(r.error);
+    fail(r.error, 'TOKEN_NOT_TRACKED');
     return null;
   }
   return r.token;
@@ -90,6 +147,7 @@ export function pickWallet(name?: string): { name: string; address: string } | n
       walletName
         ? `Wallet "${walletName}" not found`
         : 'No default wallet. Pass -w <name> or create one with: fhevm-wallet wallet create',
+      walletName ? 'WALLET_NOT_FOUND' : 'NO_WALLET',
     );
     return null;
   }
@@ -110,7 +168,8 @@ export async function unlockWallet(
     return w;
   } catch (err) {
     spin.fail('Failed to decrypt wallet');
-    fail(describeError(err, 'Invalid password'));
+    if (jsonMode) fail(jsonErrorOf(err, 'Invalid password').message, 'WALLET_UNLOCK_FAILED');
+    else fail(describeError(err, 'Invalid password'));
     return null;
   }
 }
@@ -127,15 +186,24 @@ export async function prepareWithSpinner<T>(
     return r;
   } catch (err) {
     spin.fail('Stopped. Nothing was signed or sent.');
-    fail(formatTxError(translateTxError(err)));
+    const e = translateTxError(err);
+    fail(formatTxError(e), e.code);
     return null;
   }
 }
 
+/** A transaction `confirmAndSend` saw confirmed. */
+export interface SentTx {
+  txHash: string;
+  blockNumber: number;
+  explorerUrl: string;
+}
+
 /**
  * Show the summary and fee, ask for an explicit confirmation (or take --yes; without a
- * terminal --yes is required), then sign, broadcast and wait. Returns the hash, or null
- * when cancelled or failed (the error, with the hash once broadcast, is printed).
+ * terminal --yes is required), then sign, broadcast and wait. Returns the confirmed
+ * transaction, or null when cancelled or failed (the error, with the hash once
+ * broadcast, is printed). `extra` is added to a JSON error (e.g. an earlier step's hash).
  */
 export async function confirmAndSend(opts: {
   backend: Backend;
@@ -146,7 +214,8 @@ export async function confirmAndSend(opts: {
   warnings?: string[];
   yes?: boolean;
   question: string;
-}): Promise<string | null> {
+  extra?: Record<string, string>;
+}): Promise<SentTx | null> {
   const { backend, network, prepared } = opts;
   console.log();
   console.log(opts.title);
@@ -160,7 +229,10 @@ export async function confirmAndSend(opts: {
   console.log();
   if (!opts.yes) {
     if (!process.stdin.isTTY) {
-      fail('Nothing was sent: confirm in a terminal, or pass --yes to go ahead without asking.');
+      fail(
+        'Nothing was sent: confirm in a terminal, or pass --yes to go ahead without asking.',
+        'PROMPT_NOT_ALLOWED',
+      );
       return null;
     }
     const ok = await prompts.confirm({ message: opts.question, default: false });
@@ -173,15 +245,21 @@ export async function confirmAndSend(opts: {
   try {
     const r = await prepared.send();
     spin.succeed('Transaction confirmed');
+    const explorerUrl = backend.explorerTxUrl(r.txHash, network);
     console.log(`  Transaction: ${r.txHash}`);
-    console.log(`  Explorer:    ${backend.explorerTxUrl(r.txHash, network)}`);
-    return r.txHash;
+    console.log(`  Explorer:    ${explorerUrl}`);
+    return { txHash: r.txHash, blockNumber: r.blockNumber, explorerUrl };
   } catch (err) {
     const e = translateTxError(err);
     if (e.code === 'SENT_UNCONFIRMED') spin.warn('Sent, not confirmed yet');
     else if (e.code === 'TX_REPLACED') spin.warn('Transaction replaced');
     else spin.fail(e.code === 'TX_REVERTED' ? 'Transaction reverted' : 'Transaction failed');
-    fail(formatTxError(e));
+    const extra: Record<string, string> = { ...opts.extra };
+    if (e.txHash) {
+      extra.txHash = e.txHash;
+      extra.explorerUrl = backend.explorerTxUrl(e.txHash, network);
+    }
+    fail(formatTxError(e), e.code, extra);
     return null;
   }
 }

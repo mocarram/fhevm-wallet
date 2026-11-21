@@ -588,6 +588,46 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     expect(res.status).toBe(0);
   });
 
+  it('--json for history --decrypt, disclose and operator list|set|revoke', () => {
+    const home = freshHome();
+    const doc = (args: string[]) => {
+      const res = cli(home, [...args, '--json']);
+      return { res, json: JSON.parse(res.stdout) };
+    };
+    const hist = doc(['history', '--decrypt', '--password-stdin']);
+    expect(hist.res.status).toBe(0);
+    expect(hist.json.decrypt).toEqual({ decrypted: 1, hidden: 0, failed: 0 });
+    const tx = hist.json.transactions.find((t: { amountHandle?: string }) => t.amountHandle);
+    expect(tx.amount).toMatch(/^25(\.0+)?$/);
+    expect(tx.amountBaseUnits).toBe('25000000');
+
+    const dis = doc(['disclose', tx.txHash, '--password-stdin', '--yes']);
+    expect(dis.res.status).toBe(0);
+    expect(dis.json.status).toBe('disclosed');
+    expect(dis.json.amount).toEqual({ baseUnits: '25000000', formatted: '25' });
+    expect(dis.json.requestTxHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(dis.json.txHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(doc(['disclose', tx.txHash, '--password-stdin', '--yes']).json.status).toBe(
+      'alreadyDisclosed',
+    );
+
+    const set = doc(['operator', 'set', 'bob', '--for', '1d', '--password-stdin', '--yes']);
+    expect(set.res.status).toBe(0);
+    expect(set.json).toMatchObject({ status: 'confirmed', action: 'set', mock: true });
+    expect(set.json.operator.contact).toBe('bob');
+    expect(set.json.until).toBeGreaterThan(Date.now() / 1000);
+    // The mock keeps operator grants in memory, so a new process starts without them.
+    const list = doc(['operator', 'list', 'bob']);
+    expect(list.json.operators).toEqual([
+      { address: set.json.operator.address, contact: 'bob', isOperator: false },
+    ]);
+    const rev = doc(['operator', 'revoke', 'bob', '--password-stdin', '--yes']);
+    expect(rev.json).toMatchObject({ status: 'confirmed', action: 'revoke', until: 0 });
+    const bad = doc(['operator', 'set', 'bob', '--for', 'soon', '--password-stdin', '--yes']);
+    expect(bad.res.status).toBe(1);
+    expect(bad.json.error.code).toBe('INVALID_EXPIRY');
+  });
+
   it('fhew operator set and revoke in a terminal, with confirmation', () => {
     const home = freshHome();
     runTui(

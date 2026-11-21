@@ -189,14 +189,18 @@ fhew receive           # address and QR code; --eip681 puts the network in the Q
 
 ### JSON output
 
-`fhew wallet list`, `token list`, `token find`, `balance`, `history`, `config --show`,
-`doctor`, `receive` and `send` accept `--json`: one JSON document on stdout, stable
+`fhew wallet list`, `token list`, `token find`, `balance`, `history` (also with
+`--decrypt`), `config --show`, `doctor`, `receive`, `send`, `operator list|set|revoke` and
+`disclose` accept `--json`: one JSON document on stdout, stable
 camelCase keys, amounts in base units as strings, no colours. Errors are
 `{"error": {"code": "...", "message": "..."}}` with exit code 1 (send errors after a
 broadcast also carry `txHash` and `explorerUrl`: check those before sending again). RPC URLs
 and keys are masked like in the text output. Prompts would break the JSON, so `balance`
 needs `--password-stdin`, and `send` needs `--password-stdin`, `--yes`, a recipient and an
-amount.
+amount. The same goes for `history --decrypt` (`--password-stdin`) and `operator set|revoke`
+and `disclose` (`--password-stdin` and `--yes`; their errors after a broadcast carry
+`txHash`, and a failed second disclosure step also `requestTxHash`). `disclose` reports
+`status` `disclosed`, `alreadyDisclosed` or `pending`.
 
 ```bash
 pass show my-wallet | fhew balance --json --password-stdin | jq '.tokens[].formatted'

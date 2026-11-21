@@ -58,7 +58,9 @@ describe('--json output', () => {
     setDefaultWallet('alice');
     const doc = JSON.parse(await stdoutOf('wallet', 'list', '--json'));
     expect(doc).toEqual({
-      wallets: [{ name: 'alice', address: ADDRESS, createdAt: expect.any(String), isDefault: true }],
+      wallets: [
+        { name: 'alice', address: ADDRESS, createdAt: expect.any(String), isDefault: true },
+      ],
     });
   });
 
@@ -87,7 +89,11 @@ describe('--json output', () => {
     expect(out).not.toContain('SECRETKEY1234567890');
     expect(out).not.toContain('ETHERSCANKEY123456');
     const doc = JSON.parse(out);
-    expect(doc.rpc.sepolia).toEqual({ url: 'https://rpc.example/…', custom: true, source: 'environment' });
+    expect(doc.rpc.sepolia).toEqual({
+      url: 'https://rpc.example/…',
+      custom: true,
+      source: 'environment',
+    });
     expect(doc.rpc.mainnet.custom).toBe(false);
     expect(doc.apiKeys.etherscan).toEqual({ set: true, last4: '3456', source: 'environment' });
     expect(doc.apiKeys.zama).toEqual({ set: false });
@@ -105,5 +111,33 @@ describe('--json output', () => {
     expect(bal.error.code).toBe('PASSWORD_STDIN_REQUIRED');
     const hist = JSON.parse(await stdoutOf('history', '--json', '-a', 'nope'));
     expect(hist.error.code).toBe('INVALID_ADDRESS');
+  });
+
+  it('operator and disclose refuse prompts and report errors as JSON', async () => {
+    saveWalletKeystore('alice', '{}', ADDRESS);
+    setDefaultWallet('alice');
+    const none = JSON.parse(await stdoutOf('operator', 'list', '--json'));
+    expect(none.error.code).toBe('NO_TOKENS');
+    addTokenWithInfo({ address: TOKEN, name: 'Tok', symbol: 'TOK', decimals: 6 }, 'sepolia');
+    const set = JSON.parse(
+      await stdoutOf('operator', 'set', TOKEN, '--for', '1d', '-n', 'sepolia', '--json'),
+    );
+    expect(set.error.code).toBe('PROMPT_NOT_ALLOWED');
+    const main = JSON.parse(
+      await stdoutOf('operator', 'revoke', TOKEN, '-n', 'mainnet', '--yes', '--json'),
+    );
+    expect(main.error.code).toBe('MAINNET_NOT_CONFIRMED');
+    const dis = JSON.parse(
+      await stdoutOf('disclose', 'nope', '-n', 'sepolia', '--yes', '--password-stdin', '--json'),
+    );
+    expect(dis.error.code).toBe('INVALID_REF');
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('history --decrypt --json needs --password-stdin', async () => {
+    saveWalletKeystore('alice', '{}', ADDRESS);
+    setDefaultWallet('alice');
+    const doc = JSON.parse(await stdoutOf('history', '--decrypt', '--json'));
+    expect(doc.error.code).toBe('PASSWORD_STDIN_REQUIRED');
   });
 });
