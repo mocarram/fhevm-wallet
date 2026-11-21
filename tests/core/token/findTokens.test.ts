@@ -124,6 +124,29 @@ describe('token lists', () => {
     expect(() => tokensFromList({ nope: 1 }, 'sepolia', 'x')).toThrow(/not a token list/);
   });
 
+  it('stops reading a chunked token list once it passes the size limit', async () => {
+    // Regression: res.text() buffered the whole body when Content-Length was missing.
+    let pulled = 0;
+    let cancelled = false;
+    const chunk = new Uint8Array(64 * 1024).fill(0x20);
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const chunked = (async () => new Response(endless, { status: 200 })) as typeof fetch;
+    await expect(refreshTokenList('https://lists.example/big.json', chunked)).rejects.toThrow(
+      /too large/,
+    );
+    expect(cancelled).toBe(true);
+    // 1 MB of 64 KiB chunks, plus the stream's small read-ahead.
+    expect(pulled).toBeLessThan(25);
+  });
+
   it('refreshes from a URL with checks, caches it, and falls back on failure', async () => {
     const body = JSON.stringify({
       tokens: [{ chainId: 11155111, address: A, name: 'Listed', symbol: 'cLST', decimals: 6 }],

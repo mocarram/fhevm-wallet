@@ -146,9 +146,9 @@ export async function refreshTokenList(
   if (!res.ok) throw new Error(`The token list URL answered with HTTP ${res.status}.`);
   const declared = Number(res.headers.get('content-length') ?? '0');
   if (declared > MAX_TOKEN_LIST_BYTES) throw new Error('That token list is too large (over 1 MB).');
-  const text = await res.text();
-  if (text.length > MAX_TOKEN_LIST_BYTES)
-    throw new Error('That token list is too large (over 1 MB).');
+  // Content-Length can be missing (chunked) or false, so count while reading and stop
+  // at the limit instead of buffering whatever the server sends.
+  const text = await readBodyCapped(res, MAX_TOKEN_LIST_BYTES);
   let raw: unknown;
   try {
     raw = JSON.parse(text);
@@ -163,6 +163,34 @@ export async function refreshTokenList(
     JSON.stringify({ url, fetchedAt: new Date().toISOString(), list: raw }),
   );
   return raw;
+}
+
+/** Read `res`'s body as UTF-8, cancelling the download once it passes `max` bytes. */
+async function readBodyCapped(res: Response, max: number): Promise<string> {
+  const tooLarge = () => new Error('That token list is too large (over 1 MB).');
+  if (!res.body) return '';
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > max) {
+        // Closes the connection; the rest of the body is never read.
+        await reader.cancel().catch(() => {});
+        throw tooLarge();
+      }
+      chunks.push(value);
+    }
+  } catch (err) {
+    if (total > max) throw err;
+    throw new Error('The token list download was cut off. Try again.');
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 /** Re-download the configured list when the cached copy is older than this. */
