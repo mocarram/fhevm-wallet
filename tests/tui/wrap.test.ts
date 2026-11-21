@@ -21,12 +21,12 @@ describe('Wrap', () => {
   it('Balances › w: shows both balances, the exact result, the steps; wraps and re-decrypts', async () => {
     const h = new Harness({ unlocked: true });
     await h.keys('b');
-    expect(h.text()).toMatch(/↳ wraps USDC · 500 USDC public in this wallet/);
+    expect(h.text()).toMatch(/↳ wraps USDC · 500\.00 USDC public in this wallet/);
     await h.keys('w'); // the only wrapper: straight to its Wrap screen
     expect(h.screen).toBe('wrap');
     let t = h.text();
     expect(t).toMatch(/Wrap USDC into cUSDC/);
-    expect(t).toMatch(/USDC\s+500\s+public, in this wallet/);
+    expect(t).toMatch(/USDC\s+500\.00\s+public, in this wallet/);
     expect(t).toMatch(/cUSDC\s+1,250\.00\s+confidential/);
     expect(t).toMatch(/1 cUSDC = 1 USDC/);
     await h.keys('25');
@@ -34,16 +34,16 @@ describe('Wrap', () => {
     await h.keys('{enter}');
     expect(h.screen).toBe('tx-review');
     t = h.text();
-    expect(t).toMatch(/Wrap 25 USDC into 25 cUSDC/);
+    expect(t).toMatch(/Wrap 25\.00 USDC into 25\.00 cUSDC/);
     expect(t).toMatch(/wrapped amount is public on-chain/);
-    expect(t).toMatch(/Approve cUSDC to take exactly 25 USDC \(not unlimited\)/);
+    expect(t).toMatch(/Approve cUSDC to take exactly 25\.00 USDC \(not unlimited\)/);
     expect(t).toMatch(/Wrap \(simulated after the approval\)/);
     expect(t).toMatch(/Simulation passed/);
     await confirm(h);
     expect(h.screen).toBe('home');
     t = h.text();
-    expect(t).toMatch(/✔ Wrapped 25 USDC → 25 cUSDC/);
-    expect(t).toMatch(/cUSDC 1,250 → 1,275/);
+    expect(t).toMatch(/✔ Wrapped 25\.00 USDC → 25\.00 cUSDC/);
+    expect(t).toMatch(/cUSDC 1,250\.00 → 1,275\.00/);
     expect(h.s.balances[h.backend.catalogue('sepolia')[0].address.toLowerCase()].value).toBe(
       1_275_000_000n,
     );
@@ -86,15 +86,15 @@ describe('Unwrap', () => {
     expect(h.screen).toBe('unwrap');
     expect(h.text()).toMatch(/Unwrap cUSDC into USDC/);
     await h.keys('10');
-    expect(h.text()).toMatch(/You get 10 USDC \(public\)\./);
+    expect(h.text()).toMatch(/You get 10\.00 USDC \(public\)\./);
     await h.keys('{enter}');
     const t = h.text();
-    expect(t).toMatch(/Unwrap 10 cUSDC into 10 USDC/);
+    expect(t).toMatch(/Unwrap 10\.00 cUSDC into 10\.00 USDC/);
     expect(t).toMatch(/unwrapped amount becomes public/);
-    expect(t).toMatch(/Step 1\s+Request: burns 10 cUSDC/);
+    expect(t).toMatch(/Step 1\s+Request: burns 10\.00 cUSDC/);
     expect(t).toMatch(/Step 2\s+Finish: publish the decrypted amount/);
     await confirm(h);
-    expect(h.text()).toMatch(/✔ Unwrapped 10 cUSDC: 10 USDC arrived/);
+    expect(h.text()).toMatch(/✔ Unwrapped 10\.00 cUSDC: 10\.00 USDC arrived/);
     expect(listUnwraps({ open: true })).toEqual([]);
     expect(listUnwraps()[0]).toMatchObject({ state: 'finished', finishedBy: 'wallet' });
   });
@@ -112,9 +112,9 @@ describe('Unwrap', () => {
     await h.keys('b');
     await h.keys('w', '{tab}', '10', '{enter}');
     await confirm(h);
-    expect(h.text()).toMatch(/Step 1 done: 10 cUSDC → USDC\. Not decryptable yet/);
+    expect(h.text()).toMatch(/Step 1 done: 10\.00 cUSDC → USDC\. Not decryptable yet/);
     await h.settle();
-    expect(h.text()).toMatch(/Finish unwrap: 10 cUSDC → USDC\s+step 1 done, waiting to finish/);
+    expect(h.text()).toMatch(/Finish unwrap: 10\.00 cUSDC → USDC\s+step 1 done, waiting to finish/);
 
     // Still not decryptable: the Review's check says so and nothing is sent.
     await h.keys('u');
@@ -125,12 +125,26 @@ describe('Unwrap', () => {
     (h.backend as unknown as { opts: { fail?: string } }).opts.fail = undefined;
     await h.keys('{ctrl-c}', 'u');
     expect(h.screen).toBe('tx-review');
-    expect(h.text()).toMatch(/Finish unwrap: 10 cUSDC → USDC/);
-    expect(h.text()).toMatch(/You get\s+10 USDC/);
+    expect(h.text()).toMatch(/Finish unwrap: 10\.00 cUSDC → USDC/);
+    expect(h.text()).toMatch(/You get\s+10\.00 USDC/);
     await confirm(h);
-    expect(h.text()).toMatch(/✔ Unwrapped 10 cUSDC: 10 USDC arrived/);
+    expect(h.text()).toMatch(/✔ Unwrapped 10\.00 cUSDC: 10\.00 USDC arrived/);
     await h.settle();
     expect(h.text()).not.toMatch(/Finish unwrap:/);
     expect(listUnwraps()[0]).toMatchObject({ state: 'finished' });
+  });
+});
+
+describe('a wrap that ends unconfirmed', () => {
+  it('keeps the hash, says not to send again and re-checks later', async () => {
+    const h = new Harness({ unlocked: true, mock: { fail: 'unconfirmed' } });
+    await h.keys('b');
+    await h.keys('w');
+    await h.keys('25{enter}');
+    await confirm(h);
+    expect(h.s.lastSendError?.error.code).toBe('SENT_UNCONFIRMED');
+    expect(h.s.lastSendError?.error.txHash).toMatch(/^0x/);
+    expect(h.text()).toMatch(/Do not send it again until you have checked it/);
+    expect(h.s.recheckAt).toBeGreaterThan(h.now);
   });
 });

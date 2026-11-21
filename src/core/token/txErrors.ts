@@ -44,7 +44,6 @@ export type TxErrorCode =
   | 'DECRYPT_NOT_ALLOWED'
   // Wrap / unwrap (src/core/token/wrapper.ts)
   | 'NOT_A_WRAPPER'
-  | 'WRAP_AMOUNT'
   | 'INSUFFICIENT_ALLOWANCE'
   | 'WRAP_APPROVED_ONLY'
   | 'WRAPPER_SUPPLY_FULL'

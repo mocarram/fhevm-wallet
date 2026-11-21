@@ -59,6 +59,11 @@ export interface AmountProblem {
   ok: false;
   error: string;
   hint: string;
+  /**
+   * The error code for `--json` when it is more than a bad amount (absent:
+   * INVALID_AMOUNT): more than the balance, or more than the wrapper may still mint.
+   */
+  code?: 'INSUFFICIENT_BALANCE' | 'WRAPPER_SUPPLY_FULL';
 }
 
 /** The smallest wrap that mints anything, in underlying base units (= `rate`). */
@@ -92,6 +97,7 @@ export function planWrapAmount(
   if (opts.balance !== undefined && amount > opts.balance) {
     return {
       ok: false,
+      code: 'INSUFFICIENT_BALANCE',
       error: `That's more than the ${formatExactAmount(opts.balance, u.decimals)} ${u.symbol} in this wallet.`,
       hint: `Only public ${u.symbol} can be wrapped. Enter a smaller amount.`,
     };
@@ -115,6 +121,7 @@ export function planWrapAmount(
   if (opts.supplyRoom !== undefined && wrapped > opts.supplyRoom) {
     return {
       ok: false,
+      code: 'WRAPPER_SUPPLY_FULL',
       error: `The ${sides.symbol} wrapper can only mint ${formatExactAmount(opts.supplyRoom < 0n ? 0n : opts.supplyRoom, sides.decimals)} more ${sides.symbol}.`,
       hint: 'Its total supply is capped at the 64-bit limit. Enter a smaller amount.',
     };
@@ -169,6 +176,7 @@ export function planUnwrap(
   if (opts.balance !== undefined && parsed.value > opts.balance) {
     return {
       ok: false,
+      code: 'INSUFFICIENT_BALANCE',
       error: `That's more than your ${formatExactAmount(opts.balance, sides.decimals)} ${sides.symbol}.`,
       hint: 'ERC-7984 would burn 0 instead of failing, so this is blocked here.',
     };

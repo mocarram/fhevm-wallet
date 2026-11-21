@@ -20,7 +20,6 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { formatEther } from 'ethers';
-import ora from 'ora';
 import { createBackend } from '../../core/backend/select.js';
 import type { Backend, UnlockedSigner } from '../../core/backend/types.js';
 import type { PreparedFinalize, WrapStep } from '../../core/backend/wrapTypes.js';
@@ -38,7 +37,14 @@ import {
   unconfirmedRequest,
   unconfirmedRequestError,
 } from '../../core/token/unwrapPending.js';
-import { describeRate, describeWrapPlan, planUnwrap, planWrap } from '../../core/token/wrapMath.js';
+import {
+  describeRate,
+  describeWrapPlan,
+  planUnwrap,
+  planWrap,
+  type AmountProblem,
+} from '../../core/token/wrapMath.js';
+import { sendWrapRecorded } from '../../core/token/wrapHistory.js';
 import { loadWrappers, resolveWrapToken } from '../../core/token/wrapTokens.js';
 import type { WrapperInfo } from '../../core/token/wrapper.js';
 import {
@@ -48,10 +54,11 @@ import {
   removeUnwrap,
   type UnwrapEntry,
 } from '../../storage/UnwrapStore.js';
-import { bold, formatNetworkName, warning } from '../../utils/formatting.js';
+import { bold, formatNetworkName, success, warning } from '../../utils/formatting.js';
 import { MAINNET_OPTION_HELP } from '../utils/mainnetGuard.js';
 import { PASSWORD_STDIN_HELP } from '../utils/passwordInput.js';
-import { printJson } from '../utils/json.js';
+import { mockJson, printJson, walletJson } from '../utils/json.js';
+import { spinner as ora } from '../utils/spinner.js';
 import { prompts } from '../utils/prompts.js';
 import {
   fail,
@@ -67,6 +74,7 @@ import {
 
 interface WrapOptions {
   wallet?: string;
+  token?: string;
   network?: string;
   passwordStdin?: boolean;
   yes?: boolean;
@@ -94,6 +102,7 @@ export function registerWrapCommands(program: Command): void {
   const common = (c: Command) =>
     c
       .option('-w, --wallet <name>', 'Wallet to use')
+      .option('-t, --token <token>', 'The confidential token (same as the [token] argument)')
       .option('-n, --network <network>', 'Network (sepolia or mainnet)')
       .option('--password-stdin', PASSWORD_STDIN_HELP)
       .option('-y, --yes', 'Do not ask for confirmation (the checks still run)')
@@ -181,10 +190,25 @@ async function pickWrapTarget(
     return null;
   }
   const wrappers = await loadWrappers(backend, network, tokens);
-  const picked = resolveWrapToken(tokenText, tokens, wrappers);
+  const picked = resolveWrapToken(tokenText ?? options.token, tokens, wrappers);
   if (!picked.ok) {
     fail(picked.error, picked.code);
     return null;
+  }
+  // Both a token argument and -t: they must name the same token (like `fhew send`).
+  if (tokenText && options.token) {
+    const other = resolveWrapToken(options.token, tokens, wrappers);
+    if (!other.ok) {
+      fail(other.error, other.code);
+      return null;
+    }
+    if (other.token.address.toLowerCase() !== picked.token.address.toLowerCase()) {
+      fail(
+        `Two tokens given: ${picked.token.symbol} (argument) and ${other.token.symbol} (-t). Give only one.`,
+        'CONFLICTING_TOKENS',
+      );
+      return null;
+    }
   }
   // Read the wrapper again right before signing: a cached rate must never decide amounts.
   const info = await backend.wrapperInfo(picked.token.address, network);
@@ -196,6 +220,16 @@ async function pickWrapTarget(
     return null;
   }
   return { network, walletRef, backend, token: picked.token, info };
+}
+
+/** Fail with an amount problem's message and code (INVALID_AMOUNT unless it says more). */
+function failAmount(plan: AmountProblem): void {
+  fail(`${plan.error}\n${plan.hint}`, plan.code ?? 'INVALID_AMOUNT');
+}
+
+/** True for the amounts that are a share of the balance (`max`, `all`, `half`). */
+function needsBalance(text: string): boolean {
+  return /^(max|all|half)$/i.test(text.trim());
 }
 
 /** Format base units with a symbol. */
@@ -213,7 +247,7 @@ function docBase(
   return {
     mock: backend.kind === 'mock',
     network,
-    wallet: { name: walletRef.name, address: walletRef.address },
+    wallet: walletJson(walletRef.address, walletRef.name),
     token: { address: info.address, symbol: info.symbol, decimals: info.decimals },
     underlying: {
       address: info.underlying.address,
@@ -289,7 +323,7 @@ async function wrapCommand(
   const u = info.underlying;
   const state = await backend.wrapState(info, walletRef.address, network);
   const plan = planWrap(amountText, info, { balance: state.balance, supplyRoom: state.supplyRoom });
-  if (!plan.ok) return fail(`${plan.error}\n${plan.hint}`, 'WRAP_AMOUNT');
+  if (!plan.ok) return failAmount(plan);
 
   const wallet = await unlockWallet(walletRef.name, network, options.passwordStdin);
   if (!wallet) return;
@@ -331,11 +365,12 @@ async function wrapCommand(
     });
     if (!ok) return;
 
+    const wrapCtx = { network, wallet: wallet.address, info, amount: plan.wrapped };
     const spin = ora('Sending...').start();
     const hashes: Partial<Record<WrapStep, string>> = {};
     let result;
     try {
-      result = await prepared.send({
+      result = await sendWrapRecorded(prepared, wrapCtx, {
         onStep: (step) => {
           spin.text = `${STEP_TEXT[step]} and waiting for confirmation...`;
         },
@@ -381,8 +416,8 @@ async function wrapCommand(
     console.log(`  Transaction: ${result.txHash}`);
     console.log(`  Explorer:    ${explorerUrl}`);
     console.log(
-      chalk.green(
-        `✔ Wrapped ${amt(plan.pull, u.decimals, u.symbol)} into ${amt(plan.wrapped, info.decimals, info.symbol)}.`,
+      success(
+        `Wrapped ${amt(plan.pull, u.decimals, u.symbol)} into ${amt(plan.wrapped, info.decimals, info.symbol)}.`,
       ),
     );
     if (stays) console.log(chalk.dim(`  ${stays}`));
@@ -403,16 +438,16 @@ function describeWrapCheck(
 ): string {
   const fmt = (v: bigint) => amt(v, info.decimals, info.symbol);
   if (check === 'moved' && before !== undefined && after !== undefined) {
-    return chalk.green(`✔ ${info.symbol} balance: ${fmt(before)} → ${fmt(after)}`);
+    return success(`${info.symbol} balance: ${fmt(before)} → ${fmt(after)}`);
   }
   if (check === 'unchanged') {
-    return chalk.yellow(
-      `! The wrap confirmed, but your ${info.symbol} balance did not change. Check the explorer.`,
+    return warning(
+      `The wrap confirmed, but your ${info.symbol} balance did not change. Check the explorer.`,
     );
   }
   if (check === 'changed' && after !== undefined) {
-    return chalk.yellow(
-      `! Your ${info.symbol} balance is now ${fmt(after)}: another transfer may have arrived too.`,
+    return warning(
+      `Your ${info.symbol} balance is now ${fmt(after)}: another transfer may have arrived too.`,
     );
   }
   return chalk.dim(
@@ -438,6 +473,11 @@ async function unwrapCommand(
   }
   // Before anything is signed: the request must be recordable.
   assertUnwrapStoreWritable();
+  // A typo is reported before the password is asked for (max and half need the balance).
+  if (!needsBalance(amountText)) {
+    const early = planUnwrap(amountText, info);
+    if (!early.ok) return failAmount(early);
+  }
 
   const wallet = await unlockWallet(walletRef.name, network, options.passwordStdin);
   if (!wallet) return;
@@ -456,7 +496,7 @@ async function unwrapCommand(
     }
     spin.succeed(`${info.symbol} balance: ${amt(balance, info.decimals, info.symbol)}`);
     const plan = planUnwrap(amountText, info, { balance });
-    if (!plan.ok) return fail(`${plan.error}\n${plan.hint}`, 'WRAP_AMOUNT');
+    if (!plan.ok) return failAmount(plan);
 
     const prepared = await prepareWithSpinner('Encrypting and checking the unwrap...', () =>
       backend.prepareUnwrap(wallet, info, plan.amount, network, { session }),
@@ -720,7 +760,11 @@ async function reportOutcomes(
         ...results[0],
       });
     }
-    return printJson({ wallet: walletRef, results });
+    return printJson({
+      mock: mockJson(),
+      wallet: walletJson(walletRef.address, walletRef.name),
+      results,
+    });
   }
   for (const o of outcomes) {
     const color =
@@ -756,8 +800,14 @@ async function listCommand(options: UnwrapOptions): Promise<void> {
   const walletRef = pickWallet(options.wallet);
   if (!walletRef) return;
   const entries = listUnwraps({ network, wallet: walletRef.address, open: !options.all });
-  if (options.json)
-    return printJson({ network, wallet: walletRef, unwraps: entries.map(entryJson) });
+  if (options.json) {
+    return printJson({
+      mock: mockJson(),
+      network,
+      wallet: walletJson(walletRef.address, walletRef.name),
+      unwraps: entries.map(entryJson),
+    });
+  }
   if (!entries.length) {
     console.log(
       chalk.dim(
@@ -805,7 +855,13 @@ async function resumeCommand(ref: string | undefined, options: UnwrapOptions): P
   const entries = pickEntries(ref, network, walletRef.address, true);
   if (!entries) return;
   if (!entries.length) {
-    if (options.json) return printJson({ wallet: walletRef, results: [] });
+    if (options.json) {
+      return printJson({
+        mock: mockJson(),
+        wallet: walletJson(walletRef.address, walletRef.name),
+        results: [],
+      });
+    }
     console.log(chalk.dim('No unwraps waiting to finish.'));
     return;
   }
@@ -879,6 +935,13 @@ async function forgetCommand(ref: string, options: UnwrapOptions): Promise<void>
     if (!ok) return void console.log('Kept.');
   }
   removeUnwrap(e.id);
-  if (options.json) return printJson({ removed: entryJson(e) });
-  console.log(chalk.green(`Removed ${e.id.slice(0, 12)}… from the list.`));
+  if (options.json) {
+    return printJson({
+      mock: mockJson(),
+      network,
+      wallet: walletJson(walletRef.address, walletRef.name),
+      removed: entryJson(e),
+    });
+  }
+  console.log(success(`Removed ${e.id.slice(0, 12)}… from the list.`));
 }

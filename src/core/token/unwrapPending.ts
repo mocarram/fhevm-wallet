@@ -29,6 +29,7 @@ import type { NetworkName } from '../network/NetworkConfig.js';
 import type { SendHooks } from './TokenService.js';
 import { translateTxError, WalletTxError } from './txErrors.js';
 import type { WrapperInfo } from './wrapper.js';
+import { recordWrapHistory } from './wrapHistory.js';
 import {
   addUnwrap,
   listUnwraps,
@@ -97,7 +98,8 @@ export function unconfirmedRequestError(e: UnwrapEntry): WalletTxError {
 /**
  * Send a prepared unwrap request, recording it the moment it is signed (before the
  * broadcast) and again once mined with its request id. Errors keep the hash, as usual;
- * the entry then stays `signed` for `reconcileUnwrap` to check later.
+ * the entry then stays `signed` for `reconcileUnwrap` to check later. The burn also goes
+ * into the local history, confirmed or unconfirmed (wrapHistory.ts).
  */
 export async function sendUnwrapRequest(
   prepared: PreparedUnwrap,
@@ -106,29 +108,41 @@ export async function sendUnwrapRequest(
 ): Promise<{ result: UnwrapRequestResult; entry: UnwrapEntry }> {
   let entry: UnwrapEntry | null = null;
   const { info } = ctx;
-  const result = await prepared.send({
-    ...hooks,
-    onSigned: (txHash) => {
-      entry = addUnwrap({
-        id: txHash,
-        network: ctx.network,
-        wallet: ctx.wallet,
-        token: info.address,
-        symbol: info.symbol,
-        decimals: info.decimals,
-        rate: info.rate.toString(),
-        underlying: {
-          address: info.underlying.address,
-          symbol: info.underlying.symbol,
-          decimals: info.underlying.decimals,
-        },
-        hasRequester: info.hasRequester,
-        amount: ctx.amount.toString(),
-        requestTxHash: txHash,
-      });
-      hooks.onSigned?.(txHash);
-    },
-  });
+  function sendRequest(): Promise<UnwrapRequestResult> {
+    return prepared.send({
+      ...hooks,
+      onSigned: (txHash) => {
+        entry = addUnwrap({
+          id: txHash,
+          network: ctx.network,
+          wallet: ctx.wallet,
+          token: info.address,
+          symbol: info.symbol,
+          decimals: info.decimals,
+          rate: info.rate.toString(),
+          underlying: {
+            address: info.underlying.address,
+            symbol: info.underlying.symbol,
+            decimals: info.underlying.decimals,
+          },
+          hasRequester: info.hasRequester,
+          amount: ctx.amount.toString(),
+          requestTxHash: txHash,
+        });
+        hooks.onSigned?.(txHash);
+      },
+    });
+  }
+  let result: UnwrapRequestResult;
+  try {
+    result = await sendRequest();
+  } catch (err) {
+    // Not confirmed in time: History shows the burn as unconfirmed (wrapHistory.ts).
+    const e = translateTxError(err);
+    if (e.code === 'SENT_UNCONFIRMED' && e.txHash) recordWrapHistory('unwrap', ctx, e.txHash, 0);
+    throw err;
+  }
+  recordWrapHistory('unwrap', ctx, result.txHash, result.blockNumber);
   if (!entry) {
     // onSigned is best-effort inside the send path; record it now if that failed.
     entry = addUnwrap({

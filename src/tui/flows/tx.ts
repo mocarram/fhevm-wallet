@@ -21,6 +21,7 @@ import { goHome, isUnlocked, lockWallet, type AppState, type TxAction } from '..
 import { dimLine, line, seg, type Line, link } from '../text.js';
 import { decryptAll, refreshEth } from './data.js';
 import { historyRows } from './history.js';
+import { RECHECK_MS } from './send.js';
 import { AFTER_BROADCAST, countdownSeconds } from './send.js';
 
 /** The tracked token entry for an action. */
@@ -305,6 +306,10 @@ export function broadcastTx(s: AppState): Effect[] {
           st.pending = st.pending.filter((p) => p.id !== id);
           st.lastSendError = { error, afterBroadcast, showRaw: false, explorerUrl };
           if (st.stack.length === 1) st.flash = null;
+          // It may still confirm: look again in a while, like an unconfirmed send, and
+          // show what History recorded for it (a wrap or unwrap request).
+          if (error.code === 'SENT_UNCONFIRMED') st.recheckAt = st.now + RECHECK_MS;
+          if (st.history) st.history.rows = historyRows(st);
           const special = a.custom?.failNotice?.(error);
           if (special) {
             st.notice = special;

@@ -18,6 +18,7 @@ const { saveWalletKeystore } = await import('../../src/storage/WalletStore.js');
 const { setDefaultWallet } = await import('../../src/storage/ConfigStore.js');
 const { addTokenWithInfo } = await import('../../src/core/token/TokenRegistry.js');
 const { listUnwraps } = await import('../../src/storage/UnwrapStore.js');
+const { listTransactions } = await import('../../src/storage/TransactionStore.js');
 const { wipeTestDataDir } = await import('../helpers/dataDir.js');
 
 const wallet = Wallet.createRandom();
@@ -65,7 +66,7 @@ describe('fhew wrap', () => {
   it('refuses a wrap that would mint 0 before unlocking or signing', async () => {
     const spy = vi.spyOn(backend, 'prepareWrap');
     const doc = await run('wrap', '0.0000001', 'cdai', ...yes);
-    expect(doc.error.code).toBe('WRAP_AMOUNT');
+    expect(doc.error.code).toBe('INVALID_AMOUNT');
     expect(doc.error.message).toMatch(/That wraps to 0 cDAI: the smallest amount is 0.000001 DAI/);
     expect(spy).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
@@ -97,6 +98,28 @@ describe('fhew wrap', () => {
     expect((await run('wrap', '1', ...yes)).error.code).toBe('TOKEN_AMBIGUOUS');
   });
 
+  it('names the wallet as an object and records the wrap in history', async () => {
+    const doc = await run('wrap', '5', 'cusdc', ...yes);
+    expect(doc.wallet).toEqual({ name: 'alice', address: wallet.address });
+    const mint = listTransactions({ walletAddress: wallet.address, network: 'sepolia' }).find(
+      (t) => t.txHash === doc.txHash,
+    );
+    expect(mint).toMatchObject({ type: 'mint', tokenSymbol: 'cUSDC', amount: '5' });
+    expect(mint!.blockNumber).toBeGreaterThan(0);
+  });
+
+  it('takes the token from -t and refuses two different tokens', async () => {
+    expect((await run('wrap', '1', '-t', 'cusdc', ...yes)).status).toBe('wrapped');
+    expect((await run('wrap', '1', 'cusdc', '-t', 'cdai', ...yes)).error.code).toBe(
+      'CONFLICTING_TOKENS',
+    );
+  });
+
+  it('says INVALID_AMOUNT and INSUFFICIENT_BALANCE like fhew send', async () => {
+    expect((await run('wrap', 'lots', 'cusdc', ...yes)).error.code).toBe('INVALID_AMOUNT');
+    expect((await run('wrap', '1000000', 'cusdc', ...yes)).error.code).toBe('INSUFFICIENT_BALANCE');
+  });
+
   it('keeps the Mainnet guard', async () => {
     const doc = await run('wrap', '1', 'cusdc', '--yes', '--password-stdin', '-n', 'mainnet');
     expect(doc.error.code).toBe('MAINNET_NOT_CONFIRMED');
@@ -120,10 +143,30 @@ describe('fhew unwrap', () => {
     expect(listUnwraps({ open: true })).toEqual([]);
   });
 
+  it('refuses a mistyped amount before unlocking', async () => {
+    const unlock = vi.spyOn(backend, 'newDecryptSession');
+    expect((await run('unwrap', '1o', 'cusdc', ...yes)).error.code).toBe('INVALID_AMOUNT');
+    expect(unlock).not.toHaveBeenCalled();
+  });
+
+  it('records the request as a burn; --list gives mock and the wallet object', async () => {
+    await run('unwrap', '10', 'cusdc', ...yes);
+    const burn = listTransactions({ walletAddress: wallet.address, network: 'sepolia' }).find(
+      (t) => t.type === 'burn',
+    );
+    expect(burn).toMatchObject({ tokenSymbol: 'cUSDC', amount: '10' });
+    const list = await run('unwrap', '--list', '--all', '-n', 'sepolia');
+    // mock comes from FHEW_BACKEND (not set here: the test injects the backend).
+    expect(list).toMatchObject({
+      mock: false,
+      wallet: { name: 'alice', address: wallet.address },
+    });
+  });
+
   it('refuses more than the decrypted balance (a burn above it burns 0)', async () => {
     const spy = vi.spyOn(backend, 'prepareUnwrap');
     const doc = await run('unwrap', '1251', 'cusdc', ...yes);
-    expect(doc.error.code).toBe('WRAP_AMOUNT');
+    expect(doc.error.code).toBe('INSUFFICIENT_BALANCE');
     expect(doc.error.message).toMatch(/burn 0/);
     expect(spy).not.toHaveBeenCalled();
   });

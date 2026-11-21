@@ -16,7 +16,6 @@ import type {
   PreparedUnwrap,
   PreparedWrap,
 } from '../../core/backend/wrapTypes.js';
-import { formatExactAmount } from '../../core/send/amount.js';
 import { translateTxError, WalletTxError } from '../../core/token/txErrors.js';
 import {
   describeUnwrapState,
@@ -32,8 +31,9 @@ import { loadWrappers, resolveWrapToken } from '../../core/token/wrapTokens.js';
 import type { WrapperInfo } from '../../core/token/wrapper.js';
 import { assertUnwrapStoreWritable, type UnwrapEntry } from '../../storage/UnwrapStore.js';
 import { describeError } from '../errors.js';
+import { sendWrapRecorded } from '../../core/token/wrapHistory.js';
 import { effect, type Deps, type Effect } from '../effects.js';
-import { shortHash } from '../format.js';
+import { formatAmount, formatEth, shortHash } from '../format.js';
 import { open, openFromRoot, openInstead } from '../nav.js';
 import type { Item } from '../screen.js';
 import { type AppState, type TxAction } from '../state.js';
@@ -50,7 +50,7 @@ export const WRAP_AMOUNT_FIELD = 'wrapAmount';
 
 /** Base units with a symbol, exact. */
 export function amt(value: bigint, decimals: number, symbol: string): string {
-  return `${formatExactAmount(value, decimals)} ${symbol}`;
+  return `${formatAmount(value, decimals)} ${symbol}`;
 }
 
 /** The wrapper info of a tracked token, when known. */
@@ -291,11 +291,12 @@ function wrapDetails(info: WrapperInfo, plan: WrapPlan) {
 export function startWrap(s: AppState, info: WrapperInfo, plan: WrapPlan): Effect[] {
   const u = info.underlying;
   const network = s.network;
+  let wrapWallet = s.wallet?.address ?? '';
   const action: TxAction = {
     kind: 'wrap',
     token: info.address,
     title: `Wrap ${amt(plan.pull, u.decimals, u.symbol)} into ${amt(plan.wrapped, info.decimals, info.symbol)}`,
-    short: `wrap ${formatExactAmount(plan.pull, u.decimals)} ${u.symbol}`,
+    short: `wrap ${formatAmount(plan.pull, u.decimals)} ${u.symbol}`,
     warning: ['The wrapped amount is public on-chain; later balances and transfers are private.'],
     then: 'balances',
     details: wrapDetails(info, plan),
@@ -312,8 +313,16 @@ export function startWrap(s: AppState, info: WrapperInfo, plan: WrapPlan): Effec
           );
         }
         const session = sessionOf(deps, signer, net) ?? undefined;
+        wrapWallet = signer.address;
         return deps.backend.prepareWrap(signer, info, plan.pull, net, { session });
       },
+      // Recorded in History as it confirms, or as unconfirmed (wrapHistory.ts).
+      send: (prepared, hooks) =>
+        sendWrapRecorded(
+          prepared as PreparedWrap,
+          { network, wallet: wrapWallet, info, amount: plan.wrapped },
+          hooks,
+        ),
       done: async (_deps, result) => {
         const r = result as Awaited<ReturnType<PreparedWrap['send']>>;
         const notice: Line[] = [
@@ -332,7 +341,7 @@ export function startWrap(s: AppState, info: WrapperInfo, plan: WrapPlan): Effec
         ) {
           notice.push(
             dimLine(
-              `    ${info.symbol} ${formatExactAmount(r.balanceBefore, info.decimals)} → ${formatExactAmount(r.balanceAfter, info.decimals)}`,
+              `    ${info.symbol} ${formatAmount(r.balanceBefore, info.decimals)} → ${formatAmount(r.balanceAfter, info.decimals)}`,
             ),
           );
         } else if (r.balanceCheck === 'unchanged') {
@@ -394,7 +403,7 @@ export function startUnwrap(s: AppState, info: WrapperInfo, plan: UnwrapPlan): E
     kind: 'unwrap',
     token: info.address,
     title: `Unwrap ${amt(plan.amount, info.decimals, info.symbol)} into ${amt(plan.receive, u.decimals, u.symbol)}`,
-    short: `unwrap ${formatExactAmount(plan.amount, info.decimals)} ${info.symbol}`,
+    short: `unwrap ${formatAmount(plan.amount, info.decimals)} ${info.symbol}`,
     warning: [
       'The unwrapped amount becomes public on-chain.',
       'This one confirmation covers both steps.',
@@ -424,7 +433,7 @@ export function startUnwrap(s: AppState, info: WrapperInfo, plan: UnwrapPlan): E
         ...(p
           ? [
               dimLine(
-                `  Step 2 costs about ${formatExactAmount(p.finalizeFeeWei, 18)} ETH more, checked when it is sent.`,
+                `  Step 2 costs about ${formatEth(p.finalizeFeeWei)} ETH more, checked when it is sent.`,
               ),
             ]
           : []),

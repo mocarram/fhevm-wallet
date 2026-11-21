@@ -5,7 +5,6 @@
  * Rendering is pure: balances come from `s.balances` / `s.wrap`, loaded by effects.
  */
 
-import { formatBalance, formatExactAmount } from '../../core/send/amount.js';
 import {
   describeRate,
   describeWrapPlan,
@@ -23,7 +22,7 @@ import {
   wrapperOf,
 } from '../flows/wrap.js';
 import { decryptAll } from '../flows/data.js';
-import { spinner } from '../format.js';
+import { formatAmount, spinner } from '../format.js';
 import { open, openInstead } from '../nav.js';
 import type { InputSpec, MenuEntry, ScreenDef, ScreenView } from '../screen.js';
 import { isUnlocked, top, type AppState } from '../state.js';
@@ -127,7 +126,7 @@ function wrapView(s: AppState, mode: 'wrap' | 'unwrap'): ScreenView {
     line(
       '  ',
       seg(pad(u.symbol, 11), 'bold'),
-      seg(col(pub ? formatExactAmount(pub.balance, u.decimals) : s.wrap.loading ? '…' : '?'), ''),
+      seg(col(pub ? formatAmount(pub.balance, u.decimals) : s.wrap.loading ? '…' : '?'), ''),
       seg('public, in this wallet', 'dim'),
     ),
     line(
@@ -135,7 +134,7 @@ function wrapView(s: AppState, mode: 'wrap' | 'unwrap'): ScreenView {
       seg(pad(info.symbol, 11), 'bold'),
       seg(
         col(
-          conf ? formatBalance(conf.value, info.decimals) : s.decrypting ? 'decrypting…' : 'locked',
+          conf ? formatAmount(conf.value, info.decimals) : s.decrypting ? 'decrypting…' : 'locked',
         ),
         conf?.source === 'session' ? 'green' : 'dim',
       ),

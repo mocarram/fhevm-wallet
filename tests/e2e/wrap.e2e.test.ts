@@ -110,7 +110,8 @@ describe('fhew wrap / unwrap (mock)', () => {
   });
 
   it('wraps max in ERC-20 units: exact approval, dust stays, balance up', () => {
-    const r = cli(['wrap', 'max', 'dai', '--yes', '--password-stdin']);
+    // NO_COLOR off: a pipe alone must keep escape codes out.
+    const r = cli(['wrap', 'max', 'dai', '--yes', '--password-stdin'], { NO_COLOR: '' });
     expect(r.code).toBe(0);
     expect(r.stdout).toMatch(
       /You give:\s+1,000 DAI \(public; you have 1,000\.000000123456789 DAI\)/,
@@ -119,7 +120,9 @@ describe('fhew wrap / unwrap (mock)', () => {
     expect(r.stdout).toMatch(/approve exactly 1,000 DAI for cDAI \(not unlimited\)/);
     expect(r.stdout).toMatch(/✔ Wrapped 1,000 DAI into 1,000 cDAI\./);
     expect(r.stdout).toMatch(/cDAI balance: 80\.5 cDAI → 1,080\.5 cDAI/);
-    expect(r.stdout).toMatch(/MOCK/);
+    expect(r.stdout).toMatch(/MOCK/); // A pipe gets the marks without escape codes, on stdout and stderr (spinners).
+    expect(r.stdout + r.stderr).not.toMatch(/\x1b\[/);
+    expect(r.stderr).toMatch(/✔ Wallet loaded/);
   });
 
   it('unwrap stops at pending, and a later process finishes it once', () => {
@@ -129,6 +132,7 @@ describe('fhew wrap / unwrap (mock)', () => {
     const list = cli(['unwrap', '--list'], {}, '');
     expect(list.stdout).toMatch(/10 cUSDC → USDC\s+step 1 done, waiting to finish/);
     const resumed = json(['unwrap', '--resume']);
+    expect(resumed.doc).toMatchObject({ mock: true, wallet: { name: 'w' } });
     expect(resumed.doc.results[0]).toMatchObject({ status: 'finished', state: 'finished' });
     const again = json(['unwrap', '--resume']);
     expect(again.doc.results).toEqual([]);
@@ -193,29 +197,29 @@ describe.skipIf(!python)('wrap / unwrap in the TUI (pty, mock)', () => {
     const screens = runTui([
       { expect: 'Balances', timeout: 20 },
       { keys: 'b' },
-      { expect: 'wraps USDC · 500 USDC public', timeout: 20 },
+      { expect: 'wraps USDC · 500.00 USDC public', timeout: 20 },
       { keys: 'w' },
       { expect: 'Wrap USDC into cUSDC' },
       { keys: '25' },
       { expect: 'You get 25 cUSDC.' },
       { keys: '\r' },
-      { expect: 'Wrap 25 USDC into 25 cUSDC' },
+      { expect: 'Wrap 25.00 USDC into 25.00 cUSDC' },
       { expect: 'Unlock and check' },
       { keys: '1' },
       { expect: 'Password for' },
       { keys: `${PASSWORD}\r` },
       { expect: 'Simulation passed', timeout: 30 },
-      { expect: 'Approve cUSDC to take exactly 25 USDC (not unlimited)' },
+      { expect: 'Approve cUSDC to take exactly 25.00 USDC (not unlimited)' },
       { keys: '1' },
-      { expect: 'Wrapped 25 USDC → 25 cUSDC', timeout: 40 },
+      { expect: 'Wrapped 25.00 USDC → 25.00 cUSDC', timeout: 40 },
       { keys: ':' },
       { keys: 'unwrap 5 cusdc\r' },
-      { expect: 'You get 5 USDC (public).', timeout: 20 },
+      { expect: 'You get 5.00 USDC (public).', timeout: 20 },
       { keys: '\r' },
-      { expect: 'Unwrap 5 cUSDC into 5 USDC' },
+      { expect: 'Unwrap 5.00 cUSDC into 5.00 USDC' },
       { expect: 'Simulation passed', timeout: 30 },
       { keys: '1' },
-      { expect: 'Unwrapped 5 cUSDC: 5 USDC arrived', timeout: 40 },
+      { expect: 'Unwrapped 5.00 cUSDC: 5.00 USDC arrived', timeout: 40 },
       { keys: '0' },
       { exit: 0, timeout: 15 },
     ]);
@@ -227,17 +231,17 @@ describe.skipIf(!python)('wrap / unwrap in the TUI (pty, mock)', () => {
     const first = json(['unwrap', '3', 'cusdc'], { FHEW_MOCK_FAIL: 'public-pending' });
     expect(first.doc.status).toBe('pending');
     runTui([
-      { expect: 'Finish unwrap: 3 cUSDC → USDC', timeout: 20 },
+      { expect: 'Finish unwrap: 3.00 cUSDC → USDC', timeout: 20 },
       { expect: 'step 1 done, waiting to finish' },
       { keys: 'u' },
-      { expect: 'Finish unwrap: 3 cUSDC → USDC' },
+      { expect: 'Finish unwrap: 3.00 cUSDC → USDC' },
       { expect: 'Unlock and check', timeout: 20 },
       { keys: '1' },
       { expect: 'Password for' },
       { keys: `${PASSWORD}\r` },
-      { expect: 'You get   3 USDC', timeout: 30 },
+      { expect: 'You get   3.00 USDC', timeout: 30 },
       { keys: '1' },
-      { expect: 'Unwrapped 3 cUSDC: 3 USDC arrived', timeout: 40 },
+      { expect: 'Unwrapped 3.00 cUSDC: 3.00 USDC arrived', timeout: 40 },
       { keys: '0' },
       { exit: 0, timeout: 15 },
     ]);
