@@ -33,7 +33,9 @@ import type {
   Backend,
   HistorySyncResult,
   PreparedSend,
+  RelayerCheck,
   RpcCheck,
+  RpcEndpointCheck,
   SendResult,
   UnlockedSigner,
 } from './types.js';
@@ -414,6 +416,35 @@ export class MockBackend implements Backend {
     this.rpcFailure();
     const chainId = NETWORK_CONFIGS[network].chainId;
     return { url: 'mock://rpc', chainId, latencyMs: 12, chainMatches: true };
+  }
+
+  async checkRpcEndpoints(network: NetworkName): Promise<RpcEndpointCheck[]> {
+    await this.sleep(Math.min(this.opts.latencyMs, 100));
+    if (this.opts.fail === 'rpc') {
+      return [
+        {
+          url: 'mock://rpc',
+          ok: false,
+          error: 'That RPC endpoint did not answer. Check the URL and your connection.',
+        },
+      ];
+    }
+    const chainId = NETWORK_CONFIGS[network].chainId;
+    return [
+      {
+        url: 'mock://rpc',
+        ok: true,
+        chainId,
+        chainMatches: true,
+        latencyMs: 12,
+        blockNumber: this.block,
+      },
+    ];
+  }
+
+  async checkRelayer(): Promise<RelayerCheck> {
+    await this.sleep(Math.min(this.opts.latencyMs, 100));
+    return { url: 'mock://relayer', ok: true, status: 200, latencyMs: 9 };
   }
 
   async setCustomRpc(network: NetworkName, url: string): Promise<RpcProbe> {

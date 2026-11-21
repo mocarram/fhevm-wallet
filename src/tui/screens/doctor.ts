@@ -1,6 +1,6 @@
 /**
- * Doctor: quick checks of Node, RPC, relayer settings, gas, tokens and data folder.
- * The full `fhew doctor` command (with a per-token ERC-7984 check) is Phase 4.
+ * Doctor: Node, data folder, every RPC endpoint, the Zama relayer, gas and an ERC-7984
+ * check per tracked token. The same checks as `fhew doctor` (core/doctor.ts).
  */
 
 import { runDoctor } from '../flows/manage.js';

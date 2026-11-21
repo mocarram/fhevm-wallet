@@ -3,7 +3,7 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { listWallets } from '../../src/core/wallet/WalletManager.js';
-import { listTokens } from '../../src/core/token/TokenRegistry.js';
+import { addTokenWithInfo, listTokens } from '../../src/core/token/TokenRegistry.js';
 import { listAddresses } from '../../src/storage/AddressBook.js';
 import { loadUiPrefs } from '../../src/storage/UiPrefsStore.js';
 import { getEnvVar } from '../../src/storage/paths.js';
@@ -323,8 +323,21 @@ describe('History, Receive and Doctor', () => {
     const h = new Harness();
     await h.keys('d');
     expect(h.text()).toMatch(/Node\.js v/);
-    expect(h.text()).toMatch(/RPC reachable/);
+    expect(h.text()).toMatch(/RPC mock:\/\/rpc · chain 11155111/);
+    expect(h.text()).toMatch(/Zama relayer mock:\/\/relayer answers/);
+    expect(h.text()).toMatch(/cUSDC · ERC-7984/);
     expect(h.text()).toMatch(/simulated/);
+  });
+
+  it('Doctor flags a tracked token that is not ERC-7984, and a dead RPC', async () => {
+    const h = new Harness({ mock: { fail: 'rpc' } });
+    addTokenWithInfo(
+      { address: mockNonConfidentialToken('sepolia'), name: 'Plain', symbol: 'PLAIN', decimals: 18 },
+      'sepolia',
+    );
+    await h.keys('d');
+    const text = h.text(120, 60);
+    expect(text).toMatch(/✗ No RPC endpoint works/);
   });
 });
 

@@ -13,18 +13,9 @@ export function spinner(now: number): string {
   return SPINNER[Math.floor(now / 120) % SPINNER.length];
 }
 
-/**
- * Typical fee of one confidential transfer (~300k gas at 1 gwei). Used only for the
- * low-gas nudge; real sends always use the estimate from the simulation.
- */
-export const TYPICAL_SEND_FEE_WEI = 300_000n * 1_000_000_000n;
-/** Below this many sends' worth of ETH the status bar turns yellow and Home nudges. */
-export const LOW_GAS_SENDS = 5n;
-
-/** About how many sends the ETH balance pays for. */
-export function sendsLeft(wei: bigint): bigint {
-  return wei / TYPICAL_SEND_FEE_WEI;
-}
+// The gas arithmetic lives in core so `fhew doctor` shares it; re-exported for screens.
+export { LOW_GAS_SENDS, sendsLeft, TYPICAL_SEND_FEE_WEI } from '../core/send/gas.js';
+import { LOW_GAS_SENDS, sendsLeft } from '../core/send/gas.js';
 
 /** True when ETH for gas is known and low. */
 export function isLowGas(s: AppState): boolean {

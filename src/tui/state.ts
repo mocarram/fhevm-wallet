@@ -74,12 +74,9 @@ export interface BalanceEntry {
   source: 'session' | 'cache';
 }
 
-/** One row of the Doctor screen. */
-export interface DoctorRow {
-  status: 'ok' | 'warn' | 'fail' | 'info';
-  text: string;
-  detail?: string;
-}
+/** One row of the Doctor screen (shared with `fhew doctor`). */
+export type { DoctorRow } from '../core/doctor.js';
+import type { DoctorRow } from '../core/doctor.js';
 
 /** The complete UI state. */
 export interface AppState {

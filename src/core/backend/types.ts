@@ -53,6 +53,29 @@ export interface RpcCheck extends RpcProbe {
   chainMatches: boolean;
 }
 
+/** One configured RPC endpoint, as `fhew doctor` reports it. */
+export interface RpcEndpointCheck {
+  /** Masked for display (`https://host/…`): the path may hold a provider key. */
+  url: string;
+  ok: boolean;
+  chainId?: bigint;
+  chainMatches?: boolean;
+  latencyMs?: number;
+  blockNumber?: number;
+  /** Plain-English reason when it did not answer properly. */
+  error?: string;
+}
+
+/** Whether the Zama relayer for a network answers. */
+export interface RelayerCheck {
+  url: string;
+  ok: boolean;
+  latencyMs?: number;
+  /** HTTP status of the answer, when there was one. */
+  status?: number;
+  error?: string;
+}
+
 /** Result of refreshing the transaction history. */
 export interface HistorySyncResult {
   newCount: number;
@@ -111,6 +134,12 @@ export interface Backend {
 
   /** Ask the configured RPC endpoint which chain it serves and how fast it answers. */
   checkRpc(network: NetworkName): Promise<RpcCheck>;
+
+  /** Probe every RPC URL in use for `network` (custom, or default plus fallbacks). */
+  checkRpcEndpoints(network: NetworkName): Promise<RpcEndpointCheck[]>;
+
+  /** Check that the Zama relayer for `network` answers. Never throws. */
+  checkRelayer(network: NetworkName): Promise<RelayerCheck>;
 
   /** Verify and save a custom RPC URL (see `setCustomRpc`). */
   setCustomRpc(network: NetworkName, url: string): Promise<RpcProbe>;

@@ -7,7 +7,15 @@
 
 import type { NetworkName } from '../network/NetworkConfig.js';
 import { NETWORK_CONFIGS, getRpcUrls } from '../network/NetworkConfig.js';
-import { getProvider, probeRpc } from '../network/ProviderFactory.js';
+import {
+  describeProbeFailure,
+  getProvider,
+  probeRpc,
+  RPC_PROBE_TIMEOUT_MS,
+  RpcNoRealAnswerError,
+} from '../network/ProviderFactory.js';
+import { MainnetConfig, SepoliaConfig } from '@zama-fhe/relayer-sdk/node';
+import { maskUrl } from '../../utils/redact.js';
 import { setCustomRpc } from '../network/rpcSettings.js';
 import { checkFheReadiness } from '../fhe/FheService.js';
 import {
@@ -24,9 +32,14 @@ import type {
   Backend,
   HistorySyncResult,
   PreparedSend,
+  RelayerCheck,
   RpcCheck,
+  RpcEndpointCheck,
   UnlockedSigner,
 } from './types.js';
+
+/** How long the relayer has to answer the doctor's reachability probe. */
+const RELAYER_PROBE_TIMEOUT_MS = 8_000;
 
 /** Delegates every call to the production code paths. */
 export class RealBackend implements Backend {
@@ -101,6 +114,53 @@ export class RealBackend implements Backend {
     const url = getRpcUrls(network)[0];
     const probe = await probeRpc(url);
     return { ...probe, url, chainMatches: probe.chainId === NETWORK_CONFIGS[network].chainId };
+  }
+
+  async checkRpcEndpoints(network: NetworkName): Promise<RpcEndpointCheck[]> {
+    const expected = NETWORK_CONFIGS[network].chainId;
+    return Promise.all(
+      getRpcUrls(network).map(async (url): Promise<RpcEndpointCheck> => {
+        try {
+          const p = await probeRpc(url, RPC_PROBE_TIMEOUT_MS, { withBlockNumber: true });
+          const chainMatches = p.chainId === expected;
+          return {
+            url: maskUrl(url),
+            ok: chainMatches,
+            chainId: p.chainId,
+            chainMatches,
+            latencyMs: p.latencyMs,
+            blockNumber: p.blockNumber,
+            error: chainMatches ? undefined : `It serves chain ${p.chainId}, not ${network}.`,
+          };
+        } catch (err) {
+          return {
+            url: maskUrl(url),
+            ok: false,
+            error: err instanceof RpcNoRealAnswerError ? err.message : describeProbeFailure(err),
+          };
+        }
+      }),
+    );
+  }
+
+  async checkRelayer(network: NetworkName): Promise<RelayerCheck> {
+    const base = network === 'mainnet' ? MainnetConfig.relayerUrl : SepoliaConfig.relayerUrl;
+    // The key-URL endpoint the SDK fetches first; any HTTP answer means it is reachable.
+    const url = `${base.replace(/\/$/, '')}/v1/keyurl`;
+    const started = Date.now();
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(RELAYER_PROBE_TIMEOUT_MS) });
+      void res.body?.cancel();
+      return {
+        url: maskUrl(base),
+        ok: res.status < 500,
+        status: res.status,
+        latencyMs: Date.now() - started,
+        error: res.status < 500 ? undefined : `It answered with HTTP ${res.status}.`,
+      };
+    } catch {
+      return { url: maskUrl(base), ok: false, error: 'It did not answer. Check your connection.' };
+    }
   }
 
   setCustomRpc(network: NetworkName, url: string) {

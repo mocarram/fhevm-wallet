@@ -11,6 +11,7 @@ import { registerBalanceCommand } from './commands/balance.js';
 import { registerTransferCommand } from './commands/transfer.js';
 import { registerHistoryCommand } from './commands/history.js';
 import { registerInteractiveCommand } from './commands/interactive.js';
+import { registerDoctorCommand } from './commands/doctor.js';
 import { updateConfig, loadConfig } from '../storage/ConfigStore.js';
 import { isValidNetwork } from '../utils/validation.js';
 import { NetworkName, DEFAULT_RPC_URLS, invalidRpcReason } from '../core/network/NetworkConfig.js';
@@ -116,6 +117,7 @@ export function createProgram(): Command {
   registerTransferCommand(program);
   registerHistoryCommand(program);
   registerInteractiveCommand(program);
+  registerDoctorCommand(program);
 
   // Config command
   program
