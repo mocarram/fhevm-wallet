@@ -15,6 +15,15 @@ describe('stripUnsafeChars', () => {
     ['isolate', '\u2067'],
     ['zero width space', '\u200b'],
     ['BOM', '\ufeff'],
+    ['soft hyphen', '\u00ad'],
+    ['combining grapheme joiner', '\u034f'],
+    ['Mongolian vowel separator', '\u180e'],
+    ['Hangul choseong filler', '\u115f'],
+    ['Hangul jungseong filler', '\u1160'],
+    ['Hangul filler', '\u3164'],
+    ['halfwidth Hangul filler', '\uffa0'],
+    ['tag space', '\u{E0020}'],
+    ['cancel tag', '\u{E007F}'],
   ])('removes %s', (_name, ch) => {
     expect(stripUnsafeChars(`a${ch}b`)).not.toContain(ch);
   });

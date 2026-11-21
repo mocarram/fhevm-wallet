@@ -88,9 +88,8 @@ export function describeErrorShort(err: unknown, max = 60): string {
 }
 
 /**
- * The original error text for FHEW_DEBUG=1, redacted (keys, configured RPC URL pieces)
- * and stripped of terminal escapes, on one line. The host part of URLs is kept: it helps
- * and is not secret.
+ * The original error text for FHEW_DEBUG=1, redacted (keys, configured RPC URL pieces,
+ * URLs cut to scheme and host) and stripped of terminal escapes, on one line.
  */
 export function technicalDetails(err: unknown, max = 2000): string {
   let raw: string;
@@ -103,7 +102,7 @@ export function technicalDetails(err: unknown, max = 2000): string {
       raw = String(err);
     }
   }
-  return sanitizeContractText(redactSecrets(raw).replace(/\s*\n\s*/g, ' | '), max);
+  return sanitizeContractText(maskUrlsInText(redactSecrets(raw)).replace(/\s*\n\s*/g, ' | '), max);
 }
 
 /** What a prompt library throws when stdin is closed, not a TTY, or Ctrl+C was pressed. */

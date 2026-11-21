@@ -73,7 +73,7 @@ describe('translateTxError', () => {
       new Error('request failed info={"requestUrl":"https://x.example/v3/abcdef0123456789abcdef"}'),
     );
     expect(err.raw).not.toMatch(/abcdef0123456789abcdef/);
-    expect(err.raw).toMatch(/\[redacted\]/);
+    expect(err.raw).toContain('https://x.example/…');
   });
 
   it('maps network failures to RPC_UNAVAILABLE', () => {
@@ -272,5 +272,20 @@ describe('relayer failures', () => {
   it('technical details strip terminal escapes', () => {
     const e = new WalletTxError('UNKNOWN', 'T', 'c', 'h', 'raw \u001b[2J text');
     expect(formatTxError(e, true)).not.toContain('\u001b');
+  });
+});
+
+describe('WalletTxError raw details', () => {
+  it('mask URLs to scheme and host and strip escapes', () => {
+    const e = new WalletTxError(
+      'UNKNOWN',
+      'T',
+      'c',
+      'h',
+      'failed https://rpc.example/qn/SOMETHINGLONG/?x=1 \u001b[31m',
+    );
+    expect(e.raw).toContain('https://rpc.example/…');
+    expect(e.raw).not.toContain('SOMETHINGLONG');
+    expect(e.raw).not.toContain('\u001b');
   });
 });
