@@ -15,7 +15,6 @@ import {
   getNetworkNameFromChainId,
 } from '../network/NetworkConfig.js';
 import { getEip1193Provider } from '../network/ProviderFactory.js';
-import { withTimeout } from '../../utils/timeout.js';
 import { FHE_INIT_TIMEOUT_MS } from './timeouts.js';
 import { quietSdk } from './sdkConsole.js';
 
@@ -62,12 +61,11 @@ export async function getFheInstance(chainId: bigint): Promise<FhevmInstance> {
     };
   }
 
-  const instance = await withTimeout(
+  const instance = await quietSdk(
     // createInstance prints a deprecation notice (and TFHE init notes) to the console;
     // captured so they never corrupt the TUI or --json output. See sdkConsole.ts.
-    quietSdk(() => createInstance(config)),
-    FHE_INIT_TIMEOUT_MS,
-    'Connecting to the Zama relayer',
+    () => createInstance(config),
+    { ms: FHE_INIT_TIMEOUT_MS, what: 'Connecting to the Zama relayer' },
   );
   fheInstanceCache.set(chainId, instance);
 

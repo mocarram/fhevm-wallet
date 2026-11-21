@@ -10,6 +10,8 @@
  * the last few are kept for debugging either way.
  */
 
+import { withTimeout } from '../../utils/timeout.js';
+
 type ConsoleMethod = 'log' | 'info' | 'warn' | 'debug' | 'error';
 const METHODS: ConsoleMethod[] = ['log', 'info', 'warn', 'debug', 'error'];
 const KEEP = 20;
@@ -38,11 +40,7 @@ function record(method: ConsoleMethod, args: unknown[]): void {
   }
 }
 
-/**
- * Run `fn` (a relayer SDK call) with console output captured instead of printed.
- * Re-entrant: nested and overlapping calls share one capture window.
- */
-export async function quietSdk<T>(fn: () => Promise<T> | T): Promise<T> {
+function acquire(): () => void {
   if (depth === 0) {
     saved = {};
     for (const m of METHODS) {
@@ -51,13 +49,39 @@ export async function quietSdk<T>(fn: () => Promise<T> | T): Promise<T> {
     }
   }
   depth += 1;
-  try {
-    return await fn();
-  } finally {
+  // Each call releases exactly once, whether its work settled or its timeout fired.
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
     depth -= 1;
     if (depth === 0) {
       for (const m of METHODS) if (saved[m]) console[m] = saved[m]!;
       saved = {};
     }
+  };
+}
+
+/**
+ * Run `fn` (a relayer SDK call) with console output captured instead of printed.
+ * Re-entrant: nested and overlapping calls share one capture window.
+ *
+ * With `timeout`, the call rejects with `TimeoutError` after `timeout.ms` and gives the
+ * console back at that moment. The SDK takes no AbortSignal, so a timed-out promise may
+ * never settle; if the capture waited for it, the console would stay swallowed and every
+ * later error message would vanish. Always pass the timeout here rather than wrapping
+ * `quietSdk` in `withTimeout`.
+ */
+export async function quietSdk<T>(
+  fn: () => Promise<T> | T,
+  timeout?: { ms: number; what: string },
+): Promise<T> {
+  const release = acquire();
+  try {
+    const work = Promise.resolve().then(fn);
+    if (!timeout) return await work;
+    return await withTimeout(work, timeout.ms, timeout.what);
+  } finally {
+    release();
   }
 }

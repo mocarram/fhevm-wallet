@@ -5,7 +5,6 @@
 import { Wallet, HDNodeWallet } from 'ethers';
 import { getFheInstance } from './FheService.js';
 import { FHE_OPERATION_TIMEOUT_MS } from './timeouts.js';
-import { withTimeout } from '../../utils/timeout.js';
 import { CHAIN_IDS, NetworkName } from '../network/NetworkConfig.js';
 import { quietSdk } from './sdkConsole.js';
 import type { DecryptAuth, DecryptAuthority, HandlePair } from './DecryptSession.js';
@@ -107,8 +106,8 @@ export async function decryptBalance(
   const handleHex = ('0x' + encryptedHandle.toString(16).padStart(64, '0')) as `0x${string}`;
 
   // Request user decrypt from the Gateway
-  const results = await withTimeout(
-    quietSdk(() =>
+  const results = await quietSdk(
+    () =>
       fheInstance.userDecrypt(
         [{ handle: handleHex, contractAddress }],
         privateKey,
@@ -119,9 +118,7 @@ export async function decryptBalance(
         startTimestamp,
         durationDays,
       ),
-    ),
-    FHE_OPERATION_TIMEOUT_MS,
-    'Decrypting the balance',
+    { ms: FHE_OPERATION_TIMEOUT_MS, what: 'Decrypting the balance' },
   );
 
   // The results are indexed by handle hex
@@ -208,8 +205,8 @@ export function relayerDecryptAuthority(network: NetworkName): DecryptAuthority 
     },
     async userDecrypt(auth: DecryptAuth, pairs: HandlePair[]) {
       const fhe = await getFheInstance(chainId);
-      const results = await withTimeout(
-        quietSdk(() =>
+      const results = await quietSdk(
+        () =>
           fhe.userDecrypt(
             pairs.map((p) => ({ handle: p.handle, contractAddress: p.contractAddress })),
             auth.privateKey,
@@ -220,9 +217,7 @@ export function relayerDecryptAuthority(network: NetworkName): DecryptAuthority 
             auth.startTimestamp,
             auth.durationDays,
           ),
-        ),
-        FHE_OPERATION_TIMEOUT_MS,
-        'Decrypting',
+        { ms: FHE_OPERATION_TIMEOUT_MS, what: 'Decrypting' },
       );
       const out: Record<string, bigint> = {};
       for (const [handle, v] of Object.entries(results)) {
@@ -251,11 +246,10 @@ export async function publicDecryptHandle(
 ): Promise<PublicDecryption> {
   const chainId = network === 'mainnet' ? CHAIN_IDS.MAINNET : CHAIN_IDS.SEPOLIA;
   const fhe = await getFheInstance(chainId);
-  const res = await withTimeout(
-    quietSdk(() => fhe.publicDecrypt([handle])),
-    FHE_OPERATION_TIMEOUT_MS,
-    'Public decryption',
-  );
+  const res = await quietSdk(() => fhe.publicDecrypt([handle]), {
+    ms: FHE_OPERATION_TIMEOUT_MS,
+    what: 'Public decryption',
+  });
   const entry = Object.entries(res.clearValues).find(
     ([h]) => h.toLowerCase() === handle.toLowerCase(),
   );

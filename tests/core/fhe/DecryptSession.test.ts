@@ -146,4 +146,21 @@ describe('quietSdk', () => {
     expect(capturedSdkLines().join('\n')).toMatch(/deprecated/);
     write.mockRestore();
   });
+
+  it('gives the console back when a call times out, even if it never settles', async () => {
+    // Regression: withTimeout(quietSdk(...)) left the console captured after a timeout,
+    // so later error messages were swallowed and `fhew balance` exited 1 silently.
+    const original = console.error;
+    const never = new Promise<never>(() => {});
+    await expect(quietSdk(() => never, { ms: 20, what: 'Decrypting' })).rejects.toMatchObject({
+      code: 'TIMEOUT',
+    });
+    expect(console.error).toBe(original);
+    // An overlapping call that also hangs must not keep the capture alive either.
+    const a = quietSdk(() => never, { ms: 20, what: 'A' }).catch(() => undefined);
+    const b = quietSdk(() => never, { ms: 40, what: 'B' }).catch(() => undefined);
+    expect(console.error).not.toBe(original);
+    await Promise.all([a, b]);
+    expect(console.error).toBe(original);
+  });
 });

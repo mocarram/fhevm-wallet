@@ -4,7 +4,6 @@
 
 import { getFheInstance } from './FheService.js';
 import { FHE_OPERATION_TIMEOUT_MS } from './timeouts.js';
-import { withTimeout } from '../../utils/timeout.js';
 import { quietSdk } from './sdkConsole.js';
 
 export interface EncryptedAmount {
@@ -43,12 +42,9 @@ export async function encryptAmount(
 ): Promise<EncryptedAmount> {
   const fheInstance = await getFheInstance(chainId);
 
-  const encryptedInput = await withTimeout(
-    quietSdk(() =>
-      fheInstance.createEncryptedInput(contractAddress, userAddress).add64(amount).encrypt(),
-    ),
-    FHE_OPERATION_TIMEOUT_MS,
-    'Encrypting the amount',
+  const encryptedInput = await quietSdk(
+    () => fheInstance.createEncryptedInput(contractAddress, userAddress).add64(amount).encrypt(),
+    { ms: FHE_OPERATION_TIMEOUT_MS, what: 'Encrypting the amount' },
   );
 
   const handle = encryptedInput.handles[0];
