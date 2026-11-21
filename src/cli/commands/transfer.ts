@@ -25,6 +25,9 @@ import type { Backend, UnlockedSigner } from '../../core/backend/types.js';
 import {
   findLookAlike,
   formatExactAmount,
+  lookAlikeCandidates,
+  recipientRefusal,
+  selfSendWarning,
   hasAmbiguousComma,
   parseFriendlyAmount,
   resolveRecipient,
@@ -225,17 +228,30 @@ async function send(
   const contactName = rr.contact?.name;
 
   // Address poisoning: a pasted address sharing its start and end with a contact.
+  // Also against the user's own wallets and their history's counterparties (M8).
+  const refusal = recipientRefusal(recipient, token.address);
+  if (refusal) return fail(refusal, 'INVALID_RECEIVER');
   if (!rr.contact) {
-    const lookalike = findLookAlike(recipient, contacts);
+    const lookalike = findLookAlike(
+      recipient,
+      lookAlikeCandidates({
+        contacts,
+        wallets: listWallets(),
+        counterparties: historyCounterparties(network),
+      }),
+    );
     if (lookalike) {
+      const isContact = contacts.some((c) => c.address === lookalike.address);
       console.log(
         warning(
-          `Careful: ${recipient} looks like your contact ${lookalike.name} (${lookalike.address}), but it is a different address.`,
+          `Careful: ${recipient} looks like ${isContact ? `your contact ${lookalike.name}` : lookalike.name} (${lookalike.address}), but it is a different address.`,
         ),
       );
       if (options.yes || !process.stdin.isTTY) {
         return fail(
-          `Send stopped. To send to ${lookalike.name}, use: fhew send ${lookalike.name} …`,
+          isContact
+            ? `Send stopped. To send to ${lookalike.name}, use: fhew send ${lookalike.name} …`
+            : `Send stopped. Check the address; to send to ${lookalike.address}, paste that one.`,
           'LOOKALIKE_ADDRESS',
         );
       }
@@ -334,7 +350,9 @@ async function send(
       ),
     );
   }
-  if (!rr.contact && isFirstTime(wallet.address, recipient, network)) {
+  const self = selfSendWarning(recipient, wallet.address);
+  if (self) console.log(warning(`  ${self}`));
+  else if (!rr.contact && isFirstTime(wallet.address, recipient, network)) {
     console.log(warning('  First time sending to this address. Check it with the recipient.'));
   }
   console.log();
@@ -481,6 +499,20 @@ async function askRecipient(contacts: Array<{ name: string; address: string }>):
   });
   if (picked === '__cancel__') return '';
   return picked === '__new__' ? ask() : picked;
+}
+
+/** Every address the user's wallets exchanged transfers with on `network`. */
+function historyCounterparties(network: NetworkName): string[] {
+  try {
+    return listWallets().flatMap((w) =>
+      listTransactions({ walletAddress: w.address, network, limit: 10_000 }).flatMap((t) => [
+        t.from,
+        t.to,
+      ]),
+    );
+  } catch {
+    return [];
+  }
 }
 
 /** True when this wallet has no recorded send to `to` on `network`. */

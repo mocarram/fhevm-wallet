@@ -34,6 +34,7 @@ import { normaliseHandle, type DecryptSession } from '../fhe/DecryptSession.js';
 import { isTransferAmountHandle, recordLocalTransaction } from '../../storage/TransactionStore.js';
 import { getCachedBalance, setCachedBalance, invalidateBalance } from './BalanceCache.js';
 import { MAX_EUINT64 } from './limits.js';
+import { recipientRefusal } from '../send/recipient.js';
 import { CONFIDENTIAL_TRANSFER_TOPIC0 as CONFIDENTIAL_TRANSFER_TOPIC } from './tokenScan.js';
 import { newChunkState, walkBlockRange } from '../network/logRange.js';
 
@@ -163,6 +164,19 @@ export function pinnedFees(feeData: {
     };
   }
   return feeData.gasPrice != null ? { type: 0, gasPrice: feeData.gasPrice } : {};
+}
+
+/** Refuse a recipient that would lose the tokens (the token contract, the zero address). */
+export function assertRecipient(to: string, tokenAddress: string): void {
+  const refusal = recipientRefusal(to, tokenAddress);
+  if (refusal) {
+    throw new WalletTxError(
+      'INVALID_RECEIVER',
+      'The wallet will not send to that address.',
+      refusal,
+      'Check the recipient address.',
+    );
+  }
 }
 
 /** Options for `signAndBroadcast`. */
@@ -652,6 +666,7 @@ export async function prepareConfidentialTransfer(
   opts: { session?: DecryptSession } = {},
 ): Promise<PreparedTransfer> {
   assertTransferAmount(amount);
+  assertRecipient(toAddress, tokenAddress);
   // The session's signature covers the balance checks before and after the send.
   const session = opts.session?.active ? opts.session : undefined;
   const chainId = network === 'mainnet' ? CHAIN_IDS.MAINNET : CHAIN_IDS.SEPOLIA;

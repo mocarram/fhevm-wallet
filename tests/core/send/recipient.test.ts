@@ -2,6 +2,9 @@ import { getAddress } from 'ethers';
 import { describe, expect, it } from 'vitest';
 import {
   findLookAlike,
+  lookAlikeCandidates,
+  recipientRefusal,
+  selfSendWarning,
   parseAddressInput,
   shortAddress,
   splitForComparison,
@@ -96,5 +99,36 @@ describe('resolveToken', () => {
     const r = resolveToken('ceth', tokens);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(/Try cusdc/);
+  });
+});
+
+describe('recipient refusals and warnings (M8)', () => {
+  const TOKEN = '0x1111111111111111111111111111111111111111';
+  const ME = '0x52908400098527886E0F7030069857D2E4169EE7';
+
+  it('refuses the token contract itself and the zero address', () => {
+    expect(recipientRefusal(TOKEN.toUpperCase().replace('0X', '0x'), TOKEN)).toMatch(
+      /token contract itself/,
+    );
+    expect(recipientRefusal('0x' + '0'.repeat(40), TOKEN)).toMatch(/zero address/);
+    expect(recipientRefusal(ME, TOKEN)).toBeNull();
+  });
+
+  it('warns, without refusing, when sending to yourself', () => {
+    expect(selfSendWarning(ME.toLowerCase(), ME)).toMatch(/your own address/);
+    expect(selfSendWarning(TOKEN, ME)).toBeNull();
+  });
+
+  it('checks look-alikes against own wallets and history, contacts first', () => {
+    const lookalike = '0x5290' + 'f'.repeat(32) + '9EE7';
+    const candidates = lookAlikeCandidates({
+      contacts: [],
+      wallets: [{ name: 'main', address: ME }],
+      counterparties: [ME, '0x000000000000000000000000000000000000dEaD'],
+    });
+    expect(candidates).toHaveLength(2);
+    expect(findLookAlike(lookalike, candidates)?.name).toBe('your wallet "main"');
+    const fromHistory = lookAlikeCandidates({ counterparties: [ME] });
+    expect(findLookAlike(lookalike, fromHistory)?.name).toBe('an address from your history');
   });
 });

@@ -49,7 +49,7 @@ import {
 } from '../token/txErrors.js';
 import { ERC7984_INTERFACE, type TokenInfo } from '../token/TokenService.js';
 import { setCachedBalance } from '../token/BalanceCache.js';
-import { assertTransferAmount } from '../token/TokenService.js';
+import { assertRecipient, assertTransferAmount } from '../token/TokenService.js';
 import type { TokenEntry } from '../token/TokenRegistry.js';
 import type { TokenCheck } from '../token/erc7984Check.js';
 import type { KnownToken } from '../token/tokenLists.js';
@@ -730,6 +730,7 @@ export class MockBackend implements Backend {
     network: NetworkName,
   ): Promise<PreparedSend> {
     assertTransferAmount(amount);
+    assertRecipient(to, tokenAddress);
     await this.sleep(this.opts.latencyMs);
     this.rpcFailure();
     const from = signer.address;

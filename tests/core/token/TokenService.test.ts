@@ -421,6 +421,14 @@ describe('TokenService.confidentialTransfer', () => {
     expect(res.balanceAfter).toBe(9_999n);
   });
 
+  it('refuses to send to the token contract itself before anything is signed (M8)', async () => {
+    const { confidentialTransfer } = await import('../../../src/core/token/TokenService.js');
+    await expect(confidentialTransfer(w, TOKEN, TOKEN, 5n, 'sepolia')).rejects.toMatchObject({
+      code: 'INVALID_RECEIVER',
+    });
+    expect(wallet.signTransaction).not.toHaveBeenCalled();
+  });
+
   it('a failed re-decrypt after confirmation is "unknown", not an error', async () => {
     broadcastWith(async () => ({ status: 1, blockNumber: 1 }));
     const decryption = await import('../../../src/core/fhe/DecryptionService.js');
