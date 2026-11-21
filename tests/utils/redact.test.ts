@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { redactSecrets } from '../../src/utils/redact.js';
+import { redactSecrets, rpcUrlSecretFragments } from '../../src/utils/redact.js';
 
 afterEach(() => {
   delete process.env.ETHERSCAN_API_KEY;
+  delete process.env.SEPOLIA_RPC_URL;
+  delete process.env.MAINNET_RPC_URL;
 });
 
 describe('redactSecrets', () => {
@@ -53,5 +55,39 @@ describe('redactSecrets: provider formats', () => {
       'Authorization: Bearer [redacted]',
     );
     expect(redactSecrets('{"apiKey":"zzz"}')).toBe('{"apiKey":"[redacted]"}');
+  });
+});
+
+describe('redactSecrets: pieces of the configured RPC URLs', () => {
+  it('masks a path key echoed without the host (ethers responseBody)', () => {
+    process.env.SEPOLIA_RPC_URL = 'https://rpc.example/v2/SECRET500KEY999?apikey=QKEY12345';
+    const text =
+      'server response 500 (... "responseBody": "internal error for /v2/SECRET500KEY999?apikey=QKEY12345")';
+    const out = redactSecrets(text);
+    expect(out).not.toContain('SECRET500KEY999');
+    expect(out).not.toContain('QKEY12345');
+    expect(out).toContain('/v2/'); // short segments stay readable
+  });
+
+  it('collects long path segments, query values and credentials, raw and decoded', () => {
+    const fragments = rpcUrlSecretFragments({
+      MAINNET_RPC_URL:
+        'https://user:pa%24%24word1@h.example/rpc/LONGSEGMENT1/x?k=v&token=abc%2Fdef12',
+    });
+    expect(fragments).toEqual(
+      expect.arrayContaining([
+        'LONGSEGMENT1',
+        'abc%2Fdef12',
+        'abc/def12',
+        'pa%24%24word1',
+        'pa$$word1',
+      ]),
+    );
+    expect(fragments).not.toContain('rpc'); // too short to be a key
+    expect(fragments).not.toContain('v'); // nor is a one-letter query value
+  });
+
+  it('ignores settings that are not URLs', () => {
+    expect(rpcUrlSecretFragments({ SEPOLIA_RPC_URL: 'not a url' })).toEqual([]);
   });
 });

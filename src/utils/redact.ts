@@ -24,6 +24,55 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** RPC URL settings whose path, query and credentials may hold a provider key. */
+const RPC_URL_ENV_VARS = ['MAINNET_RPC_URL', 'SEPOLIA_RPC_URL'];
+
+/** Shortest path segment treated as a possible key: `v2`, `rpc`, `sepolia` stay readable. */
+const MIN_PATH_SECRET = 8;
+/** Shortest query value or credential treated as a possible key. */
+const MIN_VALUE_SECRET = 6;
+
+/**
+ * The parts of the configured RPC URLs that could be a key: each path segment of at least
+ * 8 characters, each query value and the user:password, as written and percent-decoded.
+ * Longest first, so a fragment that contains another is masked whole.
+ */
+export function rpcUrlSecretFragments(env: NodeJS.ProcessEnv = process.env): string[] {
+  const fragments = new Set<string>();
+  const add = (value: string, min: number) => {
+    for (const v of [value, safeDecode(value)]) if (v.length >= min) fragments.add(v);
+  };
+  for (const name of RPC_URL_ENV_VARS) {
+    const value = env[name];
+    if (!value) continue;
+    let url: URL;
+    try {
+      url = new URL(value.trim());
+    } catch {
+      continue; // not a URL: step 1 still masks the value as a whole
+    }
+    for (const segment of url.pathname.split('/')) add(segment, MIN_PATH_SECRET);
+    for (const [, v] of url.searchParams) add(v, MIN_VALUE_SECRET);
+    for (const part of url.search.slice(1).split('&')) {
+      const raw = part.slice(part.indexOf('=') + 1);
+      if (part.includes('=')) add(raw, MIN_VALUE_SECRET);
+    }
+    if (url.hash.length > 1) add(url.hash.slice(1), MIN_VALUE_SECRET);
+    add(url.username, MIN_VALUE_SECRET);
+    add(url.password, MIN_VALUE_SECRET);
+  }
+  return [...fragments].sort((a, b) => b.length - a.length);
+}
+
+/** decodeURIComponent that returns the input on malformed escapes. */
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 /** Return `text` with API keys, URL credentials and labelled private keys masked. */
 export function redactSecrets(text: string): string {
   let out = text;
@@ -34,6 +83,13 @@ export function redactSecrets(text: string): string {
     if (value && value.length >= 6) {
       out = out.replace(new RegExp(escapeRegExp(value), 'g'), REDACTED);
     }
+  }
+
+  // 1b. Pieces of the configured RPC URLs, wherever they appear on their own. ethers
+  // echoes the request path in `responseBody` and `requestUrl`, often without the host
+  // (`internal error for /v2/<key>`), so masking the whole URL is not enough.
+  for (const fragment of rpcUrlSecretFragments()) {
+    out = out.split(fragment).join(REDACTED);
   }
 
   // 2. Secret-looking query parameters: ?apikey=…, &token=…
