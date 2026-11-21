@@ -162,9 +162,9 @@ warning, lock/unlock, doctor output and `--json`.
 
 ## Release
 
-- [ ] Full e2e on `staging`, independent review and validation
-- [ ] `staging` merged into `main`
-- [ ] README and docs updated; version bumped to 2.0.0
+- [x] Full e2e on `staging`, independent review and validation
+- [x] `staging` merged into `main`
+- [x] README and docs updated; version bumped to 2.0.0 (CHANGELOG.md)
 
 ### Relayer SDK: stay on `@zama-fhe/relayer-sdk` 0.4.5 for 2.0 (decided in Phase 4b)
 
