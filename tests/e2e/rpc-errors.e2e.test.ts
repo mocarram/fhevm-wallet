@@ -208,3 +208,93 @@ describe.skipIf(!hasPython)('`fhew balance` in a terminal against RPC errors', (
     }
   });
 });
+
+// The sweep past the password prompt: every way a provider echoes the request back, for
+// the commands that load the wallet. None of the output may contain the path key or the
+// query key, with or without FHEW_DEBUG.
+type EchoMode = '500' | 'chain-then-500' | 'rpc-error' | '429';
+let echoAny: Server;
+let echoAnyBase = '';
+let mode: EchoMode = '500';
+
+beforeAll(async () => {
+  echoAny = createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      const msgs = [JSON.parse(body || '{}')].flat() as { id: number; method: string }[];
+      const echo = `internal error for ${req.url} key=${KEY}`;
+      res.setHeader('content-type', 'application/json');
+      if (mode === 'chain-then-500' && msgs.every((m) => m.method === 'eth_chainId')) {
+        const reply = (m: { id: number }) => ({ jsonrpc: '2.0', id: m.id, result: '0xaa36a7' });
+        res.end(JSON.stringify(msgs.length === 1 ? reply(msgs[0]) : msgs.map(reply)));
+        return;
+      }
+      if (mode === 'rpc-error') {
+        const reply = (m: { id: number; method: string }) =>
+          m.method === 'eth_chainId'
+            ? { jsonrpc: '2.0', id: m.id, result: '0xaa36a7' }
+            : {
+                jsonrpc: '2.0',
+                id: m.id,
+                error: { code: -32000, message: `invalid api key ${echo}` },
+              };
+        res.end(JSON.stringify(msgs.length === 1 ? reply(msgs[0]) : msgs.map(reply)));
+        return;
+      }
+      res.statusCode = mode === '429' ? 429 : 500;
+      if (mode === '429') res.setHeader('retry-after', '0');
+      res.end(JSON.stringify({ error: echo }));
+    });
+  });
+  await new Promise<void>((r) => echoAny.listen(0, '127.0.0.1', () => r()));
+  echoAnyBase = `http://127.0.0.1:${port(echoAny)}`;
+});
+afterAll(() => echoAny.close());
+
+/** Run any CLI command in a pty, typing the password when asked. */
+function inPty(home: string, args: string[], env: Record<string, string>) {
+  return new Promise<{ code: number | null; out: string }>((done) => {
+    const child = spawn('python3', [PTY, PASSWORD, '45', process.execPath, CLI, ...args], {
+      env: { PATH: process.env.PATH ?? '', HOME: home, NO_COLOR: '1', ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    child.stdout.on('data', (c) => (out += c));
+    child.stderr.on('data', (c) => (out += c));
+    child.on('close', (code) => done({ code, out }));
+  });
+}
+
+describe.skipIf(!hasPython)('secrets sweep past the password prompt', () => {
+  const modes: EchoMode[] = ['500', 'chain-then-500', 'rpc-error', '429'];
+  it.each(modes)(
+    'balance and send against an RPC that echoes the key (%s)',
+    async (m) => {
+      mode = m;
+      const t = homeWithWallet();
+      try {
+        for (const debug of ['0', '1']) {
+          const env = { SEPOLIA_RPC_URL: keyUrl(echoAnyBase), FHEW_DEBUG: debug };
+          const runs = [
+            await inPty(t.home, ['balance', '-w', 'w', '-n', 'sepolia'], env),
+            await inPty(
+              t.home,
+              ['send', '0x000000000000000000000000000000000000dEaD', '1', '-t', TOKEN, '-w', 'w'],
+              env,
+            ),
+          ];
+          for (const res of runs) {
+            expect(res.out).toMatch(/Wallet loaded/); // got past the password prompt
+            expect(res.code).toBe(1);
+            expect(res.out).not.toContain(KEY);
+            expect(res.out).not.toContain(QKEY);
+          }
+        }
+      } finally {
+        t.cleanup();
+      }
+    },
+    150_000,
+  );
+});

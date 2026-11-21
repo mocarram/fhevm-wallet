@@ -127,6 +127,8 @@ describe('secrets never reach the terminal', () => {
   // a keystore, its password, API keys, a key-bearing RPC URL that fails), then check that
   // none of them appears in anything the CLI printed or in any file it wrote. The key is
   // only in the keystore, encrypted; API keys only in the owner-only .env.
+  // Without a terminal, balance and send stop at the password prompt here; the pty sweep
+  // in rpc-errors.e2e.test.ts drives them past it against servers that echo the key.
   it('no command prints or stores a private key, password or API key in plain text', async () => {
     const t = tempHome();
     try {
