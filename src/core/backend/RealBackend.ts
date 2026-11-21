@@ -97,8 +97,9 @@ function toPreparedTx(p: PreparedCall): PreparedTx {
  * is sent (an error read as "not pending" could pay twice).
  */
 async function refuseIfDisclosurePending(network: NetworkName, handle: string): Promise<void> {
-  const hash = getAmountEntry(network, handle)?.discloseTx;
-  if (!hash) return;
+  const entry = getAmountEntry(network, handle);
+  const hash = entry?.discloseTx;
+  if (!entry || !hash) return;
   const provider = getProvider(network);
   const cannotCheck = (err: unknown) => {
     const e = translateTxError(err, { action: 'transaction check' });
@@ -123,7 +124,12 @@ async function refuseIfDisclosurePending(network: NetworkName, handle: string): 
   } catch (err) {
     throw cannotCheck(err);
   }
-  if (!pending) return; // dropped or never arrived: sending again is safe
+  if (!pending) {
+    // Unknown to this endpoint is not "dropped": behind a load balancer it may still be
+    // pending on another node (as for unwrap requests, unwrapPending.ts checkForget).
+    await refuseUnlessDropped(network, entry, hash, cannotCheck);
+    return;
+  }
   throw new WalletTxError(
     'SENT_UNCONFIRMED',
     'A disclosure of this amount was already sent and is not confirmed yet.',
@@ -132,6 +138,73 @@ async function refuseIfDisclosurePending(network: NetworkName, handle: string): 
     '',
     hash,
   );
+}
+
+/**
+ * An earlier step 2 entry without a nonce (from before nonces were recorded) that the RPC
+ * does not know may be sent again only after this long: it cannot be proven dropped.
+ */
+export const DISCLOSE_LEGACY_RESEND_MS = 30 * 60_000;
+
+/**
+ * The RPC does not know our earlier step 2. Allow a new one only once it can never be
+ * mined: the signing account's mined nonce is past its nonce and a second look (after
+ * the nonce, so one mined in between is seen) still finds no receipt. Without a nonce,
+ * only after `DISCLOSE_LEGACY_RESEND_MS`.
+ */
+async function refuseUnlessDropped(
+  network: NetworkName,
+  entry: NonNullable<ReturnType<typeof getAmountEntry>>,
+  hash: string,
+  cannotCheck: (err: unknown) => WalletTxError,
+): Promise<void> {
+  const explorer = getTxExplorerUrl(hash, network);
+  const mayStillLand = (why: string) =>
+    new WalletTxError(
+      'SENT_UNCONFIRMED',
+      'A disclosure of this amount was already sent and may still be mined.',
+      why,
+      `Do not send it again yet. Check ${explorer}; any later transaction from this wallet settles it.`,
+      '',
+      hash,
+    );
+  if (entry.discloseNonce === undefined || !entry.discloseFrom) {
+    const since = Date.parse(entry.discloseSignedAt ?? entry.at);
+    if (!(Date.now() - since >= DISCLOSE_LEGACY_RESEND_MS)) {
+      throw mayStillLand(
+        'The network does not know it yet, but another node may have it. Try again in 30 minutes.',
+      );
+    }
+    return;
+  }
+  const provider = getProvider(network);
+  let mined: number;
+  try {
+    mined = await provider.getTransactionCount(entry.discloseFrom, 'latest');
+  } catch (err) {
+    throw cannotCheck(err);
+  }
+  if (mined <= entry.discloseNonce) {
+    throw mayStillLand(
+      `The network does not know it yet, but it can still be mined: its nonce (${entry.discloseNonce}) is not used yet.`,
+    );
+  }
+  let receipt;
+  try {
+    receipt = await provider.getTransactionReceipt(hash);
+  } catch (err) {
+    throw cannotCheck(err);
+  }
+  if (receipt) {
+    throw new WalletTxError(
+      'SENT_UNCONFIRMED',
+      'The disclosure sent earlier was just mined.',
+      'It showed up while the wallet was checking it.',
+      `Check ${explorer} before sending it again.`,
+      '',
+      hash,
+    );
+  }
 }
 
 /** Delegates every call to the production code paths. */
@@ -321,7 +394,19 @@ export class RealBackend implements Backend {
           ...hooks,
           onSigned: (txHash, meta) => {
             try {
-              setCachedAmounts(network, [{ handle: h, value: pub.value, discloseTx: txHash }]);
+              setCachedAmounts(network, [
+                {
+                  handle: h,
+                  value: pub.value,
+                  discloseTx: txHash,
+                  // The nonce proves later whether it can still be mined (see above).
+                  discloseSigned: {
+                    from: signer.address,
+                    nonce: meta?.nonce,
+                    at: new Date().toISOString(),
+                  },
+                },
+              ]);
             } catch {
               /* bookkeeping only */
             }

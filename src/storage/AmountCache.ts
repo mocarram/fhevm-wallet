@@ -26,6 +26,17 @@ const EntrySchema = z.object({
     .string()
     .regex(/^0x[0-9a-fA-F]{64}$/)
     .optional(),
+  /**
+   * How that step 2 was signed: account, nonce and when. A step 2 the RPC does not know
+   * may still be pending elsewhere; it is only proven dead once the account's mined nonce
+   * is past this one (RealBackend's `refuseIfDisclosurePending`). Missing on older entries.
+   */
+  discloseFrom: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{40}$/)
+    .optional(),
+  discloseNonce: z.number().int().nonnegative().optional(),
+  discloseSignedAt: z.string().optional(),
 });
 const FileSchema = z.record(z.string(), EntrySchema);
 
@@ -72,6 +83,8 @@ export function setCachedAmounts(
     value: bigint;
     disclosed?: boolean;
     discloseTx?: string | null;
+    /** With a new `discloseTx`: who signed it, its nonce (when known) and when. */
+    discloseSigned?: { from: string; nonce?: number; at: string };
   }>,
 ): void {
   if (!amounts.length) return;
@@ -86,11 +99,26 @@ export function setCachedAmounts(
       : a.discloseTx === null
         ? undefined
         : (a.discloseTx ?? prev?.discloseTx);
+    // The signing facts belong to the hash: new with a new hash, kept with the old one.
+    const signed = a.discloseTx
+      ? a.discloseSigned
+      : discloseTx
+        ? prev?.discloseFrom
+          ? { from: prev.discloseFrom, nonce: prev.discloseNonce, at: prev.discloseSignedAt ?? '' }
+          : undefined
+        : undefined;
     data[key(network, a.handle)] = {
       value: a.value.toString(),
       at,
       ...(disclosed ? { disclosed: true } : {}),
       ...(discloseTx ? { discloseTx } : {}),
+      ...(discloseTx && signed
+        ? {
+            discloseFrom: signed.from,
+            ...(signed.nonce !== undefined ? { discloseNonce: signed.nonce } : {}),
+            ...(signed.at ? { discloseSignedAt: signed.at } : {}),
+          }
+        : {}),
     };
   }
   save(data);

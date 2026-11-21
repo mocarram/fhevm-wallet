@@ -11,10 +11,15 @@ const chain = vi.hoisted(() => ({
   publicly: true,
   disclosedValue: null as null | bigint,
   failReads: false,
+  /** Nonce step 2 is signed with (undefined: an older entry without one). */
+  signNonce: undefined as number | undefined,
+  minedNonce: 0,
+  /** Receipts for the next lookups, before falling back to `receipt`. */
+  receiptSeq: [] as Array<null | { status: number }>,
 }));
 const stepTwo = vi.hoisted(() => ({
-  send: vi.fn(async (hooks?: { onSigned?: (h: string) => void }) => {
-    hooks?.onSigned?.(HASH);
+  send: vi.fn(async (hooks?: { onSigned?: (h: string, m?: { nonce: number }) => void }) => {
+    hooks?.onSigned?.(HASH, chain.signNonce === undefined ? undefined : { nonce: chain.signNonce });
     throw Object.assign(new Error('not confirmed'), { code: 'SENT_UNCONFIRMED' });
   }),
 }));
@@ -25,8 +30,9 @@ vi.mock('../../../src/core/network/ProviderFactory.js', async (orig) => ({
     getTransactionReceipt: async () => {
       if (chain.failReads)
         throw Object.assign(new Error('fetch failed'), { code: 'NETWORK_ERROR' });
-      return chain.receipt;
+      return chain.receiptSeq.length ? chain.receiptSeq.shift()! : chain.receipt;
     },
+    getTransactionCount: async () => chain.minedNonce,
     getTransaction: async () => {
       if (chain.failReads)
         throw Object.assign(new Error('fetch failed'), { code: 'NETWORK_ERROR' });
@@ -59,6 +65,9 @@ beforeEach(() => {
     publicly: true,
     disclosedValue: null,
     failReads: false,
+    signNonce: undefined,
+    minedNonce: 0,
+    receiptSeq: [],
   });
 });
 
@@ -102,5 +111,49 @@ describe('RealBackend disclosure step 2', () => {
     const err = await b.prepareDisclose(signer, TOKEN, H, 'sepolia').catch((e) => e);
     expect(err.message).toMatch(/Couldn't check the disclosure sent earlier, so nothing was sent/);
     expect(stepTwo.send).not.toHaveBeenCalled();
+  });
+
+  describe('an earlier step 2 the RPC does not know may still be mined', () => {
+    async function sentUnconfirmed(b: InstanceType<typeof RealBackend>) {
+      const prepared = await b.prepareDisclose(signer, TOKEN, H, 'sepolia');
+      await expect(prepared.send()).rejects.toThrow();
+    }
+
+    it('refuses a resend until the nonce is taken and our hash still has no receipt', async () => {
+      chain.signNonce = 3;
+      const b = new RealBackend();
+      await sentUnconfirmed(b);
+      expect(getAmountEntry('sepolia', H)).toMatchObject({ discloseTx: HASH, discloseNonce: 3 });
+      chain.minedNonce = 3; // nonce 3 not used yet
+      const err = await b.prepareDisclose(signer, TOKEN, H, 'sepolia').catch((e) => e);
+      expect(err).toMatchObject({ code: 'SENT_UNCONFIRMED', txHash: HASH });
+      expect(err.message).toMatch(/may still be mined/);
+      chain.minedNonce = 4; // a later transaction took it: ours can never be mined
+      await expect(b.prepareDisclose(signer, TOKEN, H, 'sepolia')).resolves.toBeDefined();
+    });
+
+    it('reads the receipt again after the nonce: one mined in between is refused', async () => {
+      chain.signNonce = 3;
+      const b = new RealBackend();
+      await sentUnconfirmed(b);
+      chain.minedNonce = 4;
+      chain.receiptSeq = [null, { status: 1 }];
+      const err = await b.prepareDisclose(signer, TOKEN, H, 'sepolia').catch((e) => e);
+      expect(err.message).toMatch(/just mined/);
+    });
+
+    it('an entry without a nonce waits 30 minutes before a resend', async () => {
+      const b = new RealBackend();
+      await sentUnconfirmed(b); // signed without a nonce (older entry)
+      const err = await b.prepareDisclose(signer, TOKEN, H, 'sepolia').catch((e) => e);
+      expect(err.message).toMatch(/may still be mined/);
+      const now = Date.now();
+      vi.spyOn(Date, 'now').mockReturnValue(now + 31 * 60_000);
+      try {
+        await expect(b.prepareDisclose(signer, TOKEN, H, 'sepolia')).resolves.toBeDefined();
+      } finally {
+        vi.restoreAllMocks();
+      }
+    });
   });
 });

@@ -92,7 +92,9 @@ tests/e2e/                 end-to-end runs of dist/index.js in a throwaway HOME
   may be pending on another node. The request's nonce is recorded when it is signed
   (`onSigned(hash, { nonce })`), and `checkForget` lets `--forget` drop a `signed` entry
   only once `Backend.minedNonce` is past it and a second look still finds no receipt
-  (entries without a nonce: 30 minutes old). A mined request without an
+  (entries without a nonce: 30 minutes old). Disclosure step 2 follows the same rule
+  before a resend (`refuseIfDisclosurePending` in RealBackend.ts, nonce kept in
+  amount-cache.json). A mined request without an
   `UnwrapRequested` log is `unclear` (tokens may be burnt), never "failed, nothing burnt".
 - A TUI effect that signs later (an unwrap's step 2) asks `deps.unlockedSigner()` right
   before each use and stops when the wallet locked or changed; it never keeps the key it
