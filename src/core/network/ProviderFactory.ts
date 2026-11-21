@@ -20,12 +20,18 @@ export const RPC_TIMEOUT_MS = 20_000;
 /** Timeout for a quick "which chain are you?" probe when the user sets a custom RPC. */
 export const RPC_PROBE_TIMEOUT_MS = 8_000;
 
+/** Attempts on HTTP 429 (rate limited) before a request fails. */
+export const RPC_THROTTLE_ATTEMPTS = 3;
+
 /** Build a fetch request with our timeout applied. */
 function rpcRequest(url: string, timeoutMs = RPC_TIMEOUT_MS): FetchRequest {
   const req = new FetchRequest(url);
   req.timeout = timeoutMs;
   // ethers' own Node transport leaves the socket open after a timeout (see the module).
   req.getUrlFunc = abortableGetUrl;
+  // On HTTP 429 ethers retries up to 12 times with exponential back-off, which keeps a
+  // rate-limited command frozen until the timeout. Retry a few times, then say so.
+  req.setThrottleParams({ maxAttempts: RPC_THROTTLE_ATTEMPTS });
   return req;
 }
 

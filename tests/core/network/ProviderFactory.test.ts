@@ -192,6 +192,16 @@ describe('FailoverJsonRpcProvider', () => {
     });
   });
 
+  it('gives up on a rate-limited (429) endpoint after a few tries, not 12', async () => {
+    const url = await startNode('limited', { status: 429 });
+    const provider = new FailoverJsonRpcProvider([url], sepolia, 15_000);
+    const started = Date.now();
+    await expect(provider.getBlockNumber()).rejects.toBeDefined();
+    expect(Date.now() - started).toBeLessThan(10_000);
+    expect(calls.limited.length).toBeLessThanOrEqual(3);
+    provider.destroy();
+  });
+
   it('a probe that gets HTTP 500 says the endpoint returned an error', async () => {
     const url = await startNode('probe500', { status: 500 });
     await expect(assertRpcChain(url, 11155111n)).rejects.toThrow(/returned an error \(HTTP 500\)/);
