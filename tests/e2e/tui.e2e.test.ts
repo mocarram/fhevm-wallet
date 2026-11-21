@@ -278,7 +278,7 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
 
   it('fhew send --json: precise error codes, the amount checked before the unlock', () => {
     const home = freshHome();
-    const send = (args: string[], input = `${PASSWORD}\n`) => {
+    const send = (args: string[], input = `${PASSWORD}\n`, status = 1) => {
       const res = spawnSync(process.execPath, [CLI, 'send', ...args, '--json'], {
         env: {
           PATH: process.env.PATH ?? '',
@@ -291,8 +291,12 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
         encoding: 'utf-8',
         timeout: 60_000,
       });
-      expect(res.status, args.join(' ')).toBe(1);
-      return JSON.parse(res.stdout).error as { code: string; message: string };
+      expect(res.status, args.join(' ')).toBe(status);
+      const doc = JSON.parse(res.stdout);
+      return (status ? doc.error : doc) as { code: string; message: string } & Record<
+        string,
+        unknown
+      >;
     };
     const y = ['--yes', '--password-stdin'];
     expect(send(['bob', 'lots', 'cusdc', ...y]).code).toBe('INVALID_AMOUNT');
@@ -307,6 +311,9 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     const wrong = send(['bob', '1', 'cusdc', ...y], 'not the password\n');
     expect(wrong.code).toBe('WRONG_PASSWORD');
     expect(wrong.message).toBe('That password did not unlock alice. Check it and try again.');
+    const ok = send(['bob', '1', 'cusdc', ...y], `${PASSWORD}\n`, 0);
+    expect(ok).toMatchObject({ status: 'confirmed', mock: true, wallet: { name: 'alice' } });
+    expect(ok.from).toBeUndefined();
   });
 
   it('fhew send on Mainnet: no unconfirmed send unless -n mainnet and --mainnet', () => {
@@ -752,6 +759,18 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     const tx = hist.json.transactions.find((t: { amountHandle?: string }) => t.amountHandle);
     expect(tx.amount).toMatch(/^25(\.0+)?$/);
     expect(tx.amountBaseUnits).toBe('25000000');
+    // One wallet object and the mock flag, as in every JSON result; base units on every
+    // row whose amount is known (the mock's ETH transfer included).
+    expect(hist.json.wallet).toEqual({ name: 'alice', address: expect.stringMatching(/^0x/) });
+    expect(hist.json.mock).toBe(true);
+    expect(hist.json.address).toBeUndefined();
+    for (const t of hist.json.transactions as Array<{
+      amount: string | null;
+      amountBaseUnits?: string;
+    }>)
+      if (t.amount !== null) expect(t.amountBaseUnits).toMatch(/^\d+$/);
+    const rcv = doc(['receive']);
+    expect(rcv.json).toMatchObject({ wallet: { name: 'alice' }, mock: true });
 
     const dis = doc(['disclose', tx.txHash, '--password-stdin', '--yes']);
     expect(dis.res.status).toBe(0);

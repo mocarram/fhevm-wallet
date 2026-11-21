@@ -202,6 +202,18 @@ and `disclose` (`--password-stdin` and `--yes`; their errors after a broadcast c
 `txHash`, and a failed second disclosure step also `requestTxHash`). `disclose` reports
 `status` `disclosed`, `alreadyDisclosed` or `pending`.
 
+Every result names its wallet the same way, `"wallet": {"name": "alice", "address":
+"0x…"}` (`name` is `null` for a plain `history --address`), and says `"mock": true` under
+`FHEW_BACKEND=mock` (`false` otherwise). `history` rows carry `amountBaseUnits` whenever
+the amount is known. Error codes include `INVALID_AMOUNT`, `INVALID_ADDRESS`,
+`INVALID_NETWORK`, `TOKEN_NOT_FOUND`, `CONTACT_NOT_FOUND`, `CONFLICTING_TOKENS`,
+`WALLET_NOT_FOUND`, `NO_WALLET`, `WRONG_PASSWORD`, `PASSWORD_STDIN_REQUIRED`,
+`PROMPT_NOT_ALLOWED`, `LOOKALIKE_ADDRESS`, `INSUFFICIENT_BALANCE` and the transaction
+codes (`INSUFFICIENT_GAS_FUNDS`, `INSUFFICIENT_TOKEN_BALANCE`, `SENT_UNCONFIRMED`, `TX_REVERTED`, `TX_REPLACED`, `RPC_ERROR`, …). Changed
+after 2.0.0: `receive` and `balance` give `wallet` as that object (they had `wallet` as a name and
+a separate `address`), `send` gives `wallet` instead of `from`, and `history` and `token
+find` give `wallet` instead of `address`.
+
 ```bash
 pass show my-wallet | fhew balance --json --password-stdin | jq '.tokens[].formatted'
 ```

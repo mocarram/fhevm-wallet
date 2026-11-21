@@ -7,6 +7,8 @@
  * - Keys are camelCase and never renamed; new keys may be added.
  * - bigint values (wei, base units) are decimal strings, so no precision is lost.
  * - Errors are `{"error": {"code": "...", "message": "..."}}` with exit code 1.
+ * - Every result names its wallet the same way, `"wallet": {"name", "address"}` (name null
+ *   for a plain address), and says `"mock": true|false` (FHEW_BACKEND=mock).
  * - Every string is redacted like text output (API keys, RPC URL keys), and RPC URLs are
  *   shown masked (`https://host/…`) by the commands that print them.
  */
@@ -15,6 +17,29 @@ import chalk from 'chalk';
 import { redactSecrets } from '../../utils/redact.js';
 import { WalletTxError } from '../../core/token/txErrors.js';
 import { describeError } from './userError.js';
+import { listWallets } from '../../core/wallet/index.js';
+import { wantsMock } from '../../core/backend/mockGuard.js';
+
+/**
+ * The wallet object every JSON result uses: `{name, address}`, the name looked up among
+ * the saved wallets (null for an address that is not one of them).
+ */
+export function walletJson(
+  address: string,
+  name?: string | null,
+): {
+  name: string | null;
+  address: string;
+} {
+  const found =
+    name ?? listWallets().find((w) => w.address.toLowerCase() === address.toLowerCase())?.name;
+  return { name: found ?? null, address };
+}
+
+/** `mock` for JSON results: true when FHEW_BACKEND=mock simulates the chain. */
+export function mockJson(): boolean {
+  return wantsMock();
+}
 
 /** Turn off colours for the rest of the process (chalk is used deep in helpers). */
 export function enterJsonMode(): void {

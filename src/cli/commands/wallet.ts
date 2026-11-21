@@ -3,7 +3,7 @@
  */
 
 import { Command } from 'commander';
-import { printJson } from '../utils/json.js';
+import { mockJson, printJson } from '../utils/json.js';
 import chalk from 'chalk';
 import ora from 'ora';
 import { formatPhrase, showSecretScreen } from '../utils/secretScreen.js';
@@ -232,6 +232,7 @@ export function registerWalletCommands(program: Command): void {
 
       if (options.json) {
         printJson({
+          mock: mockJson(),
           wallets: wallets.map((w) => ({
             name: w.name,
             address: w.address,

@@ -18,7 +18,8 @@ import { clearProviderForNetwork } from '../../core/network/ProviderFactory.js';
 import type { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getNameByAddress } from '../../storage/AddressBook.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
-import { failJson, jsonErrorOf, printJson, printJsonError } from '../utils/json.js';
+import { failJson, jsonErrorOf, printJson, printJsonError, walletJson } from '../utils/json.js';
+import { parseUnits } from 'ethers';
 import { createBackend } from '../../core/backend/select.js';
 import { normaliseHandle } from '../../core/fhe/DecryptSession.js';
 import {
@@ -173,20 +174,38 @@ export async function historyJson(options: HistoryJsonOptions): Promise<void> {
           (known && decimals !== undefined
             ? formatTokenAmount(known.value, decimals, decimals)
             : null),
-        // Only for a confidential amount this wallet decrypted: base units and whether
-        // it was made public on-chain.
-        amountBaseUnits: known?.value,
+        // Base units whenever the amount is known (decrypted, or plain like ETH).
+        amountBaseUnits: known?.value ?? baseUnitsOf(t.amount, t.type === 'eth' ? 18 : decimals),
+        // Only for a confidential amount this wallet decrypted: whether it was made
+        // public on-chain.
         disclosed: known ? known.disclosed : undefined,
         amountHandle: t.amountHandle ? normaliseHandle(t.amountHandle) : undefined,
         blockNumber: t.blockNumber,
         timestamp: t.timestamp,
       };
     });
-    printJson({ address, network, sync, decrypt, transactions });
+    printJson({
+      wallet: walletJson(address, decryptWallet?.name),
+      mock: backend.kind === 'mock',
+      network,
+      sync,
+      decrypt,
+      transactions,
+    });
   } catch (err) {
     failJson(err, 'Failed to load history');
   } finally {
     restore();
+  }
+}
+
+/** A stored plain amount ("0.5") in base units, or undefined when unknown. */
+function baseUnitsOf(amount: string | null, decimals: number | undefined): bigint | undefined {
+  if (amount === null || decimals === undefined) return undefined;
+  try {
+    return parseUnits(amount, decimals);
+  } catch {
+    return undefined;
   }
 }
 

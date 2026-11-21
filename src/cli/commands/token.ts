@@ -19,7 +19,7 @@ import { getDefaultNetwork } from '../../storage/ConfigStore.js';
 import { formatAddress, success, error, warning, tableStyle } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
 import { describeError } from '../utils/userError.js';
-import { printJson, printJsonError } from '../utils/json.js';
+import { mockJson, printJson, printJsonError } from '../utils/json.js';
 import { registerTokenFind } from './tokenFind.js';
 
 const NETWORK_ERROR = 'Invalid network. Use "sepolia" or "mainnet"';
@@ -135,6 +135,9 @@ export function registerTokenCommands(program: Command): void {
 
       if (options?.json) {
         printJson({
+          mock: mockJson(),
+          // null: every network (no -n given).
+          network: network ?? null,
           tokens: tokens.map((t) => ({
             address: t.address,
             name: t.name,

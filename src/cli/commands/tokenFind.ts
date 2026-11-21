@@ -22,7 +22,7 @@ import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.j
 import { error, formatAddress, success, warning, tableStyle } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
 import { describeError } from '../utils/userError.js';
-import { failJson, printJson, printJsonError } from '../utils/json.js';
+import { failJson, printJson, printJsonError, walletJson } from '../utils/json.js';
 
 interface FindCliOptions {
   network?: string;
@@ -213,7 +213,7 @@ export function registerTokenFind(token: Command): void {
         if (json) {
           printJson({
             network,
-            address,
+            wallet: walletJson(address),
             mock: backend.kind === 'mock',
             scan: result.scan,
             listError: result.listError ?? null,

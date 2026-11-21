@@ -25,7 +25,7 @@ import {
 import { prompts } from '../utils/prompts.js';
 import { describeBalanceCheck } from '../utils/transferReport.js';
 import { describeError } from '../utils/userError.js';
-import { printJson } from '../utils/json.js';
+import { printJson, walletJson } from '../utils/json.js';
 import { createBackend } from '../../core/backend/select.js';
 import type { Backend, UnlockedSigner } from '../../core/backend/types.js';
 import {
@@ -476,7 +476,7 @@ async function send(
       status: 'confirmed',
       mock: backend.kind === 'mock',
       network,
-      from: wallet.address,
+      wallet: walletJson(wallet.address, walletName),
       to: recipient,
       contact: contactName ?? null,
       token: { address: token.address, symbol: token.symbol, decimals: token.decimals },

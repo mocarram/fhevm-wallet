@@ -103,7 +103,7 @@ describe('fhew token find and add (mock)', () => {
 
 describe('--json on other commands', () => {
   it('wallet list, receive and errors', () => {
-    expect(json(['wallet', 'list']).doc).toEqual({ wallets: [] });
+    expect(json(['wallet', 'list']).doc).toEqual({ mock: true, wallets: [] });
     const r = json(['receive']);
     expect(r.code).toBe(1);
     expect(r.doc).toEqual({ error: { code: 'NO_WALLET', message: expect.any(String) } });

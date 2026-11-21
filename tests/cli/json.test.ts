@@ -60,6 +60,7 @@ describe('--json output', () => {
     setDefaultWallet('alice');
     const doc = JSON.parse(await stdoutOf('wallet', 'list', '--json'));
     expect(doc).toEqual({
+      mock: false,
       wallets: [
         { name: 'alice', address: ADDRESS, createdAt: expect.any(String), isDefault: true },
       ],
@@ -67,7 +68,11 @@ describe('--json output', () => {
   });
 
   it('token list, also when empty, and an invalid network as a JSON error', async () => {
-    expect(JSON.parse(await stdoutOf('token', 'list', '--json'))).toEqual({ tokens: [] });
+    expect(JSON.parse(await stdoutOf('token', 'list', '--json'))).toEqual({
+      mock: false,
+      network: null,
+      tokens: [],
+    });
     addTokenWithInfo({ address: TOKEN, name: 'Conf USD', symbol: 'cUSD', decimals: 6 }, 'sepolia');
     const doc = JSON.parse(await stdoutOf('token', 'list', '--json'));
     expect(doc.tokens[0]).toMatchObject({ address: TOKEN, symbol: 'cUSD', network: 'sepolia' });
@@ -82,6 +87,18 @@ describe('--json output', () => {
       exit.mockRestore();
     }
     expect(code).toBe(1);
+  });
+
+  it('receive and history name the wallet as {name, address} and say mock', async () => {
+    saveWalletKeystore('alice', '{}', ADDRESS);
+    setDefaultWallet('alice');
+    const rcv = JSON.parse(await stdoutOf('receive', '--json', '-n', 'sepolia'));
+    expect(rcv).toMatchObject({
+      wallet: { name: 'alice', address: ADDRESS },
+      mock: false,
+      network: 'sepolia',
+    });
+    expect(rcv.address).toBeUndefined();
   });
 
   it('config --show masks RPC URLs and keys like the text output', async () => {

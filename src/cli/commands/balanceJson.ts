@@ -15,7 +15,7 @@ import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.j
 import { formatTokenAmount } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
 import { describeErrorShort } from '../utils/userError.js';
-import { failJson, jsonErrorOf, printJson, printJsonError } from '../utils/json.js';
+import { failJson, jsonErrorOf, printJson, printJsonError, walletJson } from '../utils/json.js';
 
 /** Options shared with `fhew balance`. */
 export interface BalanceJsonOptions {
@@ -119,8 +119,9 @@ export async function balanceJson(options: BalanceJsonOptions): Promise<void> {
       };
     });
     printJson({
-      wallet: walletName,
-      address: wallet.address,
+      wallet: walletJson(wallet.address, walletName),
+      // balance always reads the real chain (it is refused under FHEW_BACKEND=mock).
+      mock: false,
       network,
       eth: { wei: ethWei, formatted: formatTokenAmount(ethWei, 18) },
       tokens: rows,

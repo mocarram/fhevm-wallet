@@ -10,7 +10,7 @@ import { listWallets } from '../../core/wallet/index.js';
 import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.js';
 import { error, formatNetworkName } from '../../utils/formatting.js';
 import { isValidNetwork } from '../../utils/validation.js';
-import { printJson, printJsonError } from '../utils/json.js';
+import { mockJson, printJson, walletJson, printJsonError } from '../utils/json.js';
 
 /** Register `fhew receive`. */
 export function registerReceiveCommand(program: Command): void {
@@ -56,7 +56,13 @@ export function registerReceiveCommand(program: Command): void {
         const chainId = NETWORK_CONFIGS[network].chainIdNumber;
         const uri = eip681(wallet.address, chainId);
         if (options.json) {
-          printJson({ wallet: wallet.name, address: wallet.address, network, chainId, uri });
+          printJson({
+            wallet: walletJson(wallet.address, wallet.name),
+            mock: mockJson(),
+            network,
+            chainId,
+            uri,
+          });
           return;
         }
         console.log(`Send tokens or ETH on ${formatNetworkName(network)} to ${wallet.name}:`);
