@@ -297,8 +297,9 @@ Every unit of work goes through this loop until it comes out clean:
   budget); Find tokens uses the same walker. Tokens with equal cursors are read with one
   address-list eth_getLogs per direction. On the built-in public endpoints a first RPC
   sync covers only a recent window (`PUBLIC_HISTORY_WINDOW`, 10k blocks) and says so; a
-  start refused as "pruned" moves forward (the provider counts those refusals) instead of
-  crawling a 50-block fallback; Etherscan replies with `status: "0"` are
+  first sync's start refused as "pruned" moves forward (the provider counts those
+  refusals) instead of crawling a 50-block fallback; an existing cursor never moves or
+  loses coverage (it walks the fallback under the budget and names the unsearched range); Etherscan replies with `status: "0"` are
   errors unless "No records found". Test sync changes against `tests/helpers/stubRpc.ts`
   (real provider + sync code), not only the MockBackend.
 - Never write plaintext token amounts to the audit log. Decrypted transfer amounts live

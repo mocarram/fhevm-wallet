@@ -51,8 +51,9 @@
 - History: unconfirmed entries are listed first (a limit never hides them); an unwrap
   finished by `--resume` gets its burn in history; counterparties are checksummed.
 - History sync on the default endpoints: one request per direction for all tokens, a
-  10,000-block first window, and a pruned start moves forward instead of 50-block
-  chunks (minutes → seconds on Sepolia).
+  10,000-block first window, and a first sync's pruned start moves forward instead of
+  50-block chunks (minutes → seconds on Sepolia). A resumed sync never skips blocks: it
+  keeps its cursor contiguous and says which range is still unsearched.
 - The first wallet created or imported becomes the default; with no default the only
   wallet is used.
 - Smaller things: "did not unlock" only for a wrong password (TUI), wrap notes under

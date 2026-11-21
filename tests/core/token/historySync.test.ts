@@ -117,7 +117,9 @@ describe('RPC history sync', () => {
     expect(r.complete).toBe(true);
     expect(Math.min(...pruned.ranges.map(([f]) => f))).toBe(windowStart);
     expect(archive.ranges).toEqual([]);
-    expect(r.notice).toMatch(/History before block \d+ was not searched.*Etherscan API key/);
+    expect(r.notice).toMatch(
+      new RegExp(`History before block ${windowStart} for cA was not searched.*Etherscan API key`),
+    );
     expect(r.notice).not.toMatch(/about a week/);
   });
 
@@ -138,7 +140,7 @@ describe('RPC history sync', () => {
     const total = pruned.ranges.length + capped.ranges.length;
     expect(total).toBeLessThanOrEqual(12);
     expect(capped.ranges.length).toBeLessThanOrEqual(4);
-    expect(r.notice).toMatch(/History before block (\d+) was not searched/);
+    expect(r.notice).toMatch(/History before block (\d+) for cA, cB, cC, cD was not searched/);
     const from = Number(/before block (\d+)/.exec(r.notice!)![1]);
     expect(from).toBeGreaterThanOrEqual(head - 6_000);
     for (const t of tokens) {
@@ -153,6 +155,56 @@ describe('RPC history sync', () => {
     await syncTransactions(WALLET, 'sepolia', [token(id('x').slice(0, 42), 'cE')], 'rpc');
     expect(capped.ranges).toEqual([]);
     expect(Math.min(...pruned.ranges.map(([f]) => f))).toBe(from);
+  });
+
+  it('never moves an existing cursor forward on "pruned": no gap, coverage kept', async () => {
+    net.publicRpc = true;
+    const head = FLOOR + 100_000;
+    const { saveSyncCursor } = await import('../../../src/storage/TransactionStore.js');
+    // Synced two days ago: the cursor ends 8,000 blocks back, beyond what endpoint 1 keeps.
+    const cursor = { firstBlock: head - 20_000, lastBlock: head - 8_000 };
+    saveSyncCursor(WALLET, 'sepolia', A, cursor);
+    const inGap = transfer(A, head - 7_500, false);
+    const recent = transfer(A, head - 100, true);
+    const pruned = await node({ head, prunedBelow: head - 6_000, logs: [inGap, recent] });
+    const capped = await node({ head, maxRange: 50, logs: [inGap, recent] });
+    net.urls = [pruned.url, capped.url];
+    const r = await syncTransactions(WALLET, 'sepolia', [token(A, 'cA')], 'rpc', {
+      sleep: noSleep,
+    });
+    expect(r).toMatchObject({ added: 2, complete: true });
+    expect(getSyncCursor(WALLET, 'sepolia', A)).toEqual({
+      firstBlock: cursor.firstBlock,
+      lastBlock: head,
+    });
+    // Every block from the cursor on was asked (one endpoint or the other).
+    const asked = [...pruned.ranges, ...capped.ranges].filter(([f]) => f <= head - 6_000);
+    expect(Math.min(...asked.map(([f]) => f))).toBe(cursor.lastBlock + 1 - 12);
+    // The notice names this token's own start.
+    expect(r.notice).toMatch(new RegExp(`History before block ${cursor.firstBlock} for cA`));
+  });
+
+  it('an existing cursor out of budget stays contiguous and names the unsearched range', async () => {
+    net.publicRpc = true;
+    const head = FLOOR + 100_000;
+    const { saveSyncCursor } = await import('../../../src/storage/TransactionStore.js');
+    const cursor = { firstBlock: head - 20_000, lastBlock: head - 8_000 };
+    saveSyncCursor(WALLET, 'sepolia', A, cursor);
+    const pruned = await node({ head, prunedBelow: head - 6_000 });
+    const capped = await node({ head, maxRange: 50 });
+    net.urls = [pruned.url, capped.url];
+    const r = await syncTransactions(WALLET, 'sepolia', [token(A, 'cA')], 'rpc', {
+      sleep: noSleep,
+      maxRequests: 20,
+    });
+    expect(r.complete).toBe(false);
+    const saved = getSyncCursor(WALLET, 'sepolia', A)!;
+    expect(saved.firstBlock).toBe(cursor.firstBlock);
+    expect(saved.lastBlock).toBeGreaterThan(cursor.lastBlock - 12);
+    expect(saved.lastBlock).toBeLessThan(head - 6_000);
+    expect(r.notice).toContain(
+      `History from block ${saved.lastBlock + 1} to ${head} not searched yet for cA`,
+    );
   });
 
   it('keeps per-token cursors when tokens with different cursors are synced (L1)', async () => {
@@ -180,7 +232,9 @@ describe('RPC history sync', () => {
     });
     expect(first.complete).toBe(false);
     expect(first.added).toBe(0);
-    expect(first.notice).toMatch(/Synced up to block \d+ of \d+.*Sync again to continue/);
+    expect(first.notice).toMatch(
+      /History from block \d+ to \d+ not searched yet for cA.*Sync again to continue/,
+    );
     const cursor = getSyncCursor(WALLET, 'sepolia', A)!;
     expect(cursor.firstBlock).toBe(FLOOR);
     expect(cursor.lastBlock).toBeGreaterThan(FLOOR);

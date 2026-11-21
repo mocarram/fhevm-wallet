@@ -231,6 +231,8 @@ interface RpcGroup {
   tokens: TokenEntry[];
   start: number;
   firstBlock: number;
+  /** No stored cursor yet: only then may a "pruned" start move forward. */
+  fresh: boolean;
 }
 
 /** The RPC sync. See the module comment. */
@@ -253,16 +255,21 @@ async function syncViaRpc(
   const chunk: ChunkState = newChunkState();
   const budget: RequestBudget = { left: opts.maxRequests ?? HISTORY_REQUEST_BUDGET };
   let added = 0;
-  let limitedFrom: number | null = null;
-  let stoppedAt: number | null = null;
+  // Per group: where its searched history starts (the notice names each token's start).
+  const limited: Array<{ from: number; symbols: string[] }> = [];
+  let stopped: { at: number; group: RpcGroup; later: number } | null = null;
 
   // Group tokens whose cursors give the same range (all of them on a first sync).
   const groups: RpcGroup[] = [];
   for (const token of tokens) {
-    const range = rpcStart(getSyncCursor(wallet, network, token.address), floor, head, window);
-    const g = groups.find((x) => x.start === range.start && x.firstBlock === range.firstBlock);
+    const cursor = getSyncCursor(wallet, network, token.address);
+    const range = rpcStart(cursor, floor, head, window);
+    const fresh = cursor === null;
+    const g = groups.find(
+      (x) => x.start === range.start && x.firstBlock === range.firstBlock && x.fresh === fresh,
+    );
     if (g) g.tokens.push(token);
-    else groups.push({ tokens: [token], ...range });
+    else groups.push({ tokens: [token], ...range, fresh });
   }
 
   for (const group of groups) {
@@ -270,9 +277,10 @@ async function syncViaRpc(
     const addresses = group.tokens.map((t) => t.address);
     let { start, firstBlock } = group;
     for (;;) {
-      if (firstBlock > floor) limitedFrom = Math.max(limitedFrom ?? 0, firstBlock);
-      // Only while nothing of this walk is stored yet may its start move.
-      const movable = publicRpc && head - start + 1 > MIN_PRUNED_SKIP;
+      // Only a first sync (no stored cursor) may move its start: an existing cursor's
+      // coverage is contiguous and must stay so. Its old blocks go through the fallback
+      // in small chunks under the request budget instead; the next sync continues.
+      const movable = publicRpc && group.fresh && head - start + 1 > MIN_PRUNED_SKIP;
       let skipTo: number | null = null;
       const walk = await walkBlockRange({
         from: start,
@@ -353,26 +361,42 @@ async function syncViaRpc(
         continue;
       }
       if (walk.stopped === 'error') throw rpcHistoryError(walk.error);
-      if (walk.stopped) stoppedAt = walk.scannedTo;
+      if (firstBlock > floor) {
+        limited.push({ from: firstBlock, symbols: group.tokens.map((t) => t.symbol) });
+      }
+      if (walk.stopped) {
+        stopped = {
+          at: walk.scannedTo,
+          group,
+          later: groups.length - 1 - groups.indexOf(group),
+        };
+      }
       break;
     }
-    if (stoppedAt !== null) break;
+    if (stopped) break;
   }
 
   const notes: string[] = [];
-  if (limitedFrom !== null && publicRpc) {
+  if (limited.length && publicRpc) {
+    const where = limited
+      .map((l) => `block ${l.from} for ${l.symbols.join(', ')}`)
+      .join('; before ');
     notes.push(
-      `History before block ${limitedFrom} was not searched: the public RPC endpoints keep only recent logs (a few days or less). Set an Etherscan API key (fhevm-wallet config --etherscan-key -) to get the full history.`,
+      `History before ${where} was not searched: the public RPC endpoints keep only recent logs (a few days or less). Set an Etherscan API key (fhevm-wallet config --etherscan-key -) to get the full history.`,
     );
   }
-  if (stoppedAt !== null && !opts.signal?.aborted) {
+  if (stopped && !opts.signal?.aborted) {
+    const from = Math.max(stopped.at + 1, stopped.group.start);
+    const others = stopped.later
+      ? ` (and ${stopped.later} more token group${stopped.later === 1 ? '' : 's'} not synced this time)`
+      : '';
     notes.push(
-      `Synced up to block ${Math.max(stoppedAt, 0)} of ${head}: this RPC endpoint allows only small log searches, so the rest is left for the next sync. Sync again to continue, or set an Etherscan API key.`,
+      `History from block ${from} to ${head} not searched yet for ${stopped.group.tokens.map((t) => t.symbol).join(', ')}${others}: this RPC endpoint allows only small log searches. Sync again to continue, or set an Etherscan API key.`,
     );
   }
   return {
     added,
-    complete: stoppedAt === null,
+    complete: stopped === null,
     head,
     ...(notes.length ? { notice: notes.join(' ') } : {}),
   };
