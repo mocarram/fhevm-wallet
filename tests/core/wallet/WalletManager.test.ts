@@ -75,6 +75,22 @@ describe('WalletManager', () => {
     expect(() => exportKeystoreFile('ks', dest)).toThrow(/already exists/);
   });
 
+  it('a keystore export succeeds even when the audit log cannot be written', async () => {
+    await importWalletFromPrivateKey('ks2', KNOWN_PRIVATE_KEY, PASSWORD);
+    const { DATA_DIR } = await import('../../../src/storage/paths.js');
+    const { mkdirSync, rmSync, existsSync } = await import('fs');
+    const audit = join(DATA_DIR, 'audit.log');
+    rmSync(audit, { force: true });
+    mkdirSync(audit); // appending to a directory fails
+    try {
+      const dest = join(homedir(), 'backup2.json');
+      expect(exportKeystoreFile('ks2', dest)).toBe(dest);
+      expect(existsSync(dest)).toBe(true);
+    } finally {
+      rmSync(audit, { recursive: true, force: true });
+    }
+  });
+
   it('refuses wallet names that point outside the wallets folder', async () => {
     const { mkdirSync, writeFileSync } = await import('fs');
     const { DATA_DIR } = await import('../../../src/storage/paths.js');

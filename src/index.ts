@@ -53,14 +53,16 @@ import { clearProviderCache } from './core/network/ProviderFactory.js';
 
 // Last line of defence: an error no command caught must not print its raw message or
 // stack, which for ethers errors includes the RPC URL and its API key.
+// Providers are left alone here: a stray rejection (a background poll, say) can arrive
+// while a command is still using them. The post-command exit timer ends the process.
 const failSafely = (err: unknown): void => {
   process.stderr.write(`Error: ${describeError(err)}\n`);
   process.exitCode = 1;
-  clearProviderCache(); // nothing may keep a failed command alive
 };
 process.on('unhandledRejection', failSafely);
 process.on('uncaughtException', (err) => {
   failSafely(err);
+  clearProviderCache();
   process.exit(1); // state is unknown after an uncaught exception: stop
 });
 

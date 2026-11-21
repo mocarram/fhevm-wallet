@@ -173,6 +173,12 @@ export function exportKeystoreFile(name: string, destPath: string): string {
     if (code === 'ENOENT') throw new Error(`The folder for ${target} does not exist`);
     throw err;
   }
-  logEvent('WALLET_EXPORTED', { name, format: 'keystore' });
+  // The file is written: a failing audit log must not report the export as failed (a
+  // retry would then hit "already exists").
+  try {
+    logEvent('WALLET_EXPORTED', { name, format: 'keystore' });
+  } catch {
+    /* best effort */
+  }
   return target;
 }

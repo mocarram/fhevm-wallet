@@ -1291,9 +1291,16 @@ async function handleBalance(): Promise<void> {
     return;
   }
 
-  // Fetch ETH balance
+  // Fetch ETH balance. An unreachable RPC returns to the menu with a sentence, instead of
+  // ending the whole interactive session (this screen is replaced in Phase 3).
   const provider = getProvider(network);
-  let ethBalance = await provider.getBalance(wallet.address);
+  let ethBalance: bigint;
+  try {
+    ethBalance = await provider.getBalance(wallet.address);
+  } catch (err) {
+    console.log(error(describeError(err, 'Could not load balances')));
+    return;
+  }
   let ethFormatted = formatTokenAmount(ethBalance, 18);
 
   const headerLines = [
@@ -1349,9 +1356,13 @@ async function handleBalance(): Promise<void> {
     } else if (action === 'refresh' || action === 'force') {
       const forceRefresh = action === 'force';
 
-      // Refresh ETH balance
-      ethBalance = await provider.getBalance(wallet.address);
-      ethFormatted = formatTokenAmount(ethBalance, 18);
+      // Refresh ETH balance; keep the last one if the RPC fails this time.
+      try {
+        ethBalance = await provider.getBalance(wallet.address);
+        ethFormatted = formatTokenAmount(ethBalance, 18);
+      } catch (err) {
+        console.log(error(describeError(err, 'Could not refresh the ETH balance')));
+      }
 
       // Refresh balances
       const refreshTable = new DynamicBalanceTable({
