@@ -73,7 +73,16 @@ export function parseOperatorExpiry(input: string, nowMs: number): ExpiryResult 
     const ms = text.includes('t')
       ? new Date(text.replace('t', 'T')).getTime()
       : new Date(`${text}T23:59:59`).getTime();
-    if (Number.isNaN(ms))
+    // JavaScript rolls 2026-02-31 over to March 3: check the date read back is the one
+    // typed, so an impossible date is refused instead of silently moved.
+    const [y, mo, d] = text.slice(0, 10).split('-').map(Number);
+    const back = new Date(ms);
+    if (
+      Number.isNaN(ms) ||
+      back.getFullYear() !== y ||
+      back.getMonth() + 1 !== mo ||
+      back.getDate() !== d
+    )
       return { ok: false, error: 'That date does not exist.', hint: 'Use YYYY-MM-DD.' };
     const until = Math.floor(ms / 1000);
     if (until <= nowS)

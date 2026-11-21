@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  formatAddress,
-  formatNetworkName,
-  formatTokenAmount,
-  parseTokenAmount,
-} from '../../src/utils/formatting.js';
+import { formatAddress, formatNetworkName, formatTokenAmount } from '../../src/utils/formatting.js';
 
 describe('formatNetworkName', () => {
   it('appends beta tag for mainnet only', () => {
@@ -29,35 +24,14 @@ describe('formatAddress', () => {
   });
 });
 
-describe('formatTokenAmount / parseTokenAmount', () => {
-  it('round-trips whole values', () => {
-    const raw = parseTokenAmount('100', 6);
-    expect(raw).toBe(100_000_000n);
-    expect(formatTokenAmount(raw, 6)).toBe('100');
-  });
-
-  it('round-trips fractional values', () => {
-    const raw = parseTokenAmount('1.25', 6);
-    expect(raw).toBe(1_250_000n);
-    expect(formatTokenAmount(raw, 6)).toBe('1.25');
+describe('formatTokenAmount', () => {
+  it('formats whole and fractional values', () => {
+    expect(formatTokenAmount(100_000_000n, 6)).toBe('100');
+    expect(formatTokenAmount(1_250_000n, 6)).toBe('1.25');
   });
 
   it('truncates fractional precision in formatting', () => {
     expect(formatTokenAmount(1_234_567n, 6, 2)).toBe('1.23');
-  });
-
-  it('rejects excess decimals instead of truncating', () => {
-    expect(() => parseTokenAmount('1.123456789', 6)).toThrow(/Too many decimal places/);
-  });
-
-  it('rejects signs, spaces inside and exponent notation', () => {
-    for (const bad of ['-1', '1e6', '1 000', '.5', '1.']) {
-      expect(() => parseTokenAmount(bad, 6)).toThrow(/Invalid amount format/);
-    }
-  });
-
-  it('throws on multiple decimal points', () => {
-    expect(() => parseTokenAmount('1.2.3', 6)).toThrow(/Invalid amount format/);
   });
 });
 

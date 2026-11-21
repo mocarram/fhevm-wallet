@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   isValidAddress,
-  isValidAmount,
   isValidContactName,
   isValidMnemonic,
   isValidNetwork,
@@ -56,21 +55,6 @@ describe('isValidWalletName', () => {
     ['has/slash', false],
   ])('isValidWalletName(%s) -> %s', (name, expected) => {
     expect(isValidWalletName(name)).toBe(expected);
-  });
-});
-
-describe('isValidAmount', () => {
-  it('accepts positive integers and decimals', () => {
-    expect(isValidAmount('1')).toBe(true);
-    expect(isValidAmount('0.5')).toBe(true);
-    expect(isValidAmount('1234.5678')).toBe(true);
-  });
-
-  it('rejects zero, negatives, and non-numeric', () => {
-    expect(isValidAmount('0')).toBe(false);
-    expect(isValidAmount('-1')).toBe(false);
-    expect(isValidAmount('abc')).toBe(false);
-    expect(isValidAmount('')).toBe(false);
   });
 });
 

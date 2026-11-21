@@ -211,6 +211,36 @@ describe('data dir trust: ancestors and private groups', () => {
     },
   );
 
+  it.skipIf(process.platform === 'win32')(
+    'refuses folders above the data dir that another user owns or a shared group can write (StrictModes)',
+    () => {
+      const me = process.getuid!();
+      const other = me === 0 ? 1234 : me + 1;
+      const tree: Record<string, { mode: number; uid: number; gid: number }> = {
+        '/': { mode: 0o40755, uid: 0, gid: 0 },
+        '/home': { mode: 0o40755, uid: 0, gid: 0 },
+        '/home/u': { mode: 0o40755, uid: me, gid: 100 },
+      };
+      const stat = (p: string) => {
+        const st = tree[p];
+        if (!st) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        return st;
+      };
+      const privateGroup = (gid: number) => gid === 1000;
+      const check = () => untrustedAncestor('/home/u/.fhevm-wallet', stat, privateGroup);
+      expect(check()).toBeNull();
+      tree['/home'] = { mode: 0o40755, uid: other, gid: 0 }; // another user's folder
+      expect(check()).toBe('/home');
+      tree['/home'] = { mode: 0o40775, uid: 0, gid: 100 }; // a shared group can write
+      expect(check()).toBe('/home');
+      tree['/home'] = { mode: 0o40755, uid: 0, gid: 0 };
+      tree['/home/u'] = { mode: 0o40775, uid: me, gid: 1000 }; // the user's private group
+      expect(check()).toBeNull();
+      tree['/home/u'] = { mode: 0o41777, uid: other, gid: 0 }; // sticky but someone else's
+      expect(check()).toBe('/home/u');
+    },
+  );
+
   it('isPrivateGroup: own-named group with no other members or primary users', () => {
     const group = 'root:x:0:\nalice:x:1000:\nstaff:x:50:alice,bob\nshared:x:1001:bob\n';
     const passwd = 'alice:x:1000:1000::/home/alice:/bin/sh\nbob:x:1001:1001::/home/bob:/bin/sh\n';

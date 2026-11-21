@@ -5,6 +5,7 @@
 import { existsSync, readdirSync, readFileSync, unlinkSync } from 'fs';
 import { ensureSecureDir, writeSecureFile } from './secureFs.js';
 import { join } from 'path';
+import { getAddress } from 'ethers';
 import { assertTrustedDataDir, DATA_DIR } from './paths.js';
 
 const WALLETS_DIR = join(DATA_DIR, 'wallets');
@@ -101,8 +102,39 @@ export function loadWalletMetadata(name: string): WalletMetadata | null {
   if (!existsSync(metaPath)) {
     return null;
   }
+  let meta: Partial<WalletMetadata>;
   try {
-    return JSON.parse(readFileSync(metaPath, 'utf-8'));
+    meta = JSON.parse(readFileSync(metaPath, 'utf-8')) as Partial<WalletMetadata>;
+  } catch {
+    return null;
+  }
+  // The address shown (receive screen, QR code, lists) comes from the keystore, which is
+  // what signs: a .meta.json that was edited or got out of step must not show an address
+  // the key does not control.
+  const fromKeystore = keystoreAddress(name);
+  const address =
+    fromKeystore ??
+    (typeof meta.address === 'string' && /^0x[0-9a-fA-F]{40}$/.test(meta.address)
+      ? meta.address
+      : 'Unknown');
+  return {
+    name,
+    address,
+    createdAt: typeof meta.createdAt === 'string' ? meta.createdAt : 'Unknown',
+  };
+}
+
+/**
+ * The address recorded inside the encrypted JSON keystore (the `address` field ethers
+ * writes, unencrypted), checksummed, or null when there is none to read. Decrypting
+ * would prove more, but needs the password; the field is what the key was saved with.
+ */
+export function keystoreAddress(name: string): string | null {
+  try {
+    const ks = JSON.parse(readFileSync(getWalletPath(name), 'utf-8')) as { address?: unknown };
+    if (typeof ks.address !== 'string') return null;
+    const hex = ks.address.replace(/^0x/i, '');
+    return /^[0-9a-fA-F]{40}$/.test(hex) ? getAddress('0x' + hex) : null;
   } catch {
     return null;
   }

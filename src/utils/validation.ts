@@ -42,14 +42,6 @@ export function isValidWalletName(name: string): boolean {
 }
 
 /**
- * Validate a token amount
- */
-export function isValidAmount(amount: string): boolean {
-  // Allow positive numbers with optional decimal point
-  return /^\d+(\.\d+)?$/.test(amount) && parseFloat(amount) > 0;
-}
-
-/**
  * Validate network name
  */
 export function isValidNetwork(network: string): network is 'mainnet' | 'sepolia' {

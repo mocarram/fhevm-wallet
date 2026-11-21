@@ -11,6 +11,8 @@
  */
 
 import { withTimeout } from '../../utils/timeout.js';
+import { maskUrlsInText, redactDebugText } from '../../utils/redact.js';
+import { stripUnsafeChars } from '../../utils/text.js';
 
 type ConsoleMethod = 'log' | 'info' | 'warn' | 'debug' | 'error';
 const METHODS: ConsoleMethod[] = ['log', 'info', 'warn', 'debug', 'error'];
@@ -36,7 +38,10 @@ function record(method: ConsoleMethod, args: unknown[]): void {
   captured.push(`[sdk ${method}] ${text}`);
   if (captured.length > KEEP) captured.shift();
   if (process.env.FHEW_DEBUG === '1' && !tuiActive) {
-    process.stderr.write(`[relayer-sdk] ${text}\n`);
+    // Same redaction as technical details: the SDK may print URLs, keys or handles.
+    process.stderr.write(
+      `[relayer-sdk] ${stripUnsafeChars(maskUrlsInText(redactDebugText(text)))}\n`,
+    );
   }
 }
 

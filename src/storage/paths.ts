@@ -125,15 +125,23 @@ const WORLD_WRITE = 0o002;
 const STICKY = 0o1000;
 
 /**
- * The first folder above `path` (up to /) that any local user can write to without the
- * sticky bit, or null. Like sshd's StrictModes: whoever can write to a parent can rename
- * the data dir away and put their own in its place, keystores and RPC settings included.
- * A sticky folder such as /tmp is fine: others cannot rename what they do not own.
+ * The first folder above `path` (up to /) that someone other than this user (or root)
+ * could change, or null. Like sshd's StrictModes: whoever can write to a parent can
+ * rename the data dir away and put their own in its place, keystores and RPC settings
+ * included. A folder is untrusted when:
+ *
+ * - another (non-root) user owns it: the owner can always rename what is inside;
+ * - anyone can write to it, unless it is sticky like /tmp (others cannot rename what
+ *   they do not own);
+ * - its group can write to it (not sticky), unless that group is the user's own private
+ *   group (`isPrivateGroup`), which nobody else is in.
  */
 export function untrustedAncestor(
   path: string,
-  stat: (p: string) => { mode: number } = statSync,
+  stat: (p: string) => { mode: number; uid?: number; gid?: number } = statSync,
+  privateGroup: (gid: number, uid: number) => boolean = (gid, uid) => isPrivateGroup(gid, uid),
 ): string | null {
+  const me = typeof process.getuid === 'function' ? process.getuid() : undefined;
   let dir: string;
   try {
     dir = realpathSync(path);
@@ -144,13 +152,22 @@ export function untrustedAncestor(
     const parent = dirname(dir);
     if (parent === dir) return null;
     dir = parent;
-    let mode: number;
+    let st: { mode: number; uid?: number; gid?: number };
     try {
-      mode = stat(dir).mode;
+      st = stat(dir);
     } catch {
       continue; // a parent that does not exist yet is created by the wallet, owner-only
     }
-    if ((mode & WORLD_WRITE) !== 0 && (mode & STICKY) === 0) return dir;
+    const sticky = (st.mode & STICKY) !== 0;
+    if (me !== undefined && st.uid !== undefined && st.uid !== 0 && st.uid !== me) return dir;
+    if (sticky) continue;
+    if ((st.mode & WORLD_WRITE) !== 0) return dir;
+    if (
+      (st.mode & GROUP_WRITE) !== 0 &&
+      !(me !== undefined && st.gid !== undefined && privateGroup(st.gid, me))
+    ) {
+      return dir;
+    }
   }
 }
 
@@ -223,7 +240,7 @@ export function assertTrustedDataDir(files: AccountFiles = {}): string[] {
   const ancestor = untrustedAncestor(DATA_DIR);
   if (ancestor) {
     throw new UntrustedDataDirError(
-      `Any user can rename or replace folders inside ${ancestor}, which holds the wallet data folder ${DATA_DIR}, so the wallet will not load keys or settings from it. Move the data folder somewhere private (set FHEVM_WALLET_HOME), or remove that access with: chmod o-w ${ancestor} (or make it sticky with chmod +t).`,
+      `Other users can rename or replace folders inside ${ancestor}, which holds the wallet data folder ${DATA_DIR}, so the wallet will not load keys or settings from it. Move the data folder somewhere private (set FHEVM_WALLET_HOME), or make ${ancestor} yours or root's and writable only by its owner (chmod go-w ${ancestor}).`,
     );
   }
   const tightened: string[] = [];

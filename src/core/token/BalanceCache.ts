@@ -75,7 +75,12 @@ export function getCachedBalance(
     return null;
   }
 
-  return BigInt(cached.value);
+  return toBigIntOrNull(cached.value);
+}
+
+/** A cached decimal string as bigint, or null when the file holds something else. */
+function toBigIntOrNull(value: unknown): bigint | null {
+  return typeof value === 'string' && /^\d{1,30}$/.test(value) ? BigInt(value) : null;
 }
 
 /**

@@ -61,3 +61,23 @@ describe('BalanceCache', () => {
     expect(peeked?.updatedAt!.getTime()).toBeGreaterThanOrEqual(before - 1000);
   });
 });
+
+describe('a hand-edited balance cache (LOW)', () => {
+  it('treats a non-numeric cached value as no cache instead of throwing', async () => {
+    const { writeFileSync, mkdirSync } = await import('fs');
+    const { join } = await import('path');
+    const { getTestDataDir } = await import('../../helpers/dataDir.js');
+    const mod = await import('../../../src/core/token/BalanceCache.js');
+    const W = '0x52908400098527886E0F7030069857D2E4169EE7';
+    const T = '0x1111111111111111111111111111111111111111';
+    mod.setCachedBalance(W, T, 'sepolia', 42n, 5n);
+    const file = join(getTestDataDir(), 'balance-cache.json');
+    const { readFileSync } = await import('fs');
+    const data = JSON.parse(readFileSync(file, 'utf-8'));
+    for (const k of Object.keys(data)) data[k].value = 'oops';
+    mkdirSync(getTestDataDir(), { recursive: true });
+    writeFileSync(file, JSON.stringify(data));
+    expect(mod.getCachedBalance(W, T, 'sepolia', 42n)).toBeNull();
+    expect(mod.peekCachedBalance(W, T, 'sepolia')).toBeNull();
+  });
+});

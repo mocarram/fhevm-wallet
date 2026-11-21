@@ -55,3 +55,15 @@ describe('parseOperatorExpiry', () => {
     expect(describeExpiry(nowS)).toMatch(/^until Nov 2\d 2026 \d\d:\d\d$/);
   });
 });
+
+describe('impossible dates (LOW)', () => {
+  it('refuses 2099-02-31 instead of rolling it over to March', async () => {
+    const { parseOperatorExpiry } = await import('../../../src/core/send/operatorExpiry.js');
+    const now = Date.UTC(2099, 0, 1);
+    expect(parseOperatorExpiry('2099-02-31', now)).toMatchObject({
+      ok: false,
+      error: 'That date does not exist.',
+    });
+    expect(parseOperatorExpiry('2099-02-28', now).ok).toBe(true);
+  });
+});

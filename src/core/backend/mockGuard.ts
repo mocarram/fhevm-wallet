@@ -156,7 +156,8 @@ export function commandName(argv: string[]): string {
 
 /**
  * With FHEW_BACKEND=mock, refuse commands that would silently use the real network
- * (balance, token add, config --rpc-*): the user asked for a simulation.
+ * (`balance`, `config`): the user asked for a simulation. `MOCK_COMMANDS` lists the
+ * ones that route every chain and relayer call through the Backend.
  */
 export function assertCommandSupportsMock(argv: string[]): void {
   const cmd = commandName(argv);

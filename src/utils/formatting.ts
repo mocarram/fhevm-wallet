@@ -66,26 +66,6 @@ export function formatTokenAmount(amount: bigint, decimals: number, precision = 
 }
 
 /**
- * Parse a human amount such as "1.25" into base units for a token with `decimals`.
- *
- * Strict on purpose: extra decimal places are rejected rather than silently truncated,
- * so the amount the user typed is exactly the amount that gets encrypted and sent.
- */
-export function parseTokenAmount(amount: string, decimals: number): bigint {
-  const trimmed = amount.trim();
-  if (!/^\d+(\.\d+)?$/.test(trimmed)) {
-    throw new Error('Invalid amount format');
-  }
-
-  const [integerPart, fractionalPart = ''] = trimmed.split('.');
-  if (fractionalPart.length > decimals) {
-    throw new Error(`Too many decimal places: this token supports at most ${decimals}`);
-  }
-
-  return BigInt(integerPart + fractionalPart.padEnd(decimals, '0'));
-}
-
-/**
  * Format a date for display
  */
 export function formatDate(dateStr: string): string {

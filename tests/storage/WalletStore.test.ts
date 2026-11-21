@@ -19,6 +19,17 @@ beforeEach(() => {
 });
 
 describe('WalletStore', () => {
+  it('shows the keystore address, not an edited .meta.json one', () => {
+    const keystore = JSON.stringify({
+      version: 3,
+      id: 'x',
+      address: FAKE_ADDRESS.slice(2).toLowerCase(),
+    });
+    saveWalletKeystore('main', keystore, '0x000000000000000000000000000000000000dEaD');
+    expect(loadWalletMetadata('main')?.address).toBe(FAKE_ADDRESS);
+    expect(listWallets()[0].address).toBe(FAKE_ADDRESS);
+  });
+
   it('walletExists returns false for unknown name', () => {
     expect(walletExists('ghost')).toBe(false);
   });

@@ -78,8 +78,9 @@ so mock and real data never share a folder (`src/core/backend/mockGuard.ts`):
 `FHEW_BACKEND` and `FHEVM_WALLET_HOME` are taken from the launch environment, never a
 `.env`; the mock runs only in a folder marked `.fhew-mock`, which it creates only in a
 missing or empty folder other than `~/.fhevm-wallet`; every command refuses a marked
-folder without `FHEW_BACKEND=mock`; and under the mock only the TUI, `send`, `wallet` and
-help run (the rest would reach the real network). Use `FHEVM_WALLET_HOME=$(mktemp -d)`. The TUI shows
+folder without `FHEW_BACKEND=mock`; and under the mock only the TUI and the commands in
+`MOCK_COMMANDS` run (`send`, `wallet`, `token`, `doctor`, `receive`, `history`,
+`operator`, `disclose`, help); the rest (`balance`, `config`) would reach the real network. Use `FHEVM_WALLET_HOME=$(mktemp -d)`. The TUI shows
 "MOCK · simulated, no real funds" right after the brand in the status bar.
 
 ## Terminal UI (src/tui)
@@ -183,7 +184,9 @@ Every unit of work goes through this loop until it comes out clean:
   folder (`sharedLocationReason`). A data dir or `wallets/` that group or others can
   write to, or any wallet file that is writable by others, owned by another user or a
   symlink, is refused *before* anything is tightened or read (`assertTrustedDataDir`),
-  and so is a data dir under a folder anyone can write to without the sticky bit. The
+  and so is a data dir under a folder another user could change (like sshd's StrictModes:
+  owned by someone other than the user or root, world-writable without the sticky bit, or
+  group-writable by a group other than the user's private one; `untrustedAncestor`). The
   one exception is a group-writable (not world-writable) file of the user's own private
   group, which is tightened. Trust is re-checked before a keystore is read.
   The data-dir `.env` only supplies `SAVED_ENV_KEYS` (RPC URLs, API keys);
@@ -232,7 +235,10 @@ Every unit of work goes through this loop until it comes out clean:
   errors unless "No records found". Test sync changes against `tests/helpers/stubRpc.ts`
   (real provider + sync code), not only the MockBackend.
 - Never write plaintext token amounts to the audit log. Decrypted transfer amounts live
-  only in `amount-cache.json` (`src/storage/AmountCache.ts`, owner-only, keyed by handle).
+  in `amount-cache.json` (`src/storage/AmountCache.ts`, owner-only, keyed by handle).
+  Two other owner-only files hold amounts the user typed themselves: a send recorded
+  locally in `transactions.json` (`recordLocalTransaction`) and the TUI's "Next time"
+  hint in `ui-prefs.json` (`lastSend`). Synced history stores only the encrypted handle.
 - User decryption goes through a `DecryptSession` (`src/core/fhe/DecryptSession.ts`): one
   EIP-712 signature per 10 contracts for all tracked tokens, requests of at most 2048
   encrypted bits (the relayer SDK limits). It is memory-only and must be `clear()`ed with
