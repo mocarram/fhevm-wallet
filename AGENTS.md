@@ -203,7 +203,9 @@ feature branch  ──merge --no-ff──▶  staging  ──merge --no-ff──
 4. Before merging into `staging`: `npm run verify` passes **and** an independent review
    (see below) has no open blocking findings.
 5. Merge into `staging` with `--no-ff` so each phase is one visible merge commit.
-6. Promote `staging` → `main` only after a full e2e pass on `staging`.
+6. Promote `staging` → `main` only after a full e2e pass on `staging`. A pre-release
+   (`X.Y.Z-beta.N`) is tagged `vX.Y.Z-beta.N` on `staging` and shipped as an `npm pack`
+   tarball with `docs/beta-testing.md`; `main` gets `X.Y.Z` only after the user signs off.
 7. Never force-push `staging` or `main`. Never rewrite published history.
 8. Never commit secrets, `.env`, keystores or anything from the data dir.
 

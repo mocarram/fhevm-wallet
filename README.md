@@ -77,6 +77,10 @@ with the offline mock backend, `FHEW_BACKEND=mock`):
 
 Requires Node.js >= 24.11.
 
+Testing a pre-release (`2.1.0-beta.1`)? Install the `.tgz` with
+`npm install -g ./fhevm-wallet-2.1.0-beta.1.tgz` and follow
+[docs/beta-testing.md](docs/beta-testing.md).
+
 ```bash
 # npm
 npm install -g fhevm-wallet
@@ -103,19 +107,19 @@ fhew
 The first start walks you through setup: wallet, network, a token and ETH for gas.
 Then, on any screen:
 
-| Key | Action |
-| --- | --- |
-| ↑ ↓ / k j, Enter | Move and select |
-| 1-9, 0 | Jump to a numbered item; 0 quits from Home |
-| b s r h d | Balances, Send, Receive, History, Doctor (on Home) |
-| . | Repeat your last send (stops on Review) |
-| Esc | Back one step, keeping what you typed; stops a send countdown |
-| Ctrl+C | Back to Home; twice on Home quits |
-| : | Command bar: `send bob 25 cusdc`, `balances`, `doctor`, `lock`, `help`, … |
-| ? | Help for the current screen |
-| L (or l) | Lock now (the decrypted key is only ever held in memory) |
-| / | Filter a long list (tokens, contacts, history, Send's token and recipient) |
-| PgUp PgDn, Home End | Scroll a long list; the menu and notes stay on screen |
+| Key                 | Action                                                                     |
+| ------------------- | -------------------------------------------------------------------------- |
+| ↑ ↓ / k j, Enter    | Move and select                                                            |
+| 1-9, 0              | Jump to a numbered item; 0 quits from Home                                 |
+| b s r h d           | Balances, Send, Receive, History, Doctor (on Home)                         |
+| .                   | Repeat your last send (stops on Review)                                    |
+| Esc                 | Back one step, keeping what you typed; stops a send countdown              |
+| Ctrl+C              | Back to Home; twice on Home quits                                          |
+| :                   | Command bar: `send bob 25 cusdc`, `balances`, `doctor`, `lock`, `help`, …  |
+| ?                   | Help for the current screen                                                |
+| L (or l)            | Lock now (the decrypted key is only ever held in memory)                   |
+| /                   | Filter a long list (tokens, contacts, history, Send's token and recipient) |
+| PgUp PgDn, Home End | Scroll a long list; the menu and notes stay on screen                      |
 
 Pasting is safe: a paste is one event that goes into the text field (it never runs menu
 shortcuts or presses Enter), and a pasted address on Send › Recipient opens the address

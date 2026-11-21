@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### New
+
 - Wrap / Unwrap for ERC-20 wrapper tokens (OpenZeppelin `ERC7984ERC20Wrapper`, e.g.
   cZAMA ⇄ ZAMA on Sepolia): `fhew wrap <amount> [token]`, `fhew unwrap <amount> [token]`,
   `fhew unwrap --list | --resume | --forget`, and in the terminal UI Balances/Tokens ›
@@ -16,6 +17,7 @@
   History, marked unconfirmed, until a sync finds them.
 
 ### Changed
+
 - `--json`: every result names its wallet as `{"name", "address"}` and says `mock`;
   `receive`, `balance`, `send`, `history` and `token find` changed shape (see README).
   Errors use precise codes (`INVALID_AMOUNT`, `TOKEN_NOT_TRACKED`, `WRONG_PASSWORD`,
@@ -25,6 +27,7 @@
   changed, scrolls long lists, and shows every token amount exactly.
 
 ### Safety
+
 - A wrap that would mint 0 (smaller than one confidential unit, e.g. 1e8 base units of an
   18-decimal token at rate 1e12) is refused before signing; the dust that cannot be
   wrapped is shown and stays in the wallet.
@@ -35,6 +38,7 @@
   wrapper".
 
 ### Fixed
+
 - `fhew unwrap --forget` no longer drops a request the RPC cannot see yet but that may
   still be mined; the nonce of each request is recorded and must be taken first.
 - A mined unwrap request without its UnwrapRequested log is "check the explorer", never
@@ -63,15 +67,58 @@
   Ctrl+C without "Cancelled" when nothing was in progress, no emoji in `fhew history`,
   clearer invalid-address and wallet-address-as-token messages.
 
+### Network, sending and start-up (from the 2.1 audit and live Sepolia runs)
+
+- Sends that the RPC confirmed but ethers' `wait()` tripped over are now confirmed by
+  polling the receipt instead of being reported as failed.
+- The fee the user reviewed is the fee that is signed (no re-pricing between review and
+  signing).
+- Read-only calls fail over to the next endpoint on JSON-RPC rate, plan, pruned and
+  range replies; an endpoint that refuses with HTTP 4xx is skipped for the rest of the
+  run. JSON-RPC batches are capped at 10 calls (nodies' limit). Endpoint errors are in
+  plain words. Sepolia defaults are publicnode, then nodies.
+- Log searches (history, Find tokens) shrink to the endpoint's limit (e.g. nodies' 50
+  blocks), back off on rate limits and keep to a request budget; history keeps a cursor
+  per token and treats Etherscan `status: "0"` replies as errors unless "No records
+  found".
+- A verified Sepolia token list for Find tokens (sources in `docs/token-lists.md`);
+  disclosure reruns never send step 2 twice; `DECRYPT_NOT_ALLOWED` when the relayer
+  refuses a user decryption.
+- Recipient checks refuse the token contract itself as the recipient and warn on a
+  send to yourself.
+- Damaged store files are moved aside (and reported) instead of being overwritten.
+- Start-up: the relayer SDK loads on first use and Node's compile cache is kept in a
+  private folder; `fhew --version` takes about 55 ms instead of about 360 ms.
+- CI: actions pinned by commit, base image pinned by digest, installs skip install
+  scripts, and npm audit signatures are checked; the storage e2e test passes as an
+  ordinary user.
+
+### Known limitations
+
+- Nothing was sent on Mainnet during testing.
+- The USDT-style approval reset (approve 0 first) and wrappers built on OpenZeppelin
+  0.3.x are covered by tests only.
+- On the free default Sepolia endpoints, logs older than about 10,000 blocks are
+  pruned. A first sync starts from that window (and says so); catching up after a
+  break of more than a day or two crawls through a 50-block endpoint and can take a few
+  minutes or a second run. A full-history RPC URL or an Etherscan API key avoids this.
+
 ### Verified on Sepolia
+
 - Wrap ZAMA → cZAMA (approve + wrap), unwrap cZAMA → ZAMA end to end (request, public
   decryption, finish), and `fhew unwrap --resume` after killing the process after step 1
   and during step 2. See the transaction hashes in `docs/ROADMAP.md` Phase 5.
+- On the integrated beta build: a confidential send (balance checked by decrypting on
+  both wallets), wrap and unwrap from the terminal UI (step 2 sent automatically),
+  operator set and revoke, a disclosure of our own transfer, the common failure
+  messages, upgrading a 2.0 data folder, and history sync (first sync of 4 tokens in
+  about 1.5 s; a resumed sync with no skipped blocks).
 
 
 Requires Node.js 24.11 or later.
 
 ### Fixed
+
 - Sending on Sepolia failed during gas estimation: the wallet called `$_transfer`, a
   function that only exists on OpenZeppelin's test mocks. Sends now use the standard
   ERC-7984 `confidentialTransfer`, are simulated before you confirm, and are signed
@@ -80,6 +127,7 @@ Requires Node.js 24.11 or later.
   after a subcommand was ignored.
 
 ### Security
+
 - Wallet data is owner-only (0700/0600) with atomic writes; shared, planted or
   other-writable data folders are refused at startup with the exact fix to run.
 - RPC API keys never appear in output, logs or errors; keys and recovery phrases are
@@ -91,6 +139,7 @@ Requires Node.js 24.11 or later.
 - Mainnet sends without a prompt need both `-n mainnet` and `--mainnet`.
 
 ### New
+
 - Full-screen terminal UI: status bar, Esc back, Ctrl+C home, `?` help, `:` command bar,
   `L` lock, `.` repeat last send, first-run setup, look-alike and first-time recipient
   checks, cancellable countdown, non-blocking sends, low-gas nudge.
@@ -102,4 +151,5 @@ Requires Node.js 24.11 or later.
 - Offline mock backend (`FHEW_BACKEND=mock`) for demos and tests, in its own data folder.
 
 ### Not yet verified on-chain
+
 See "Not yet done (needs the user)" in `docs/ROADMAP.md`.
