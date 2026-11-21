@@ -12,6 +12,7 @@ import { SCREENS } from '../../src/tui/screens/registry.js';
 import { breadcrumb, statusBar } from '../../src/tui/statusBar.js';
 import { plain, toAnsi } from '../../src/tui/text.js';
 import { wipeTestDataDir } from '../helpers/dataDir.js';
+import { mockNonConfidentialToken } from '../../src/core/backend/MockBackend.js';
 import { Harness, STRANGER } from './harness.js';
 
 beforeEach(() => wipeTestDataDir());
@@ -219,7 +220,26 @@ describe('Tokens', () => {
     const h = new Harness({ mock: { fail: 'rpc' } });
     await h.keys('6', '1', STRANGER, '{enter}');
     expect(h.screen).toBe('token-add');
-    expect(h.s.fieldError?.[0]).toMatch(/Couldn't add that token/);
+    expect(h.s.fieldError?.[0]).toMatch(/Couldn't check that token/);
+  });
+
+  it('asks before adding a contract that fails the ERC-7984 check', async () => {
+    const h = new Harness();
+    const plain = mockNonConfidentialToken('sepolia');
+    await h.keys('6', '1', plain, '{enter}');
+    expect(h.screen).toBe('token-add-confirm');
+    expect(h.text()).toMatch(/does not look like an ERC-7984 confidential token/);
+    expect(h.text()).toMatch(/confidentialBalanceOf/);
+    // The default answer is "Don't add it".
+    await h.keys('{enter}');
+    expect(h.screen).toBe('token-add');
+    expect(listTokens('sepolia').some((t) => t.address === plain)).toBe(false);
+    await h.keys('{enter}');
+    expect(h.screen).toBe('token-add-confirm');
+    await h.keys('2');
+    expect(h.screen).toBe('tokens');
+    expect(listTokens('sepolia').some((t) => t.address === plain)).toBe(true);
+    expect(h.text()).toMatch(/Added PLAIN .*\n.*ERC-7984 check failed/);
   });
 });
 

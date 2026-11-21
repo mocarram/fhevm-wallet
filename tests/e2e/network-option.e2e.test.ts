@@ -83,7 +83,7 @@ describe('-n/--network after the subcommand is used', () => {
   it('token add -n mainnet checks Mainnet', () => {
     const h = home('sepolia');
     const res = runCli(['token', 'add', MAINNET_TOKEN, '-n', 'mainnet'], h);
-    expect(res.stdout).toMatch(/already exists on mainnet/);
+    expect(res.stdout).toMatch(/already tracked on mainnet/);
   });
 
   it('token remove -n mainnet removes the Mainnet entry', () => {

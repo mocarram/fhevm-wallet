@@ -6,10 +6,17 @@ import { Command } from 'commander';
 import { prompts } from '../utils/prompts.js';
 import ora from 'ora';
 import Table from 'cli-table3';
-import { addToken, removeToken, listTokens } from '../../core/token/TokenRegistry.js';
+import {
+  addTokenWithInfo,
+  isTokenRegistered,
+  listTokens,
+  removeToken,
+} from '../../core/token/TokenRegistry.js';
+import { createBackend } from '../../core/backend/select.js';
+import { describeNonCompliant } from '../../core/token/erc7984Check.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getDefaultNetwork } from '../../storage/ConfigStore.js';
-import { formatAddress, success, error } from '../../utils/formatting.js';
+import { formatAddress, success, error, warning } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
 import { describeError } from '../utils/userError.js';
 
@@ -19,10 +26,11 @@ export function registerTokenCommands(program: Command): void {
   // Add token
   token
     .command('add')
-    .description('Add a token to track')
+    .description('Add a token to track (checked for ERC-7984 first)')
     .argument('[address]', 'Token contract address')
     .option('-n, --network <network>', 'Network (sepolia or mainnet)')
-    .action(async (address?: string, options?: { network?: string }) => {
+    .option('-f, --force', 'Add it even if it fails the ERC-7984 check')
+    .action(async (address?: string, options?: { network?: string; force?: boolean }) => {
       try {
         // Determine network
         let network: NetworkName = getDefaultNetwork();
@@ -49,18 +57,41 @@ export function registerTokenCommands(program: Command): void {
           console.log(error('Invalid Ethereum address'));
           return;
         }
-
-        const spinner = ora(`Fetching token info from ${network}...`).start();
-
-        let entry;
-        try {
-          entry = await addToken(address!, network);
-        } catch (err) {
-          spinner.fail('Could not add the token');
-          throw err;
+        if (isTokenRegistered(address!, network)) {
+          process.exitCode = 1;
+          console.log(error(`That token is already tracked on ${network}.`));
+          return;
         }
 
-        spinner.succeed('Token added');
+        const backend = createBackend();
+        const spinner = ora(`Checking the token contract on ${network}...`).start();
+        let check;
+        try {
+          check = await backend.checkToken(address!, network);
+        } catch (err) {
+          spinner.fail('Could not check the token');
+          throw err;
+        }
+        if (!check.compliant) {
+          spinner.warn('This contract failed the ERC-7984 check');
+          const d = describeNonCompliant(check, network);
+          console.log(error(d.title));
+          if (check.info) for (const p of check.problems) console.log(`  - ${p}`);
+          else console.log(`  ${d.hint}`);
+          if (!options?.force || !check.info) {
+            process.exitCode = 1;
+            console.log(
+              check.info
+                ? 'Nothing was added. If you know this contract and trust it, add it anyway with --force.'
+                : 'Nothing was added: it has no token name, symbol or decimals, so it cannot be tracked.',
+            );
+            return;
+          }
+        }
+        const entry = addTokenWithInfo(check.info!, network);
+        if (check.compliant) spinner.succeed('Token added');
+        else console.log(warning('Added anyway (--force), although the ERC-7984 check failed.'));
+        for (const w of check.warnings) console.log(warning(w));
 
         console.log();
         console.log(`  Name:     ${entry.name}`);

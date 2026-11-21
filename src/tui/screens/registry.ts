@@ -39,7 +39,12 @@ import {
   setupTokenScreen,
   setupWelcomeScreen,
 } from './setup.js';
-import { tokenAddScreen, tokenRemoveScreen, tokensScreen } from './tokens.js';
+import {
+  tokenAddConfirmScreen,
+  tokenAddScreen,
+  tokenRemoveScreen,
+  tokensScreen,
+} from './tokens.js';
 import {
   exportConfirmScreen,
   exportKeystoreScreen,
@@ -88,6 +93,7 @@ export const SCREENS: Record<string, ScreenDef> = {
 
   tokens: tokensScreen,
   'token-add': tokenAddScreen,
+  'token-add-confirm': tokenAddConfirmScreen,
   'token-remove': tokenRemoveScreen,
 
   contacts: contactsScreen,

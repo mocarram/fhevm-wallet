@@ -23,12 +23,14 @@ import {
   frame,
   goHome,
   isUnlocked,
+  top,
   type AppState,
   type DoctorRow,
   type HistoryRow,
 } from '../state.js';
 import { dimLine, line, seg } from '../text.js';
 import { decryptAll, refreshEth, reload } from './data.js';
+import type { TokenCheck } from '../../core/token/erc7984Check.js';
 
 function ok(s: AppState, text: string): void {
   s.flash = [line('  ', seg(`✔ ${text}`, 'green'))];
@@ -60,40 +62,83 @@ export function addTokenByAddress(
     s.fieldError = ['That token is already tracked.', 'Pick another address.'];
     return [];
   }
-  s.busy = 'Reading the token contract';
+  s.busy = 'Checking the token contract';
   return [
     effect('add-token', async (deps) => {
+      let check: TokenCheck;
       try {
-        const info = await deps.backend.getTokenInfo(address, network);
-        const entry = addTokenWithInfo(info, network);
-        return (st) => {
-          st.busy = null;
-          delete st.inputs.tokenAddress;
-          // Show it at once; the reload below refreshes the rest of the snapshot.
-          if (st.network === network && !st.data.tokens.some((t) => t.address === entry.address)) {
-            st.data = { ...st.data, tokens: [...st.data.tokens, entry] };
-          }
-          if (then === 'setup') {
-            const fx = open(st, 'setup-gas');
-            ok(st, `Added ${entry.symbol} (${entry.name})`);
-            return [reload(st), ...fx];
-          }
-          popTo(st, 'tokens');
-          ok(st, `Added ${entry.symbol} (${entry.name}) at ${shortAddress(entry.address)}`);
-          return [reload(st), ...decryptAll(st)];
-        };
+        check = await deps.backend.checkToken(address, network);
       } catch (err) {
         const d = describeError(err, { action: 'token lookup' });
         return (st) => {
           st.busy = null;
           st.fieldError = [
-            `Couldn't add that token: ${d.title}`,
+            `Couldn't check that token: ${d.title}`,
             d.hint || 'Check the address and the network.',
           ];
         };
       }
+      return (st) => {
+        st.busy = null;
+        if (!check.compliant) {
+          // Not refused outright: the user may know better (an unusual deployment), but
+          // they have to say so on a screen that explains what the check found.
+          st.tokenCheck = check;
+          return open(st, 'token-add-confirm', { then });
+        }
+        return trackChecked(st, check, then, network);
+      };
     }),
   ];
+}
+
+/**
+ * Track a token whose check is done (passed, or the user chose "Add anyway"). Shows the
+ * check's warnings with the success message.
+ */
+export function trackChecked(
+  s: AppState,
+  check: TokenCheck,
+  then: 'tokens' | 'setup',
+  network: NetworkName = s.network,
+): Effect[] {
+  if (!check.info) {
+    s.fieldError = [
+      'That contract has no token name, symbol or decimals.',
+      'It cannot be tracked. Check the address on a block explorer.',
+    ];
+    return [];
+  }
+  let entry;
+  try {
+    entry = addTokenWithInfo(check.info, network);
+  } catch (err) {
+    const d = describeError(err, { action: 'token lookup' });
+    s.fieldError = [`Couldn't add that token: ${d.title}`, d.hint || 'Check the address.'];
+    return [];
+  }
+  delete s.inputs.tokenAddress;
+  s.tokenCheck = null;
+  // Esc from the next screen must not land on the answered "Add anyway?" question.
+  if (top(s).id === 'token-add-confirm') s.stack.pop();
+  // Show it at once; the reload below refreshes the rest of the snapshot.
+  if (s.network === network && !s.data.tokens.some((t) => t.address === entry.address)) {
+    s.data = { ...s.data, tokens: [...s.data.tokens, entry] };
+  }
+  const notes = [
+    ...check.warnings,
+    ...(check.compliant ? [] : ['Added although the ERC-7984 check failed.']),
+  ];
+  if (then === 'setup') {
+    const fx = open(s, 'setup-gas');
+    ok(s, `Added ${entry.symbol} (${entry.name})`);
+    s.flash!.push(...notes.map((n) => dimLine(`    ${n}`)));
+    return [reload(s), ...fx];
+  }
+  popTo(s, 'tokens');
+  ok(s, `Added ${entry.symbol} (${entry.name}) at ${shortAddress(entry.address)}`);
+  s.flash!.push(...notes.map((n) => dimLine(`    ${n}`)));
+  return [reload(s), ...decryptAll(s)];
 }
 
 /** Stop tracking the tokens with these addresses. */

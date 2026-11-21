@@ -113,6 +113,10 @@ describe('commands under FHEW_BACKEND=mock', () => {
       ['i'],
       ['send', 'bob', '1'],
       ['wallet', 'list'],
+      ['token', 'add'],
+      ['token', 'find'],
+      ['doctor'],
+      ['receive'],
       ['--help'],
     ]) {
       expect(() => assertCommandSupportsMock(argv(...ok))).not.toThrow();
@@ -120,7 +124,6 @@ describe('commands under FHEW_BACKEND=mock', () => {
     for (const bad of [
       ['balance'],
       ['history'],
-      ['token', 'add'],
       ['config', '--rpc-sepolia', '-'],
     ]) {
       expect(() => assertCommandSupportsMock(argv(...bad))).toThrow(/would use the real network/);

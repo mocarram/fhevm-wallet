@@ -4,7 +4,8 @@
  */
 
 import { shortAddress } from '../../core/send/recipient.js';
-import { addTokenFromInput, removeTrackedTokens } from '../flows/manage.js';
+import { describeNonCompliant } from '../../core/token/erc7984Check.js';
+import { addTokenFromInput, removeTrackedTokens, trackChecked } from '../flows/manage.js';
 import {
   MULTI_SELECT_HELP,
   multiSelectKey,
@@ -12,9 +13,9 @@ import {
   type MultiOption,
 } from '../components/list.js';
 import { open } from '../nav.js';
-import type { ScreenDef } from '../screen.js';
-import { top, type AppState } from '../state.js';
-import { dimLine, line, pad, seg } from '../text.js';
+import type { Item, ScreenDef } from '../screen.js';
+import { back, top, type AppState } from '../state.js';
+import { dimLine, line, pad, seg, type Line } from '../text.js';
 import { backItem, BLANK, inputLine } from './common.js';
 
 export const tokensScreen: ScreenDef = {
@@ -89,6 +90,36 @@ export const tokenAddScreen: ScreenDef = {
     ],
     hint: 'paste address · enter add · esc back',
   }),
+};
+
+/** "This is not an ERC-7984 token. Add anyway?" after a failed check. */
+export const tokenAddConfirmScreen: ScreenDef = {
+  crumb: ['Tokens', 'Add', 'Check'],
+  view: (s) => {
+    const check = s.tokenCheck;
+    const then = top(s).params.then === 'setup' ? 'setup' : 'tokens';
+    const body: Line[] = check
+      ? [
+          line('  ', seg(`✗ ${describeNonCompliant(check, s.network).title}`, 'red')),
+          BLANK,
+          ...(check.info
+            ? check.problems.map((p) => dimLine(`  · ${p}`))
+            : [dimLine(`  ${describeNonCompliant(check, s.network).hint}`)]),
+          BLANK,
+          dimLine('  Balances and sends would fail for a token that is not ERC-7984.'),
+          dimLine('  Only add it if you know this contract and trust it.'),
+        ]
+      : [dimLine('  Nothing to confirm. Press Esc.')];
+    const items: Item[] = [{ label: "Don't add it", act: (st) => back(st) }];
+    if (check?.info) {
+      items.push({
+        label: 'Add anyway',
+        valueStyle: 'red',
+        act: (st) => (st.tokenCheck ? trackChecked(st, st.tokenCheck, then) : []),
+      });
+    }
+    return { body, items, hint: 'enter select · esc back' };
+  },
 };
 
 function removeOptions(s: AppState): MultiOption[] {

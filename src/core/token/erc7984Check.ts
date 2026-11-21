@@ -189,10 +189,20 @@ export async function checkErc7984(call: EthCall, address: string): Promise<Toke
   };
 }
 
-/** One sentence for a refused token, plus what the user can do. */
-export function describeNonCompliant(check: TokenCheck): { title: string; hint: string } {
+/** One sentence for a refused token, plus the reasons. */
+export function describeNonCompliant(
+  check: TokenCheck,
+  network: string,
+): { title: string; hint: string } {
+  // Nothing answered at all: an account, or a contract of another kind or network.
+  if (!check.info && !check.balanceHandle) {
+    return {
+      title: `That address is not a token contract on ${network}.`,
+      hint: 'It may be a wallet address, another kind of contract, or a token on a different network.',
+    };
+  }
   return {
-    title: `${check.info ? `${check.info.symbol} (${check.address})` : check.address} does not look like an ERC-7984 confidential token.`,
+    title: `${check.info ? `${check.info.symbol} (${check.info.name})` : check.address} does not look like an ERC-7984 confidential token.`,
     hint: check.problems.join(' '),
   };
 }
