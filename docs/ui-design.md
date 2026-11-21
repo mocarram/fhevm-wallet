@@ -130,20 +130,20 @@ Wrap screen (`Home › Balances › Wrap`), amounts typed in the **public** toke
 - `max` and `half` use the public balance; their dust is shown the same way.
 - Unwrap is the same screen with the sides swapped (`Tab`, or the "Unwrap … instead"
   item, switches; letter keys type into the field): amounts in
-  confidential units, "You get 10 ZAMA (public)"; it needs the decrypted balance (unlock
+  confidential units, "You get 10.00 ZAMA (public)"; it needs the decrypted balance (unlock
   first) because a burn above the balance burns 0.
 
 Review uses the shared operator/disclosure Review (Confirm → countdown → background
 broadcast) with detail lines:
 
 ```
-  Wrap 2 ZAMA into 2 cZAMA
+  Wrap 2.00 ZAMA into 2.00 cZAMA
   The wrapped amount is public on-chain; later balances and transfers are private.
 
-  You give   2 ZAMA (public)
-  You get    2 cZAMA (confidential)
+  You give   2.00 ZAMA (public)
+  You get    2.00 cZAMA (confidential)
   Stays      0.0000005 ZAMA (below 1 cZAMA unit)          only with dust
-  Step 1     Approve cZAMA to take exactly 2 ZAMA (not unlimited)   only when needed
+  Step 1     Approve cZAMA to take exactly 2.00 ZAMA (not unlimited)   only when needed
   Step 2     Wrap (simulated after the approval)
   The fee below includes an estimate for the wrap.         only when it follows an approval
   Fee        up to 0.0004 ETH (you have 0.4210)
@@ -153,16 +153,20 @@ After the confirm both transactions go out in order; the wrap is simulated only 
 approval confirmed (it cannot be simulated before). If that simulation fails, the notice
 says "The approval went through, the wrap was not sent" and Wrap again skips the
 approval. On confirmation the confidential balance re-decrypts and the notice shows
-`✔ Wrapped 2 ZAMA → 2 cZAMA · cZAMA 97.00 → 99.00`.
+`✔ Wrapped 2.00 ZAMA → 2.00 cZAMA · cZAMA 97.00 → 99.00`. Amounts on these
+screens use the TUI's exact format (at least two decimals), like Send. A wrap whose
+confirmation does not arrive in time ends like an unconfirmed send: the hash, "Do not
+send it again until you have checked it", a History row marked unconfirmed, and one
+refresh 30 s later.
 
-Unwrap Review: "Unwrap 10 cZAMA into 10 ZAMA", warning "The unwrapped amount becomes
-public on-chain.", `Step 1 Request: burns 10 cZAMA and asks Zama to decrypt the amount`,
+Unwrap Review: "Unwrap 10.00 cZAMA into 10.00 ZAMA", warning "The unwrapped amount becomes
+public on-chain.", `Step 1 Request: burns 10.00 cZAMA and asks Zama to decrypt the amount`,
 `Step 2 Finish: publish the decrypted amount with its proof; ZAMA arrives`. One confirm
 covers both. The request is saved as pending the moment it is signed. After it confirms
 the wallet waits for the public decryption (up to a minute) and sends step 2 itself.
 
 Pending unwraps (not finished yet) show on Home above the menu as an unnumbered item
-`Finish unwrap: 10 cZAMA → ZAMA` (key `u`, value `waiting`) and under Balances. Finish
+`Finish unwrap: 10.00 cZAMA → ZAMA` (key `u`, value `waiting`) and under Balances. Finish
 unwrap first checks the chain: already finished (by this wallet or anyone) → "✔ Already
 finished"; step 2 sent but unconfirmed → its hash, "Not sent again"; decryption not ready
 → "Not decryptable yet, try again in a minute"; otherwise the Review for step 2 alone.

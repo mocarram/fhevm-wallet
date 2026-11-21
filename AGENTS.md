@@ -90,9 +90,14 @@ tests/e2e/                 end-to-end runs of dist/index.js in a throwaway HOME
   amount-cache.json, and a damaged file is never overwritten.
 - Re-read the wrapper (`Backend.wrapperInfo`) before signing; `wrappers.json` is a cache
   for display only.
-- BAD_DATA from ethers is "no contract answer" only for "could not decode result data".
-  "missing response for request" is an RPC that dropped part of a JSON-RPC batch
-  (nodies drops batches above 10): treat it as a transport failure.
+- "The contract did not answer" is decided by one rule, `isContractNoAnswer`
+  (`src/core/token/txErrors.ts`), for the ERC-7984 check and the wrapper check alike:
+  BAD_DATA counts only as `0x` back, never "missing response for request" (an RPC that
+  dropped part of a JSON-RPC batch; nodies drops batches above 10), which is a transport
+  failure.
+- A wrap (mint) or unwrap request (burn) is recorded in `transactions.json` when it
+  confirms, and at block 0 (unconfirmed, with its hash) when the receipt does not come
+  (`src/core/token/wrapHistory.ts`), like a send.
 
 ## Offline mock backend
 
@@ -152,7 +157,11 @@ into the focused field with its rules, or a screen's `onPaste`; never as shortcu
 
 `fhew send bob 25 cusdc` uses the same core/send helpers and the Backend as the TUI, so
 the TUI's "Next time" hint is a working command (an e2e test runs it). Scripts use
-`--password-stdin` (send, balance) and `--yes`; prompts refuse without a terminal.
+`--password-stdin` (send, balance, history --decrypt, operator, disclose, wrap, unwrap,
+wallet create/import) and `--yes` (also on `wallet remove` and `token remove`); prompts
+refuse without a terminal and name the missing option. The default network is set with
+`fhew config --default-network <net>` (`-n` on `config` is refused); `fhew -n <net>` with
+no command starts the TUI on that network.
 
 Testing: `tests/tui/harness.ts` drives the real core with the MockBackend and no delays
 (press keys, `settle()` effects, `text()` the frame). `tests/e2e/tui.e2e.test.ts` runs the
@@ -277,7 +286,8 @@ Every unit of work goes through this loop until it comes out clean:
 - Never write plaintext token amounts to the audit log. Decrypted transfer amounts live
   in `amount-cache.json` (`src/storage/AmountCache.ts`, owner-only, keyed by handle).
   Two other owner-only files hold amounts the user typed themselves: a send recorded
-  locally in `transactions.json` (`recordLocalTransaction`) and the TUI's "Next time"
+  locally in `transactions.json` (`recordLocalTransaction`, sends, wraps and unwrap
+  requests) and the TUI's "Next time"
   hint in `ui-prefs.json` (`lastSend`). Synced history stores only the encrypted handle.
 - User decryption goes through a `DecryptSession` (`src/core/fhe/DecryptSession.ts`): one
   EIP-712 signature per 10 contracts for all tracked tokens, requests of at most 2048
@@ -335,7 +345,14 @@ Every unit of work goes through this loop until it comes out clean:
   "Add anyway"). A transport failure is never reported as "not ERC-7984".
 - `--json` (`src/cli/utils/json.ts`): one document on stdout, stable camelCase keys, bigint
   as strings, errors `{"error":{code,message}}` with exit 1, no prompts (require
-  `--password-stdin` / `--yes` instead), human progress on stderr only.
+  `--password-stdin` / `--yes` instead), human progress on stderr only. Every result
+  names its wallet as `walletJson` (`{name, address}`) and carries `mock` (`mockJson`);
+  amounts are `{baseUnits, formatted}` (history rows: `amountBaseUnits`). Use the
+  shared codes (`INVALID_AMOUNT`, `INSUFFICIENT_BALANCE`, `TOKEN_NOT_TRACKED`,
+  `CONFLICTING_TOKENS`, `WRONG_PASSWORD`, `PASSWORD_STDIN_REQUIRED`, …) before inventing one.
+- Spinners come from `src/cli/utils/spinner.ts` (marks ✔ ! ✗, colour only on a
+  terminal), never `ora` directly; success and warning lines use `success` / `warning`
+  (`src/utils/formatting.ts`). Nothing writes escape codes into a pipe or a file.
 - Never put a token address in `src/core/token/lists/*.json` that was not verified; record
   the source in `docs/token-lists.md`.
 - No emoji in menus (they break column alignment in many terminals).

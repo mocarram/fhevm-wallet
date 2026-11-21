@@ -8,6 +8,21 @@
   `fhew unwrap --list | --resume | --forget`, and in the terminal UI Balances/Tokens ›
   Wrap or unwrap, Home › Finish unwrap, `:wrap` / `:unwrap`. Wrap amounts are in the
   public token's units, unwrap amounts in the confidential token's.
+- `fhew config --default-network <net>` sets the default network (`-n` on `config` is
+  refused); `fhew -n <net>` alone starts the terminal UI on that network.
+- `wallet create` and `wallet import` take `--password-stdin`; `wallet remove` and
+  `token remove` take `--yes` (and a token symbol).
+- Sends, wraps and unwrap requests that were broadcast but not confirmed in time stay in
+  History, marked unconfirmed, until a sync finds them.
+
+### Changed
+- `--json`: every result names its wallet as `{"name", "address"}` and says `mock`;
+  `receive`, `balance`, `send`, `history` and `token find` changed shape (see README).
+  Errors use precise codes (`INVALID_AMOUNT`, `TOKEN_NOT_TRACKED`, `WRONG_PASSWORD`,
+  `CONFLICTING_TOKENS`, `PASSWORD_STDIN_REQUIRED`, …).
+- No escape codes in pipes or files (tables, spinners); marks are ✔ ! ✗ everywhere.
+- The terminal UI reads keys and pastes raw (bracketed paste), redraws only what
+  changed, scrolls long lists, and shows every token amount exactly.
 
 ### Safety
 - A wrap that would mint 0 (smaller than one confidential unit, e.g. 1e8 base units of an

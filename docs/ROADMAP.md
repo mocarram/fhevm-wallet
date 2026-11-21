@@ -255,8 +255,11 @@ Confidential Contracts 0.5.3 source (`token/ERC7984/extensions/ERC7984ERC20Wrapp
       `unwrapRequester`) so no step is sent twice; a new unwrap of a token with an
       unconfirmed request is refused until that one is checked
 - [x] CLI: `fhew wrap <amount> [token]`, `fhew unwrap <amount> [token]`,
-      `fhew unwrap --list`, `fhew unwrap --resume [id]`; `-n -w --yes --password-stdin
-      --mainnet --json`; in `MOCK_COMMANDS`
+      `fhew unwrap --list`, `fhew unwrap --resume [id]`; `-n -w -t --yes --password-stdin
+      --mainnet --json`; in `MOCK_COMMANDS`; JSON with the shared wallet object, `mock`
+      flag and error codes (`INVALID_AMOUNT`, `INSUFFICIENT_BALANCE`, `CONFLICTING_TOKENS`)
+- [x] Wraps and unwrap requests in the local history (mint / burn), unconfirmed ones with
+      their hash until a sync finds them (`src/core/token/wrapHistory.ts`)
 - [x] MockBackend: deterministic wrappers (mock cUSDC wraps USDC at rate 1, mock cDAI wraps
       an 18-decimal DAI at rate 1e12), approvals, unwrap requests that survive a restart
       through the pending store, `FHEW_MOCK_FAIL=public-pending`

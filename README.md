@@ -262,6 +262,7 @@ fhew unwrap 10 czama      # amount in the CONFIDENTIAL token (10 cZAMA)
 fhew unwrap --list        # unwraps that are not finished (--all: also finished ones)
 fhew unwrap --resume      # finish them (checks the chain first, never sends a step twice)
 fhew unwrap --forget <id> # drop a failed or dropped one from the list
+fhew wrap 5 -t czama      # the token can also be given with -t, as for send and balance
 ```
 
 The wrapper converts at a fixed rate (`10^(ERC-20 decimals − 6)`: 1e12 for 18-decimal
@@ -278,7 +279,9 @@ publishes the amount with its proof and sends the ERC-20. One confirmation cover
 If the finish cannot be sent right away, the unwrap is kept in `unwraps.json` and
 `fhew unwrap --resume` (or Home › Finish unwrap in the terminal UI) completes it later. In
 the terminal UI: Balances or Tokens › Wrap or unwrap (`w`), `Tab` switches direction,
-`:wrap 25 czama` and `:unwrap 10 czama` work from anywhere.
+`:wrap 25 czama` and `:unwrap 10 czama` work from anywhere. A wrap and an unwrap request
+appear in History (as a mint and a burn) as soon as they confirm, or marked unconfirmed
+with their hash if the confirmation did not arrive in time.
 
 ### Doctor, Receive
 
@@ -300,18 +303,24 @@ needs `--password-stdin`, and `send` needs `--password-stdin`, `--yes`, a recipi
 amount. The same goes for `history --decrypt` (`--password-stdin`) and `operator set|revoke`
 and `disclose` (`--password-stdin` and `--yes`; their errors after a broadcast carry
 `txHash`, and a failed second disclosure step also `requestTxHash`). `disclose` reports
-`status` `disclosed`, `alreadyDisclosed` or `pending`. `wrap` reports `status: wrapped`
-with `amount`, `wrapped`, `dust`, `approveTxHash` and `txHash`; `unwrap` reports `status`
-`finished` or `pending` (and `unwrap --resume` a `results` list), each with the
-request and finish hashes.
+`status` `disclosed`, `alreadyDisclosed` or `pending`. `wrap` and `unwrap` need
+`--password-stdin` and `--yes` too. `wrap` reports `status: wrapped` with `token`,
+`underlying`, `rate`, `amount`, `wrapped` and `dust` (each `{baseUnits, formatted}`),
+`approveTxHash` and `txHash`; a failed wrap after the approval keeps `approveTxHash` in
+its error. `unwrap` reports `status` `finished` or `pending` with `requestTxHash` and
+`finalizeTxHash`; `unwrap --resume` gives a `results` list, `unwrap --list` an `unwraps`
+list and `unwrap --forget` the `removed` entry.
 
 Every result names its wallet the same way, `"wallet": {"name": "alice", "address":
 "0x…"}` (`name` is `null` for a plain `history --address`), and says `"mock": true` under
 `FHEW_BACKEND=mock` (`false` otherwise). `history` rows carry `amountBaseUnits` whenever
 the amount is known. Error codes include `INVALID_AMOUNT`, `INVALID_ADDRESS`,
-`INVALID_NETWORK`, `TOKEN_NOT_TRACKED` (send, balance, operator, disclose), `CONTACT_NOT_FOUND`, `CONFLICTING_TOKENS`,
+`INVALID_NETWORK`, `TOKEN_NOT_TRACKED` (send, balance, operator, disclose, wrap, unwrap),
+`CONTACT_NOT_FOUND`, `CONFLICTING_TOKENS`,
 `WALLET_NOT_FOUND`, `NO_WALLET`, `WRONG_PASSWORD`, `PASSWORD_STDIN_REQUIRED`,
-`PROMPT_NOT_ALLOWED`, `LOOKALIKE_ADDRESS`, `INSUFFICIENT_BALANCE`, `NOT_AN_OPERATOR` and the transaction
+`PROMPT_NOT_ALLOWED`, `LOOKALIKE_ADDRESS`, `INSUFFICIENT_BALANCE`, `NOT_AN_OPERATOR`,
+`NOT_A_WRAPPER`, `WRAPPER_SUPPLY_FULL`, `WRAP_APPROVED_ONLY`, `UNWRAP_UNCONFIRMED`,
+`UNWRAP_NOT_FOUND`, `UNWRAP_STILL_OPEN` and the transaction
 codes (`INSUFFICIENT_GAS_FUNDS`, `INSUFFICIENT_TOKEN_BALANCE`, `SENT_UNCONFIRMED`, `TX_REVERTED`, `TX_REPLACED`, `RPC_ERROR`, …). Changed
 after 2.0.0: `receive` and `balance` give `wallet` as that object (they had `wallet` as a name and
 a separate `address`), `send` gives `wallet` instead of `from`, and `history` and `token
