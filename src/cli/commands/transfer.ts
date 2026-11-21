@@ -13,7 +13,7 @@
  */
 
 import { Command } from 'commander';
-import { formatEther } from 'ethers';
+import { formatEthBalance, formatEthFee } from '../../core/send/amount.js';
 import { spinner as ora } from '../utils/spinner.js';
 import {
   isWrongPassword,
@@ -249,8 +249,9 @@ async function send(
   const rr = resolveRecipient(recipientText, contacts);
   if (!rr.ok) {
     const isAddress = recipientText.toLowerCase().startsWith('0x');
+    // Say what is wrong with it (length, characters, checksum) and what to do next.
     return fail(
-      isAddress ? 'Invalid recipient address' : rr.error,
+      isAddress ? `That recipient is not a valid address. ${rr.error} Nothing was sent.` : rr.error,
       isAddress ? 'INVALID_ADDRESS' : 'CONTACT_NOT_FOUND',
     );
   }
@@ -386,7 +387,7 @@ async function send(
   console.log(`  Token:   ${token.name}`);
   console.log(`  Network: ${formatNetworkName(network)}`);
   console.log(
-    `  Fee:     up to ${formatEther(prepared.feeWei)} ETH (you have ${formatEther(prepared.ethBalanceWei)} ETH)`,
+    `  Fee:     up to ${formatEthFee(prepared.feeWei)} ETH (you have ${formatEthBalance(prepared.ethBalanceWei)} ETH)`,
   );
   if (hasAmbiguousComma(amount)) {
     console.log(

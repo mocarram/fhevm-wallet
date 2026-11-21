@@ -141,3 +141,22 @@ export function formatBalance(value: bigint, decimals: number, precision = 2): s
   const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   return `${grouped}.${frac.padEnd(precision, '0')}`.replace(/\.$/, '');
 }
+
+/**
+ * A network fee in ETH, shared by the CLI and the TUI: 4 decimals, or 2 significant digits below 0.0001 ETH, so a
+ * cheap fee on Sepolia never reads "0.0000" (0.000021).
+ */
+export function formatEthFee(wei: bigint): string {
+  if (wei <= 0n || wei >= 10n ** 14n) return formatBalance(wei, 18, 4);
+  const digits = wei.toString().length; // wei < 1e14: at most 14 digits
+  const keep = 10n ** BigInt(Math.max(0, digits - 2));
+  // Round up: a fee is shown as an upper bound.
+  const rounded = ((wei + keep - 1n) / keep) * keep;
+  const s = rounded.toString().padStart(18, '0');
+  return `0.${s}`.replace(/0+$/, '');
+}
+
+/** An ETH balance for summaries: 4 decimals, like the TUI (not ethers' 18). */
+export function formatEthBalance(wei: bigint): string {
+  return formatBalance(wei, 18, 4);
+}

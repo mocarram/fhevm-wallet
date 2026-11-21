@@ -96,6 +96,8 @@ export interface TokenCheck {
   problems: string[];
   /** Things worth knowing that do not block adding it. */
   warnings: string[];
+  /** False when `eth_getCode` is empty (a wallet address); unset when not checked. */
+  hasCode?: boolean;
 }
 
 /** Call and return the raw result, or null when the contract reverted / returned nothing. */
@@ -204,6 +206,12 @@ export function describeNonCompliant(
   check: TokenCheck,
   network: string,
 ): { title: string; hint: string } {
+  if (check.hasCode === false) {
+    return {
+      title: `There is no contract at ${check.address} on ${network}: it is a wallet address, not a token.`,
+      hint: "Check the token's contract address (a block explorer shows it).",
+    };
+  }
   // Nothing answered at all: an account, or a contract of another kind or network.
   if (!check.info && !check.balanceHandle) {
     return {

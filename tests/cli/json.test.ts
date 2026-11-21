@@ -129,6 +129,8 @@ describe('--json output', () => {
     const args = ['send', '-n', 'sepolia', '--yes', '--password-stdin', '--json'];
     const bad = JSON.parse(await stdoutOf(...args.slice(0, 1), '0x1234', '1', ...args.slice(1)));
     expect(bad.error.code).toBe('INVALID_ADDRESS');
+    // Says what is wrong and what to do (L5), not just "Invalid recipient address".
+    expect(bad.error.message).toMatch(/not a valid address\. An address is 0x followed by 40 hex/);
     const unknown = JSON.parse(await stdoutOf('send', 'nobody', '1', ...args.slice(1)));
     expect(unknown.error.code).toBe('CONTACT_NOT_FOUND');
     addTokenWithInfo({ address: ADDRESS, name: 'Other', symbol: 'OTH', decimals: 6 }, 'sepolia');

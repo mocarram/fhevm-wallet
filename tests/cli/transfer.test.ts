@@ -87,7 +87,7 @@ describe('send command early exits', () => {
     saveConfig({ defaultNetwork: 'sepolia' });
     seedToken('sepolia', KNOWN_ADDRESS);
     expect(await runSend('0xnot-an-address', '1', '--token', KNOWN_ADDRESS)).toMatch(
-      /Invalid recipient address/,
+      /not a valid address/,
     );
     logSpy.mockRestore();
     expect(await runSend('nobody', '1', 'mock')).toMatch(/No contact called "nobody"/);

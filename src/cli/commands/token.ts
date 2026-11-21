@@ -78,7 +78,11 @@ export function registerTokenCommands(program: Command): void {
           throw err;
         }
         if (!check.compliant) {
-          spinner.warn('This contract failed the ERC-7984 check');
+          spinner.warn(
+            check.hasCode === false
+              ? 'No contract at this address'
+              : 'This contract failed the ERC-7984 check',
+          );
           const d = describeNonCompliant(check, network);
           console.log(error(d.title));
           if (check.info) for (const p of check.problems) console.log(`  - ${p}`);

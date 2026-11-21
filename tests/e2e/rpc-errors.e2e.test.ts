@@ -66,14 +66,18 @@ const TOKEN = '0xde709f2102306220921060314715629080e2fb77';
 const keyUrl = (base: string) => `${base}/v2/${KEY}?apikey=${QKEY}`;
 
 describe('token add and config against RPC errors', () => {
-  it('an address with no contract is "not a token contract", exit 1', async () => {
+  it('an address with no contract is "a wallet address, not a token", exit 1', async () => {
     const t = tempHome();
     try {
       const res = await runCliAsync(['token', 'add', TOKEN, '-n', 'sepolia'], t.home, {
         SEPOLIA_RPC_URL: emptyBase,
       });
       expect(res.code).toBe(1);
-      expect(res.stdout + res.stderr).toMatch(/That address is not a token contract on sepolia/);
+      // eth_getCode is empty: say what it is, without "failed the ERC-7984 check" (L5).
+      expect(res.stdout + res.stderr).toMatch(
+        /There is no contract at 0x[0-9a-fA-F]{40} on sepolia: it is a wallet address, not a token/,
+      );
+      expect(res.stdout + res.stderr).not.toMatch(/failed the ERC-7984 check/);
       expect(res.stdout + res.stderr).not.toMatch(/could not decode/);
     } finally {
       t.cleanup();

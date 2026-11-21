@@ -9,7 +9,7 @@
  * `txHash` and `explorerUrl` (check those before trying again).
  */
 
-import { formatEther } from 'ethers';
+import { formatEthBalance, formatEthFee } from '../../core/send/amount.js';
 import { spinner as ora } from './spinner.js';
 import type { Backend, PreparedTx, UnlockedSigner } from '../../core/backend/types.js';
 import type { NetworkName } from '../../core/network/NetworkConfig.js';
@@ -145,6 +145,19 @@ export function pickToken(network: NetworkName, text?: string): TokenEntry | nul
 }
 
 /**
+ * Put the values of "Label: value" summary rows in one column, whatever the callers'
+ * own padding ("Operator:" next to "Network:" and "Fee:"). Other rows stay as given.
+ */
+export function alignLabels(rows: string[]): string[] {
+  const parsed = rows.map((r) => /^([A-Za-z][A-Za-z0-9 ]{0,23}):\s+(.*)$/s.exec(r));
+  const width = Math.max(0, ...parsed.map((p) => (p ? p[1].length + 2 : 0)));
+  return rows.map((r, i) => {
+    const p = parsed[i];
+    return p ? `${(p[1] + ':').padEnd(width)}${p[2]}` : r;
+  });
+}
+
+/**
  * Wallet name and address from `-w`, the default, or the only wallet there is (no
  * password needed). Several wallets and no default: says how to pick one.
  */
@@ -246,11 +259,12 @@ export async function confirmAndSend(opts: {
   console.log();
   console.log(opts.title);
   if (backend.kind === 'mock') console.log(warning('  MOCK: simulated, no real funds'));
-  for (const l of opts.lines) console.log(`  ${l}`);
-  console.log(`  Network: ${formatNetworkName(network)}`);
-  console.log(
-    `  Fee:     up to ${formatEther(prepared.feeWei)} ETH (you have ${formatEther(prepared.ethBalanceWei)} ETH)`,
-  );
+  const rows = alignLabels([
+    ...opts.lines,
+    `Network: ${formatNetworkName(network)}`,
+    `Fee: up to ${formatEthFee(prepared.feeWei)} ETH (you have ${formatEthBalance(prepared.ethBalanceWei)} ETH)`,
+  ]);
+  for (const l of rows) console.log(`  ${l}`);
   for (const w of opts.warnings ?? []) console.log(warning(`  ${w}`));
   console.log();
   if (!opts.yes) {

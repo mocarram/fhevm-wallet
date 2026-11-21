@@ -153,7 +153,12 @@ export class RealBackend implements Backend {
   async checkToken(tokenAddress: string, network: NetworkName): Promise<TokenCheck> {
     const provider = getProvider(network);
     try {
-      return await checkErc7984((to, data) => provider.call({ to, data }), tokenAddress);
+      const check = await checkErc7984((to, data) => provider.call({ to, data }), tokenAddress);
+      if (check.compliant || check.info) return check;
+      // Nothing answered: say whether there is a contract at all (a wallet address is
+      // the usual mistake), instead of "failed the check" + "not a token contract".
+      const code = await provider.getCode(check.address);
+      return { ...check, hasCode: code !== '0x' };
     } catch (err) {
       throw translateTxError(err, { action: 'token check' });
     }

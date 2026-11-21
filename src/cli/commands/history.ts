@@ -2,6 +2,7 @@
  * Transaction history CLI command with blockchain sync
  */
 
+import { getAddress } from 'ethers';
 import { Command } from 'commander';
 import { spinner as ora } from '../utils/spinner.js';
 import Table from 'cli-table3';
@@ -79,7 +80,7 @@ export function getTypeIcon(type: string): string {
 /**
  * Get direction info based on transaction type
  */
-function getDirectionInfo(tx: Transaction, walletAddress: string): { label: string } {
+export function getDirectionInfo(tx: Transaction, walletAddress: string): { label: string } {
   const type = tx.type || 'transfer';
 
   if (type === 'mint') {
@@ -91,7 +92,15 @@ function getDirectionInfo(tx: Transaction, walletAddress: string): { label: stri
 
   const isSend = tx.from.toLowerCase() === walletAddress.toLowerCase();
   const arrow = isSend ? '→' : '←';
-  const counterparty = isSend ? tx.to : tx.from;
+  // Synced entries store addresses lowercase (from log topics), local ones checksummed:
+  // always show the checksum so the same address looks the same in every run.
+  const raw = isSend ? tx.to : tx.from;
+  let counterparty = raw;
+  try {
+    counterparty = getAddress(raw);
+  } catch {
+    // not an address: shown as stored
+  }
 
   // Check if counterparty is in address book
   const contactName = getNameByAddress(counterparty);

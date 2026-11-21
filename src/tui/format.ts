@@ -2,7 +2,7 @@
  * Small display helpers shared by the status bar and screens: spinner, ETH, gas, ages.
  */
 
-import { formatBalance, formatExactAmount } from '../core/send/amount.js';
+import { formatBalance, formatEthFee, formatExactAmount } from '../core/send/amount.js';
 import type { AppState } from './state.js';
 
 /** Braille spinner frames, advanced every 120 ms. */
@@ -38,18 +38,9 @@ export function formatEth(wei: bigint): string {
   return formatBalance(wei, 18, 4);
 }
 
-/**
- * A network fee in ETH: 4 decimals, or 2 significant digits below 0.0001 ETH, so a
- * cheap fee on Sepolia never reads "0.0000" (0.000021).
- */
+/** A network fee in ETH (see `formatEthFee`): never "0.0000" for a cheap fee. */
 export function formatFee(wei: bigint): string {
-  if (wei <= 0n || wei >= 10n ** 14n) return formatEth(wei);
-  const digits = wei.toString().length; // wei < 1e14: at most 14 digits
-  const keep = 10n ** BigInt(Math.max(0, digits - 2));
-  // Round up: a fee is shown as an upper bound.
-  const rounded = ((wei + keep - 1n) / keep) * keep;
-  const s = rounded.toString().padStart(18, '0');
-  return `0.${s}`.replace(/0+$/, '');
+  return formatEthFee(wei);
 }
 
 /** "just now", "2m ago", "3h ago", "4d ago". */

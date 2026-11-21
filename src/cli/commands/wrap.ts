@@ -19,12 +19,11 @@
 
 import { Command } from 'commander';
 import chalk from 'chalk';
-import { formatEther } from 'ethers';
 import { createBackend } from '../../core/backend/select.js';
 import type { Backend, UnlockedSigner } from '../../core/backend/types.js';
 import type { PreparedFinalize, WrapStep } from '../../core/backend/wrapTypes.js';
 import type { NetworkName } from '../../core/network/NetworkConfig.js';
-import { formatExactAmount } from '../../core/send/amount.js';
+import { formatEthBalance, formatEthFee, formatExactAmount } from '../../core/send/amount.js';
 import { listTokens, type TokenEntry } from '../../core/token/TokenRegistry.js';
 import { formatTxError, translateTxError, type WalletTxError } from '../../core/token/txErrors.js';
 import {
@@ -356,7 +355,7 @@ async function wrapCommand(
         ? `Steps:     ${prepared.steps.includes('reset') ? '1. reset the old approval to 0  2.' : '1.'} approve exactly ${amt(plan.pull, u.decimals, u.symbol)} for ${info.symbol} (not unlimited)  ${prepared.steps.length}. wrap`
         : 'Steps:     wrap (the existing approval covers it)',
     ];
-    const feeLine = `up to ${formatEther(prepared.feeWei)} ETH (you have ${formatEther(prepared.ethBalanceWei)} ETH)${
+    const feeLine = `up to ${formatEthFee(prepared.feeWei)} ETH (you have ${formatEthBalance(prepared.ethBalanceWei)} ETH)${
       prepared.feeEstimated
         ? '; the wrap is simulated after the approval, its part is an estimate'
         : ''
@@ -525,7 +524,7 @@ async function unwrapCommand(
         'Steps:     1. request: burns the amount and asks Zama to decrypt it',
         '           2. finish: publishes the decrypted amount with its proof; sent as soon as it is ready',
       ],
-      feeLine: `up to ${formatEther(prepared.feeWei)} ETH now + about ${formatEther(prepared.finalizeFeeWei)} ETH for step 2 (you have ${formatEther(prepared.ethBalanceWei)} ETH)`,
+      feeLine: `up to ${formatEthFee(prepared.feeWei)} ETH now + about ${formatEthFee(prepared.finalizeFeeWei)} ETH for step 2 (you have ${formatEthBalance(prepared.ethBalanceWei)} ETH)`,
       warnings: [UNWRAP_PRIVACY, 'This one confirmation covers both steps.'],
       yes: options.yes,
       question: `Unwrap ${amt(plan.amount, info.decimals, info.symbol)}?`,
@@ -684,7 +683,7 @@ async function finishOne(
           `You get:   ${amt(prepared.receive, u.decimals, u.symbol)} (public; ${amt(prepared.value, entry.decimals, entry.symbol)} were burnt)`,
           `Request:   ${entry.requestTxHash}`,
         ],
-        feeLine: `up to ${formatEther(prepared.feeWei)} ETH (you have ${formatEther(prepared.ethBalanceWei)} ETH)`,
+        feeLine: `up to ${formatEthFee(prepared.feeWei)} ETH (you have ${formatEthBalance(prepared.ethBalanceWei)} ETH)`,
         warnings: [UNWRAP_PRIVACY],
         yes: options.yes,
         question: 'Send step 2 (finish)?',
