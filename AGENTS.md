@@ -102,15 +102,20 @@ tui/
   errors.ts       describeError: the ONLY way a TUI error reaches the screen; wording
                   and redaction delegate to src/cli/utils/userError.ts
   statusBar.ts, commandParser.ts, text.ts (styled segments → ANSI), keys.ts
-  shell.ts        thin I/O: alternate screen, raw keys, resize, timer, restore on
-                  quit/crash/signals, drops the key and destroys providers on exit
+  input.ts        raw terminal bytes → keys and paste events (Esc at once, Esc+key
+                  kept, bracketed paste as one event)
+  shell.ts        thin I/O: alternate screen, bracketed paste, raw keys, resize, timer,
+                  restore on quit/crash/signals (every exit path turns paste mode off),
+                  one draw per input chunk with only changed rows rewritten, drops the
+                  key and destroys providers on exit
   index.ts        runTui(): picks the backend and network, starts the shell
 ```
 
 Rules: screens never do I/O in `view` (they render from `state.data`, a snapshot
 reloaded by effects); every user-visible error goes through `describeError`; secret text
 fields are listed in `SECRET_FIELDS` and cleared on Esc/Ctrl+C; no ora spinners or
-`console.log` while the TUI owns the screen.
+`console.log` while the TUI owns the screen. A paste goes through `handlePaste` (app.ts):
+into the focused field with its rules, or a screen's `onPaste`; never as shortcuts.
 
 `fhew send bob 25 cusdc` uses the same core/send helpers and the Backend as the TUI, so
 the TUI's "Next time" hint is a working command (an e2e test runs it). Scripts use

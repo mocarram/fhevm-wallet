@@ -10,17 +10,22 @@
  * - No ora spinners or other writers run while the TUI owns the screen: everything is
  *   drawn from state, spinners included.
  * - A terminal that reports 0×0 is drawn at 80×24 instead of producing empty frames.
+ * - Bracketed paste is on while the TUI owns the screen and off on every exit path (like
+ *   the alternate screen), so a paste arrives as one event (input.ts).
+ * - A frame is drawn at most once per input chunk or batch of finished effects, and only
+ *   the rows that changed are rewritten: a 42-character paste is one small update, not
+ *   42 full redraws.
  */
 
-import { emitKeypressEvents } from 'readline';
+import { StringDecoder } from 'string_decoder';
 import type { ReadStream, WriteStream } from 'tty';
 import { clearProviderCache } from '../core/network/ProviderFactory.js';
 import type { Backend } from '../core/backend/types.js';
 import { showSecretScreen } from '../cli/utils/secretScreen.js';
-import { handleKey, isAnimating, render, tick } from './app.js';
+import { handleKey, handlePaste, isAnimating, render, tick } from './app.js';
 import type { Deps, Effect, Updater } from './effects.js';
 import { describeError, errorLines } from './errors.js';
-import { normalizeKey, type RawKey } from './keys.js';
+import { coalesceBurst, InputParser, isBurst, type InputEvent } from './input.js';
 import { lockWallet, type AppState } from './state.js';
 import { toAnsi } from './text.js';
 import { setSdkConsoleTuiActive } from '../core/fhe/sdkConsole.js';
@@ -32,6 +37,8 @@ const CURSOR_SHOW = '\x1b[?25h';
 const HOME = '\x1b[H';
 const CLEAR = '\x1b[2J';
 const CLEAR_LINE_END = '\x1b[K';
+const PASTE_ON = '\x1b[?2004h';
+const PASTE_OFF = '\x1b[?2004l';
 
 /** Streams the shell drives. */
 export interface ShellIO {
@@ -78,7 +85,10 @@ export function runShell(opts: ShellOptions): Promise<ShellResult> {
   setSdkConsoleTuiActive(true);
 
   return new Promise<ShellResult>((resolve) => {
-    let lastFrame = '';
+    // The rows on screen now, to rewrite only those that change; empty = redraw all.
+    let lastRows: string[] = [];
+    let lastSize = '';
+    let drawQueued = false;
     let suspended = false;
     let finished = false;
     let timer: NodeJS.Timeout | null = null;
@@ -87,20 +97,41 @@ export function runShell(opts: ShellOptions): Promise<ShellResult> {
     const size = () => ({ cols: output.columns ?? 0, rows: output.rows ?? 0 });
 
     const draw = (force = false) => {
+      drawQueued = false;
       if (suspended || finished) return;
-      const frame = render(state, size())
-        .map((l) => toAnsi(l, color) + CLEAR_LINE_END)
-        .join('\r\n');
-      if (!force && frame === lastFrame) return;
-      lastFrame = frame;
-      output.write(HOME + frame);
+      const sz = size();
+      const rows = render(state, sz).map((l) => toAnsi(l, color) + CLEAR_LINE_END);
+      const key = `${sz.cols}x${sz.rows}`;
+      if (force || key !== lastSize || rows.length !== lastRows.length) {
+        output.write(HOME + rows.join('\r\n'));
+      } else {
+        let out = '';
+        rows.forEach((r, i) => {
+          if (r !== lastRows[i]) out += `\x1b[${i + 1};1H${r}`;
+        });
+        if (!out) return;
+        output.write(out);
+      }
+      lastRows = rows;
+      lastSize = key;
     };
 
+    /** Draw once after the current burst of keys or effects (setImmediate coalesces). */
+    const scheduleDraw = () => {
+      if (drawQueued) return;
+      drawQueued = true;
+      setImmediate(() => draw());
+    };
+
+    const parser = new InputParser();
+    const decoder = new StringDecoder('utf8');
+    let flushTimer: NodeJS.Timeout | null = null;
+
     const enter = () => {
-      output.write(ALT_ON + CURSOR_HIDE + CLEAR + HOME);
+      output.write(ALT_ON + CURSOR_HIDE + PASTE_ON + CLEAR + HOME);
       if (input.isTTY) input.setRawMode(true);
       input.resume();
-      lastFrame = '';
+      lastRows = [];
     };
 
     const restore = () => {
@@ -110,14 +141,15 @@ export function runShell(opts: ShellOptions): Promise<ShellResult> {
         // stdin may already be closed
       }
       input.pause();
-      output.write(CURSOR_SHOW + ALT_OFF);
+      output.write(PASTE_OFF + CURSOR_SHOW + ALT_OFF);
     };
 
     const finish = (code: number) => {
       if (finished) return;
       finished = true;
       if (timer) clearInterval(timer);
-      input.removeListener('keypress', onKeypress);
+      if (flushTimer) clearTimeout(flushTimer);
+      input.removeListener('data', onData);
       output.removeListener('resize', onResize);
       process.removeListener('SIGINT', onSigint);
       process.removeListener('SIGTERM', onSigterm);
@@ -145,10 +177,13 @@ export function runShell(opts: ShellOptions): Promise<ShellResult> {
       showSecret: async (title, lines) => {
         // Hand the terminal to the wipe-on-keypress secret screen, then take it back.
         suspended = true;
+        // The secret screen reads keys itself; a paste there is just a key that wipes it.
+        output.write(PASTE_OFF);
         try {
           await showSecretScreen(title, lines, { input, output });
         } finally {
           suspended = false;
+          parser.flush();
           if (!finished) {
             enter();
             draw(true);
@@ -196,20 +231,43 @@ export function runShell(opts: ShellOptions): Promise<ShellResult> {
 
     function afterChange() {
       if (state.quit) finish(0);
-      else draw();
+      else scheduleDraw();
     }
 
-    function onKeypress(str: string | undefined, key: RawKey | undefined) {
-      if (suspended || finished) return;
-      const k = normalizeKey(str, key);
-      if (k === null) return;
+    /** Run the keys and pastes of one input chunk, then draw once. */
+    function onEvents(events: InputEvent[]) {
+      if (suspended || finished || !events.length) return;
+      // Several printable keys in one read: a script, a paste without bracketed paste,
+      // or very fast typing. Quit then only arms (app.ts), so a pasted "0" cannot quit.
+      const burst = isBurst(events);
       state.now = Date.now();
-      try {
-        runAll(handleKey(state, k));
-      } catch (err) {
-        state.flash = errorLines(err);
+      for (const e of events) {
+        if (finished || state.quit) break;
+        try {
+          runAll(
+            e.kind === 'paste' ? handlePaste(state, e.text) : handleKey(state, e.key, { burst }),
+          );
+        } catch (err) {
+          state.flash = errorLines(err);
+        }
       }
       afterChange();
+    }
+
+    function onData(chunk: Buffer | string) {
+      if (suspended || finished) return;
+      if (flushTimer) clearTimeout(flushTimer);
+      flushTimer = null;
+      const text = typeof chunk === 'string' ? chunk : decoder.write(chunk);
+      onEvents(coalesceBurst(parser.feed(text)));
+      // A chunk that ended inside an escape sequence or a paste: wait briefly for the
+      // rest, then take what is there (a lone Esc is the Esc key).
+      if (parser.pending) {
+        flushTimer = setTimeout(() => {
+          flushTimer = null;
+          onEvents(parser.flush());
+        }, parser.waitMs());
+      }
     }
 
     const onResize = () => draw(true);
@@ -230,8 +288,7 @@ export function runShell(opts: ShellOptions): Promise<ShellResult> {
       process.stderr.write(`fhEVM Wallet stopped unexpectedly: ${d.title}\n`);
     };
 
-    emitKeypressEvents(input);
-    input.on('keypress', onKeypress);
+    input.on('data', onData);
     output.on('resize', onResize);
     process.on('SIGINT', onSigint);
     process.on('SIGTERM', onSigterm);

@@ -139,19 +139,36 @@ function typeInto(s: AppState, view: ScreenView, key: Key): boolean {
   return true;
 }
 
+/** How a key arrived. */
+export interface KeyOptions {
+  /**
+   * The key came with others in one read (a script, a paste the terminal did not
+   * bracket, very fast typing). Quit then only arms and asks for a second press.
+   */
+  burst?: boolean;
+}
+
 /**
  * Handle one key. Mutates `s` and returns effects for the shell to run.
  */
-export function handleKey(s: AppState, key: Key): Effect[] {
+export function handleKey(s: AppState, key: Key, opts: KeyOptions = {}): Effect[] {
   const wasSending = sendInProgress(s);
-  const effects = handleKeyInner(s, key);
+  const effects = handleKeyInner(s, key, opts);
   // "Every action" unlock mode: whatever route left the send (Esc, a shortcut, the
   // command bar, a menu jump), the key and any prepared send go with it.
   if (wasSending && !sendInProgress(s) && s.data.prefs.unlockMinutes === 0) lockWallet(s);
   return effects;
 }
 
-function handleKeyInner(s: AppState, key: Key): Effect[] {
+/** Quit from a burst of keys: only arm it, so pasted text containing 0 or q cannot quit. */
+function quitFromKey(s: AppState, opts: KeyOptions): Effect[] {
+  if (!opts.burst || s.quitArmed) return requestQuit(s);
+  s.quitArmed = true;
+  s.flash = flashLine('Press 0 again to quit.');
+  return [];
+}
+
+function handleKeyInner(s: AppState, key: Key, opts: KeyOptions): Effect[] {
   if (s.quit) return [];
 
   if (s.help) {
@@ -279,16 +296,92 @@ function handleKeyInner(s: AppState, key: Key): Effect[] {
     const item = idx >= 0 ? view.items[idx] : undefined;
     if (item && isItem(item)) {
       f.cur = idx;
-      if (item.zero) return requestQuit(s);
+      if (item.zero) return quitFromKey(s, opts);
       return item.act(s) ?? [];
     }
     return [];
   }
   const hit = view.items.find((e) => isItem(e) && e.key === key);
   if (hit && isItem(hit)) {
-    if (hit.zero) return requestQuit(s);
+    if (hit.zero) return quitFromKey(s, opts);
     return hit.act(s) ?? [];
   }
+  return [];
+}
+
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+/**
+ * Pasted text as one line: line breaks at the ends are dropped (a copied line often
+ * ends in one; it must never act as Enter), the ones inside become spaces, and other
+ * control characters are removed.
+ */
+export function pasteText(raw: string): string {
+  return Array.from(raw.replace(/^[\r\n]+|[\r\n]+$/g, '').replace(/[\r\n\t]+/g, ' '))
+    .filter((c) => {
+      const code = c.codePointAt(0) ?? 0;
+      return code >= 0x20 && code !== 0x7f && !(code >= 0x80 && code <= 0x9f);
+    })
+    .join('');
+}
+
+/** True when pasted text is one Ethereum address (surrounding spaces allowed). */
+export function isPastedAddress(text: string): boolean {
+  return ADDRESS.test(text.trim());
+}
+
+/**
+ * Handle a paste (one event for the whole text, see input.ts). It goes into whatever
+ * takes text: the command bar, the list filter, or the screen's field, through the same
+ * checks as typing (accepted characters, maximum length; secret fields stay masked and
+ * are cleared as usual). A screen without a field may take it (`onPaste`: Send ›
+ * Recipient opens the paste step with the address filled in, so the checksum,
+ * look-alike and first-time checks still run on Continue); anywhere else the paste is
+ * ignored with a note. Pasted text never runs as shortcuts and never presses Enter.
+ */
+export function handlePaste(s: AppState, raw: string): Effect[] {
+  if (s.quit) return [];
+  const text = pasteText(raw);
+  if (!text) return [];
+  if (s.help) {
+    s.help = false;
+    return [];
+  }
+  if (s.cmd !== null) {
+    s.cmd = Array.from(s.cmd + text)
+      .slice(0, 200)
+      .join('');
+    return [];
+  }
+  const view = currentView(s);
+  const f = top(s);
+  f.cur = viewCursor(view, f.cur);
+  if (s.filtering !== null) {
+    const field = s.filtering;
+    s.inputs[field] = Array.from((s.inputs[field] ?? '') + text.trim())
+      .slice(0, 40)
+      .join('');
+    f.cur = 0;
+    return [];
+  }
+  if (view.bare) return []; // the countdown ignores everything but Esc and Ctrl+C
+  if (view.input) {
+    const spec = view.input;
+    // Secrets keep their spaces exactly; anything else is trimmed.
+    const chars = Array.from(spec.secret ? text : text.trim());
+    for (const c of chars) typeInto(s, view, c);
+    return [];
+  }
+  if (view.onPaste) {
+    const r = view.onPaste(s, text.trim());
+    if (r.handled) return r.effects ?? [];
+  }
+  s.flash = isPastedAddress(text)
+    ? [
+        ...flashLine('Pasted address ignored: this screen has no text field.'),
+        dimLine('  To send to it: Send (s), then Paste an address (p).'),
+      ]
+    : flashLine('Pasted text ignored: this screen has no text field.');
   return [];
 }
 

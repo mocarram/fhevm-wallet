@@ -3,12 +3,34 @@
  */
 
 import { back, type AppState } from '../state.js';
+import type { Effect } from '../effects.js';
+import { open } from '../nav.js';
 import { seg, line, type Line } from '../text.js';
 import type { InputSpec, Item, Separator } from '../screen.js';
 
 /** "Back" menu item (same as Esc). */
 export function backItem(label = 'Back'): Item {
   return { label, act: (s) => back(s) };
+}
+
+const PASTED_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+/**
+ * `onPaste` for a menu screen whose address step is a text field: a pasted address
+ * opens that step with the field filled in (Continue still runs every check on it).
+ * Anything else falls back to "Pasted text ignored".
+ */
+export function pasteAddressInto(
+  field: string,
+  screen: string,
+  params: Record<string, string> = {},
+): (s: AppState, text: string) => { handled: boolean; effects?: Effect[] } {
+  return (s, text) => {
+    if (!PASTED_ADDRESS.test(text)) return { handled: false };
+    const effects = open(s, screen, params);
+    s.inputs[field] = text;
+    return { handled: true, effects };
+  };
 }
 
 /** A divider. */

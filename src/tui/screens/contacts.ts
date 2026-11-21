@@ -9,7 +9,7 @@ import { open } from '../nav.js';
 import type { Item, ScreenDef } from '../screen.js';
 import { top } from '../state.js';
 import { dimLine, line, pad, seg } from '../text.js';
-import { backItem, BLANK, inputLine, SEP } from './common.js';
+import { backItem, BLANK, inputLine, pasteAddressInto, SEP } from './common.js';
 import { matchesFilter } from '../components/list.js';
 
 const CONTACTS_FILTER = 'filter.contacts';
@@ -41,6 +41,11 @@ export const contactsScreen: ScreenDef = {
       backItem(),
     ],
     hint: '↑↓ move · enter select · / filter · esc back',
+    // A pasted address starts "Add contact" with the address step filled in.
+    onPaste: (st, text) => {
+      delete st.inputs.contactName;
+      return pasteAddressInto('contactAddress', 'contact-name')(st, text);
+    },
   }),
 };
 

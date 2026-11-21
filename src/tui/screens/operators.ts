@@ -19,7 +19,7 @@ import type { InputSpec, Item, MenuEntry, ScreenDef } from '../screen.js';
 import { popTo } from '../nav.js';
 import { top, type AppState } from '../state.js';
 import { dimLine, line, pad, seg, type Line } from '../text.js';
-import { backItem, BLANK, inputLine, SEP } from './common.js';
+import { backItem, BLANK, inputLine, pasteAddressInto, SEP } from './common.js';
 import { comparedAddress } from './send.js';
 
 function tokenSymbol(s: AppState): string {
@@ -84,6 +84,7 @@ export const operatorsScreen: ScreenDef = {
       body,
       items,
       hint: '↑↓ move · enter select · esc back',
+      onPaste: pasteAddressInto('operatorAddr', 'operator-addr', { mode: 'grant' }),
       help: [['enter', 'Grant, revoke, refresh or switch token']],
     };
   },
@@ -294,6 +295,7 @@ export const operatorRevokeScreen: ScreenDef = {
         backItem(),
       ],
       hint: '↑↓ move · enter select · esc back',
+      onPaste: pasteAddressInto('operatorAddr', 'operator-addr', { mode: 'revoke' }),
     };
   },
 };

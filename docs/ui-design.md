@@ -26,25 +26,34 @@ This file is the text reference agents build against.
 
 ## Keymap
 
-| Key | Action | Where |
-| --- | --- | --- |
-| ↑ ↓ / k j | Move | lists |
-| Enter | Select / next step | everywhere |
-| Esc | Back one screen or step, keeping input; stops the send countdown | not Home |
-| Ctrl+C | Cancel to Home; twice on Home quits | everywhere |
-| 1-9 | Jump to numbered item (numbers are stable) | menus |
-| 0 / q | Quit | Home |
-| b s r h d | Balances, Send, Receive, History, Doctor | Home |
-| . | Repeat last send | Home |
-| a | Save last new address as contact | Home, when offered |
-| : | Command bar | not in text fields |
-| ? | Help for this screen | not in text fields |
-| L or l | Lock now | not in text fields |
-| / | Filter the list (Enter keeps, Esc clears) | Tokens, Address book, History, Find tokens |
-| e | What happened to the last send | Home, after a failed send |
-| p | Paste an address | Send › Recipient |
-| Space / a | Select one / all | multi-select lists (Remove tokens, Find tokens) |
-| r | Scan again | Find tokens |
+| Key       | Action                                                           | Where                                           |
+| --------- | ---------------------------------------------------------------- | ----------------------------------------------- |
+| ↑ ↓ / k j | Move                                                             | lists                                           |
+| Enter     | Select / next step                                               | everywhere                                      |
+| Esc       | Back one screen or step, keeping input; stops the send countdown | not Home                                        |
+| Ctrl+C    | Cancel to Home; twice on Home quits                              | everywhere                                      |
+| 1-9       | Jump to numbered item (numbers are stable)                       | menus                                           |
+| 0 / q     | Quit                                                             | Home                                            |
+| b s r h d | Balances, Send, Receive, History, Doctor                         | Home                                            |
+| .         | Repeat last send                                                 | Home                                            |
+| a         | Save last new address as contact                                 | Home, when offered                              |
+| :         | Command bar                                                      | not in text fields                              |
+| ?         | Help for this screen                                             | not in text fields                              |
+| L or l    | Lock now                                                         | not in text fields                              |
+| /         | Filter the list (Enter keeps, Esc clears)                        | Tokens, Address book, History, Find tokens      |
+| e         | What happened to the last send                                   | Home, after a failed send                       |
+| p         | Paste an address                                                 | Send › Recipient                                |
+| Space / a | Select one / all                                                 | multi-select lists (Remove tokens, Find tokens) |
+| r         | Scan again                                                       | Find tokens                                     |
+
+Input details: Esc acts at once (an escape sequence split across reads gets 25 ms to
+complete), and a key typed right after Esc is not lost: Esc+s (or Alt+s) is Esc, then s.
+Paste is bracketed: pasted text is one event that types into the focused field, command
+bar or filter with that field's rules (never Enter, never shortcuts). On Send ›
+Recipient, Address book, Tokens and Operators a pasted address opens the address step
+filled in (all checks still run on Continue); elsewhere a paste is ignored with a note.
+Without bracketed paste, a whole address arriving in one read is treated as a paste, and
+a 0 or q inside a burst of keys only arms Quit ("Press 0 again to quit").
 
 ## Home
 

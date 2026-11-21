@@ -69,6 +69,11 @@ export interface ScreenView {
   multiSelect?: number;
   /** Full-screen view without a menu (countdown). */
   bare?: boolean;
+  /**
+   * Take a paste on a screen without a text field (the text is one line, trimmed).
+   * Return handled: false to fall back to "Pasted text ignored".
+   */
+  onPaste?: (s: AppState, text: string) => { handled: boolean; effects?: Effect[] };
   /** Handle keys before the generic keymap. Return true when the key was used. */
   onKey?: (s: AppState, key: string) => { handled: boolean; effects?: Effect[] };
 }

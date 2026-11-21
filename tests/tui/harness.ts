@@ -8,7 +8,7 @@ import { Wallet } from 'ethers';
 import { MockBackend, type MockOptions } from '../../src/core/backend/MockBackend.js';
 import { addTokenWithInfo, listTokens } from '../../src/core/token/TokenRegistry.js';
 import { addAddress, listAddresses } from '../../src/storage/AddressBook.js';
-import { handleKey, render, tick } from '../../src/tui/app.js';
+import { handleKey, handlePaste, render, tick } from '../../src/tui/app.js';
 import type { Deps, Effect, Updater } from '../../src/tui/effects.js';
 import { normalizeKey } from '../../src/tui/keys.js';
 import { loadSnapshot } from '../../src/tui/snapshot.js';
@@ -98,6 +98,13 @@ export class Harness {
         this.queue.push(...handleKey(this.s, key));
       }
     }
+    return this;
+  }
+
+  /** Paste `text` as one bracketed-paste event. */
+  paste(text: string): this {
+    this.s.now = this.now;
+    this.queue.push(...handlePaste(this.s, text));
     return this;
   }
 

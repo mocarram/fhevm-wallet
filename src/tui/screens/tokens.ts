@@ -21,7 +21,7 @@ import { open } from '../nav.js';
 import type { Item, ScreenDef } from '../screen.js';
 import { back, top, type AppState } from '../state.js';
 import { dimLine, line, pad, seg, type Line } from '../text.js';
-import { backItem, BLANK, inputLine } from './common.js';
+import { backItem, BLANK, inputLine, pasteAddressInto } from './common.js';
 
 const TOKENS_FILTER = 'filter.tokens';
 const FIND_FILTER = 'filter.find';
@@ -75,7 +75,8 @@ export const tokensScreen: ScreenDef = {
         },
         backItem(),
       ],
-      hint: '↑↓ move · enter select · esc back',
+      hint: '↑↓ move · enter select · / filter · esc back',
+      onPaste: pasteAddressInto('tokenAddress', 'token-add'),
     };
   },
 };

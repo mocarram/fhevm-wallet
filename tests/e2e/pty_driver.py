@@ -8,15 +8,19 @@ Steps:
   {"keys": "text"}          write bytes (use \\u001b for Esc, \\r for Enter, \\u0003 for Ctrl+C)
   {"expect": "text", "timeout": 10}   wait until the current screen contains the text
   {"absent": "text"}        fail if the current screen contains the text
-  {"sleep": 0.6}            wait (needed after a bare Esc: readline waits 500 ms for more)
+  {"sleep": 0.3}            wait (e.g. after a bare Esc, which the TUI reports after 25 ms)
   {"exit": 0, "timeout": 10}  wait for the process to exit with this code
+  {"raw_last": ["a", "b"]}  fail unless the raw output's last "b" comes after its last "a"
+                            (e.g. bracketed paste switched off after it was switched on)
 
-"Current screen" is the text after the last cursor-home sequence, with ANSI codes removed:
-the TUI redraws whole frames, so that is what the user sees. On failure the driver prints
+"Current screen" is what a terminal would show: the output is run through a small screen
+emulator (cursor moves, line clears, the alternate screen), because the TUI rewrites only
+the rows that changed. On failure the driver prints
 the screen and exits with status 1. On success it prints {"ok": true, "screens": [...]}
 with the screen after each expect step.
 """
 
+import codecs
 import fcntl
 import json
 import os
@@ -32,17 +36,82 @@ import time
 ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][A-Z0-9]|\x1b[=>]")
 
 
-def screen_of(buf: str) -> str:
-    """Text of the most recent frame."""
-    i = buf.rfind("\x1b[H")
-    frame = buf[i:] if i >= 0 else buf
-    return ANSI.sub("", frame).replace("\r", "")
+SEQ = re.compile(r"\x1b\[([0-9;?]*)([ -/]*)([@-~])|\x1b\][^\x07]*\x07|\x1b[()][A-Z0-9]|\x1b[=>]")
+
+
+class Screen:
+    """Just enough of a terminal for the TUI: text, CR/LF, cursor position, erase."""
+
+    def __init__(self, cols: int, rows: int) -> None:
+        self.cols, self.rows = cols, rows
+        self.clear()
+
+    def clear(self) -> None:
+        self.grid = [[" "] * self.cols for _ in range(self.rows)]
+        self.r = self.c = 0
+
+    def feed(self, data: str) -> None:
+        i = 0
+        while i < len(data):
+            ch = data[i]
+            if ch == "\x1b":
+                m = SEQ.match(data, i)
+                if not m:
+                    i += 1
+                    continue
+                i = m.end()
+                if m.group(3) is None:
+                    continue
+                params, final = m.group(1), m.group(3)
+                if final in "Hf":
+                    nums = [int(x) if x else 1 for x in (params.split(";") if params else [])]
+                    self.r = min(self.rows - 1, max(0, (nums[0] if nums else 1) - 1))
+                    self.c = min(self.cols - 1, max(0, (nums[1] if len(nums) > 1 else 1) - 1))
+                elif final == "K":
+                    for x in range(self.c, self.cols):
+                        self.grid[self.r][x] = " "
+                elif final == "J" and params == "2":
+                    self.grid = [[" "] * self.cols for _ in range(self.rows)]
+                elif final in "hl" and params == "?1049":
+                    self.clear()
+                continue
+            i += 1
+            if ch == "\r":
+                self.c = 0
+            elif ch == "\n":
+                self.newline()
+            elif ch >= " ":
+                if self.c >= self.cols:
+                    self.c = 0
+                    self.newline()
+                self.grid[self.r][self.c] = ch
+                self.c += 1
+
+    def newline(self) -> None:
+        if self.r < self.rows - 1:
+            self.r += 1
+        else:
+            self.grid = self.grid[1:] + [[" "] * self.cols]
+
+    def text(self) -> str:
+        return "\n".join("".join(row).rstrip() for row in self.grid)
+
+
+SCREEN = Screen(100, 32)
+
+
+def screen_of(_buf: str) -> str:
+    """What the terminal shows now."""
+    return SCREEN.text()
 
 
 def main() -> int:
     with open(sys.argv[1], encoding="utf-8") as f:
         script = json.load(f)
     cols, rows = script.get("cols", 100), script.get("rows", 32)
+    global SCREEN
+    # A pty that reports 0x0 is drawn at 80x24 by the TUI.
+    SCREEN = Screen(cols or 80, rows or 24)
     master, slave = os.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
     env = dict(script.get("env", {}))
@@ -58,6 +127,7 @@ def main() -> int:
     os.close(slave)
     buf = ""
     screens = []
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
     def pump(timeout: float) -> None:
         nonlocal buf
@@ -67,7 +137,9 @@ def main() -> int:
                 data = os.read(master, 65536)
             except OSError:
                 return
-            buf += data.decode("utf-8", errors="replace")
+            text = decoder.decode(data)
+            buf += text
+            SCREEN.feed(text)
 
     def fail(msg: str) -> int:
         sys.stdout.write(json.dumps({"ok": False, "error": msg, "screen": screen_of(buf)}) + "\n")
@@ -98,6 +170,11 @@ def main() -> int:
                     return fail(f"step {n}: process exited ({proc.returncode}) before {step['expect']!r}")
                 pump(0.1)
             screens.append(screen_of(buf))
+        elif "raw_last" in step:
+            first, then = step["raw_last"]
+            a, b = buf.rfind(first), buf.rfind(then)
+            if a < 0 or b < a:
+                return fail(f"step {n}: {then!r} does not follow the last {first!r}")
         elif "absent" in step:
             pump(0.1)
             if step["absent"] in screen_of(buf):

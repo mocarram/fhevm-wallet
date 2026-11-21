@@ -33,7 +33,15 @@ import type { InputSpec, Item, MenuEntry, ScreenDef } from '../screen.js';
 import { back, goHome, isUnlocked, top, type AppState } from '../state.js';
 import { dimLine, line, pad, padLeft, seg, type Line } from '../text.js';
 import { unlockMinutesText } from './balances.js';
-import { backItem, BLANK, inputLine, SEND_STEPS, SEP, stepper } from './common.js';
+import {
+  backItem,
+  BLANK,
+  inputLine,
+  pasteAddressInto,
+  SEND_STEPS,
+  SEP,
+  stepper,
+} from './common.js';
 
 const cancelItem: Item = {
   label: 'Cancel',
@@ -90,6 +98,7 @@ export const sendToScreen: ScreenDef = {
       body: [stepper(1, SEND_STEPS), BLANK, line('  Send ', seg(t?.symbol ?? '', 'bold'), ' to:')],
       items,
       hint: '↑↓ move · enter next · p paste · esc back (keeps your token)',
+      onPaste: pasteAddressInto('paste', 'send-paste'),
       help: [
         ['enter', 'Send to this contact'],
         ['p', 'Paste an address instead'],

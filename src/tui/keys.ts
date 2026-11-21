@@ -2,8 +2,10 @@
  * Key names the TUI understands, normalised from Node's readline keypress events.
  *
  * Printable characters are passed through as themselves ("a", "L", ":", "?", "5").
- * Special keys use names: up, down, left, right, enter, escape, backspace, tab, ctrl-c,
- * ctrl-d, ctrl-u (clear field). Anything else is ignored.
+ * Special keys use names: up, down, left, right, home, end, pageup, pagedown, enter,
+ * escape, backspace, tab, ctrl-c, ctrl-d, ctrl-u (clear field). Anything else is ignored.
+ * The shell reads the terminal with `InputParser` (input.ts); `normalizeKey` maps Node
+ * readline keypress objects to the same names (tests and other callers).
  */
 
 /** A normalised key. */
@@ -29,6 +31,10 @@ const NAMED: Record<string, Key> = {
   backspace: 'backspace',
   delete: 'backspace',
   tab: 'tab',
+  home: 'home',
+  end: 'end',
+  pageup: 'pageup',
+  pagedown: 'pagedown',
 };
 
 /**

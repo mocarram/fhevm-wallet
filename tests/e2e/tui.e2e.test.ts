@@ -32,14 +32,16 @@ type Step =
   | { expect: string; timeout?: number }
   | { absent: string }
   | { sleep: number }
-  | { exit: number; timeout?: number };
+  | { exit: number; timeout?: number }
+  | { raw_last: [string, string] };
 
 const python = ['python3', 'python'].find((p) => spawnSync(p, ['--version']).status === 0);
 const work = mkdtempSync(join(tmpdir(), 'fhew-tui-e2e-'));
 afterAll(() => rmSync(work, { recursive: true, force: true }));
 
-/** A bare Esc needs a pause: readline waits 500 ms to tell it apart from an escape code. */
-const esc = (): Step[] => [{ keys: ESC }, { sleep: 0.7 }];
+/** A bare Esc is reported 25 ms after it arrives (it could start an escape code). */
+const esc = (): Step[] => [{ keys: ESC }, { sleep: 0.15 }];
+const PASTE = (text: string) => `\u001b[200~${text}\u001b[201~`;
 
 /** Run the TUI in a pty against the mock backend; returns the screens seen. */
 function runTui(
@@ -343,6 +345,47 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
       ['interactive', '-n', 'mainnet'],
     );
     expect(screens.join('\n')).not.toMatch(/ Sepolia /);
+  });
+
+  it('takes a paste as one event: ignored on Home, routed on Recipient', () => {
+    runTui(freshHome(), [
+      { expect: 'Balances' },
+      // Pasted on Home (bracketed): the 0 inside must not quit, nothing runs as a key.
+      { keys: PASTE('0x0481911Ea44577a5290903Ea126f40689120604e\n') },
+      { expect: 'Pasted address ignored' },
+      // Without bracketed paste: an address arriving in one read is still one paste.
+      { keys: '0x0481911Ea44577a5290903Ea126f40689120604e' },
+      { expect: 'Pasted address ignored' },
+      { absent: 'Bye' },
+      { keys: 's' },
+      { expect: '● Token' },
+      { keys: '\r' },
+      { expect: 'Paste an address' },
+      { keys: PASTE(BOB_LOOKALIKE) },
+      { expect: `› ${BOB_LOOKALIKE}` },
+      { absent: '● Amount' },
+      { keys: '\r' },
+      { expect: 'looks like your contact bob, but it is a different address' },
+      { keys: CTRL_C },
+      { keys: '0' },
+      { exit: 0 },
+      { raw_last: ['\u001b[?2004h', '\u001b[?2004l'] },
+    ]);
+  });
+
+  it('Esc answers at once and a key typed right after it is not lost', () => {
+    runTui(freshHome(), [
+      { expect: 'Balances' },
+      { keys: 'b' },
+      { expect: 'Token      Balance' },
+      // Esc and s in one read (a fast typist, or Alt+s): back to Home, then Send.
+      { keys: `${ESC}s` },
+      { expect: '● Token' },
+      { keys: ESC, delay: 0.1 },
+      { expect: 'check your setup' },
+      { keys: '0' },
+      { exit: 0 },
+    ]);
   });
 
   it('stops on a look-alike of a contact', () => {
