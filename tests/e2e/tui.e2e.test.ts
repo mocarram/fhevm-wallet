@@ -327,6 +327,16 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     expect(screens.join('\n')).not.toMatch(/Transfer confirmed/);
   });
 
+  it('fhew interactive -n mainnet starts on Mainnet (the flag after the command)', () => {
+    const screens = runTui(
+      freshHome(),
+      [{ expect: 'Balances' }, { expect: ' MAINNET ' }, { keys: '0' }, { exit: 0 }],
+      {},
+      ['interactive', '-n', 'mainnet'],
+    );
+    expect(screens.join('\n')).not.toMatch(/ Sepolia /);
+  });
+
   it('stops on a look-alike of a contact', () => {
     runTui(freshHome(), [
       { expect: 'Balances' },

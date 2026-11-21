@@ -18,6 +18,7 @@ import { saveEnvVar, settingSource, SettingSource } from '../storage/paths.js';
 import { setCustomRpc } from '../core/network/rpcSettings.js';
 import { clearProviderCache } from '../core/network/ProviderFactory.js';
 import { describeError } from './utils/userError.js';
+import { adoptTypedNetwork } from './utils/networkOption.js';
 import { maskUrl } from '../utils/redact.js';
 import { resolveSecretOption, rpcOptionHelp, secretOptionHelp } from './utils/secretInput.js';
 
@@ -48,16 +49,15 @@ export function createProgram(): Command {
   // Global options
   program
     .option('-n, --network <network>', 'Network to use (sepolia or mainnet)')
-    .hook('preAction', (thisCommand) => {
+    .hook('preAction', (thisCommand, actionCommand) => {
       const options = thisCommand.opts();
-      if (options.network) {
-        if (!isValidNetwork(options.network)) {
-          console.log(chalk.red('Invalid network. Use "sepolia" or "mainnet"'));
-          process.exit(1);
-        }
-        // Temporarily set network for this command
-        process.env.OVERRIDE_NETWORK = options.network;
+      if (options.network && !isValidNetwork(options.network)) {
+        console.log(chalk.red('Invalid network. Use "sepolia" or "mainnet"'));
+        process.exit(1);
       }
+      // `fhew balance -n mainnet`: commander hands -n to this program-level option, so
+      // pass it on to the subcommand's own option (see utils/networkOption.ts).
+      adoptTypedNetwork(actionCommand);
     })
     // Destroy cached providers once a command is done, so nothing (a pending poll, a
     // keep-alive socket) holds the process open after its output is printed.

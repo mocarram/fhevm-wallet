@@ -8,10 +8,13 @@
 
 import type { Command } from 'commander';
 
-/** Start the interactive terminal UI; resolves never (the process exits when it ends). */
-export async function runInteractiveMode(): Promise<void> {
+/**
+ * Start the interactive terminal UI, on `network` when given (validated by the program's
+ * preAction hook); resolves never (the process exits when it ends).
+ */
+export async function runInteractiveMode(network?: string): Promise<void> {
   const { runTui } = await import('../../tui/index.js');
-  await runTui();
+  await runTui({ network });
 }
 
 /** Register `fhew interactive` / `fhew i`. */
@@ -20,7 +23,8 @@ export function registerInteractiveCommand(program: Command): void {
     .command('interactive')
     .alias('i')
     .description('Launch the interactive terminal UI (same as running fhew with no arguments)')
-    .action(async () => {
-      await runInteractiveMode();
+    .option('-n, --network <network>', 'Network to start on (sepolia or mainnet)')
+    .action(async (options: { network?: string }) => {
+      await runInteractiveMode(options.network);
     });
 }

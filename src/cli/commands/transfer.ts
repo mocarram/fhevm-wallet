@@ -100,25 +100,13 @@ export function registerTransferCommand(program: Command): void {
       '--mainnet',
       'Allow a Mainnet send without confirmation (with --yes or no terminal); needs -n mainnet too',
     )
-    .action(
-      async (
-        to: string | undefined,
-        amount: string | undefined,
-        tokenArg: string | undefined,
-        options: SendOptions,
-        command: Command,
-      ) => {
-        try {
-          // The program also defines -n/--network and commander gives it the flag
-          // wherever it appears, so read the merged options: otherwise `fhew send … -n
-          // sepolia` would silently use the default network.
-          const network = (command.optsWithGlobals() as SendOptions).network;
-          await send(to, amount, tokenArg, { ...options, network });
-        } catch (err) {
-          fail(describeError(err, 'Failed to send transaction'));
-        }
-      },
-    );
+    .action(async (to?: string, amount?: string, tokenArg?: string, options: SendOptions = {}) => {
+      try {
+        await send(to, amount, tokenArg, options);
+      } catch (err) {
+        fail(describeError(err, 'Failed to send transaction'));
+      }
+    });
 }
 
 async function send(

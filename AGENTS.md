@@ -230,6 +230,10 @@ Every unit of work goes through this loop until it comes out clean:
   `--*-key` options accept `-` for hidden or piped input (one piped value per run).
 - e2e tests that need a terminal (password prompts) use `tests/e2e/pty-run.py`
   (python3); they are skipped where python3 is missing.
+- `-n/--network` is a program-level option: commander gives it the flag wherever it is
+  typed, so the program's preAction hook copies it to the running subcommand's own
+  `network` option (`adoptTypedNetwork`, `src/cli/utils/networkOption.ts`). A new
+  command that takes a network declares `-n, --network` and reads `options.network`.
 - No emoji in menus (they break column alignment in many terminals).
 
 ## Where the plan lives

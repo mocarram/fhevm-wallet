@@ -13,9 +13,8 @@ import { runShell } from './shell.js';
 import { loadSnapshot } from './snapshot.js';
 import { initialState } from './state.js';
 
-/** The network to start on: `-n/--network` (via OVERRIDE_NETWORK), else the saved default. */
-export function startNetwork(env: NodeJS.ProcessEnv = process.env): NetworkName {
-  const override = env.OVERRIDE_NETWORK;
+/** The network to start on: the typed `-n/--network`, else the saved default. */
+export function startNetwork(override?: string): NetworkName {
   if (override && isValidNetwork(override)) return override as NetworkName;
   return getDefaultNetwork();
 }
@@ -24,7 +23,7 @@ export function startNetwork(env: NodeJS.ProcessEnv = process.env): NetworkName 
  * Run the TUI and exit the process with its code. Needs an interactive terminal on both
  * stdin and stdout; otherwise explains how to use the commands instead.
  */
-export async function runTui(opts: { backend?: Backend } = {}): Promise<never> {
+export async function runTui(opts: { backend?: Backend; network?: string } = {}): Promise<never> {
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     process.stderr.write(
       'The interactive wallet needs a terminal. Run `fhew --help` to see the commands you can use in scripts.\n',
@@ -39,7 +38,7 @@ export async function runTui(opts: { backend?: Backend } = {}): Promise<never> {
     process.exit(1);
   }
 
-  const network = startNetwork();
+  const network = startNetwork(opts.network);
   const state = initialState({
     network,
     backendKind: backend.kind,
