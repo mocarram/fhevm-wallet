@@ -188,7 +188,10 @@ describe('disclose', () => {
     await h.keys('h');
     const items = h.text();
     expect(items).toMatch(/Disclose an amount/);
-    await h.keys('3'); // Show latest, Refresh, Disclose (no decrypt item: decrypted already)
+    // Decrypt amounts (dimmed: decrypted already), Show latest, Refresh, Disclose: the
+    // numbers never move when the decrypt item has nothing to do.
+    expect(items).toMatch(/1 {2}Decrypt amounts/);
+    await h.keys('4');
     expect(h.screen).toBe('disclose-pick');
     await h.keys('1');
     expect(h.screen).toBe('disclose');
@@ -198,7 +201,7 @@ describe('disclose', () => {
     expect(h.text()).toMatch(/cannot be made private again/);
     await h.keys('1');
     expect(h.text()).toMatch(/Step 1 of 2 done/);
-    await h.keys('h', '3', '1');
+    await h.keys('h', '4', '1');
     expect(h.text()).toMatch(/pending public decryption/);
     await h.keys('1');
     await h.keys('1');

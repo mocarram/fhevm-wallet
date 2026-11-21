@@ -13,7 +13,13 @@
  */
 
 import { parseCommand, COMMAND_EXAMPLES } from './commandParser.js';
-import { moveCursor, renderMenu, viewCursor } from './components/list.js';
+import {
+  moveCursor,
+  rememberCursor,
+  renderMenu,
+  stableCursor,
+  viewCursor,
+} from './components/list.js';
 import { QUIT, type Effect } from './effects.js';
 import { broadcast, commandSend } from './flows/send.js';
 import { broadcastTx } from './flows/tx.js';
@@ -190,6 +196,14 @@ export interface KeyOptions {
 export function handleKey(s: AppState, key: Key, opts: KeyOptions = {}): Effect[] {
   const wasSending = sendInProgress(s);
   const effects = handleKeyInner(s, key, opts);
+  // The cursor is where the key left it: remember that item, so effects that add or
+  // remove items before the next frame do not move it (stableCursor).
+  if (!s.quit) {
+    const v = currentView(s);
+    const f = top(s);
+    f.cur = viewCursor(v, f.cur);
+    rememberCursor(v, f);
+  }
   // "Every action" unlock mode: whatever route left the send (Esc, a shortcut, the
   // command bar, a menu jump), the key and any prepared send go with it.
   if (wasSending && !sendInProgress(s) && s.data.prefs.unlockMinutes === 0) lockWallet(s);
@@ -236,7 +250,7 @@ function handleKeyInner(s: AppState, key: Key, opts: KeyOptions): Effect[] {
 
   const view = currentView(s);
   const f = top(s);
-  f.cur = viewCursor(view, f.cur);
+  f.cur = stableCursor(view, f);
 
   // The list filter swallows keys while it is being typed (before the screen's keys).
   if (s.filtering !== null) {
@@ -542,7 +556,8 @@ export function render(s: AppState, size: Size): Line[] {
   s.size = { cols, rows };
   const view = currentView(s);
   const f = top(s);
-  f.cur = viewCursor(view, f.cur);
+  f.cur = stableCursor(view, f);
+  rememberCursor(view, f);
 
   const head: Line[] = [statusBar(s, cols), BLANK];
   // Above the list: notices, the flash, the filter line and the body (wrapped).

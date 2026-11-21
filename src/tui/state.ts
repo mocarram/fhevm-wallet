@@ -33,6 +33,8 @@ export interface Frame {
   scroll?: number;
   /** Rows the list window showed in the last frame: one PgUp/PgDn step. */
   page?: number;
+  /** The menu item the cursor was on when last drawn (components/list.ts stableCursor). */
+  curId?: string;
 }
 
 /** A recipient chosen in the send wizard. */

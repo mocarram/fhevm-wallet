@@ -45,6 +45,34 @@ export function viewCursor(
   return Math.max(0, Math.min(cur, view.multiSelect - 1));
 }
 
+/** What identifies a menu item across redraws: its label and letter. */
+function itemId(e: MenuEntry | undefined): string | undefined {
+  return e && isItem(e) ? `${e.key ?? ''}\u0000${e.label}` : undefined;
+}
+
+/**
+ * Keep the cursor on the same item when items appear or disappear above it (Home's
+ * "repeat last send" and "save contact" rows arrive after a send confirms): the frame
+ * remembers the item it was on (`curId`, set by `rememberCursor`) and the cursor follows
+ * it. When that item is gone, the index is kept.
+ */
+export function stableCursor(view: { items: MenuEntry[]; multiSelect?: number }, f: Frame): number {
+  if (
+    view.multiSelect === undefined &&
+    f.curId !== undefined &&
+    itemId(view.items[f.cur]) !== f.curId
+  ) {
+    const at = view.items.findIndex((e) => itemId(e) === f.curId);
+    if (at >= 0) f.cur = at;
+  }
+  return viewCursor(view, f.cur);
+}
+
+/** Remember which item the cursor is on (see `stableCursor`). */
+export function rememberCursor(view: { items: MenuEntry[]; multiSelect?: number }, f: Frame): void {
+  f.curId = view.multiSelect === undefined ? itemId(view.items[f.cur]) : undefined;
+}
+
 function styles(text: string | undefined): Style[] {
   return text ? (text.split(' ').filter(Boolean) as Style[]) : [];
 }

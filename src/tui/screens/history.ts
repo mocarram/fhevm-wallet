@@ -86,28 +86,38 @@ export const historyScreen: ScreenDef = {
             : '  Unlock to decrypt the "encrypted" amounts (one signature for all of them).',
         ),
       );
-    const decryptItem: Item[] = hasEncryptedRows(s)
-      ? [
-          {
-            label: 'Decrypt amounts',
-            act: (st: AppState) => {
-              if (isUnlocked(st)) return decryptHistory(st);
-              delete st.inputs.unlock;
-              return open(st, 'unlock', { after: 'history' });
-            },
-          },
-        ]
-      : [];
-    const discloseItem: Item[] = (s.history?.rows ?? []).some((r) => r.handle)
-      ? [{ label: 'Disclose an amount', act: (st: AppState) => open(st, 'disclose-pick') }]
-      : [];
+    // Both items are always listed (dimmed when there is nothing to do), so the numbers
+    // of the others never move: "4" is always Disclose, "5" always Back.
+    const decryptItem: Item = {
+      label: 'Decrypt amounts',
+      disabled: !hasEncryptedRows(s),
+      act: (st: AppState) => {
+        if (!hasEncryptedRows(st)) {
+          st.flash = [dimLine('  Every amount shown is already decrypted (or public).')];
+          return [];
+        }
+        if (isUnlocked(st)) return decryptHistory(st);
+        delete st.inputs.unlock;
+        return open(st, 'unlock', { after: 'history' });
+      },
+    };
+    const hasHandles = (st: AppState) => (st.history?.rows ?? []).some((r) => r.handle);
+    const discloseItem: Item = {
+      label: 'Disclose an amount',
+      disabled: !hasHandles(s),
+      act: (st: AppState) => {
+        if (hasHandles(st)) return open(st, 'disclose-pick');
+        st.flash = [dimLine('  There is no confidential transfer to disclose yet.')];
+        return [];
+      },
+    };
     return {
       body,
       list,
       after,
       filter: HISTORY_FILTER,
       items: [
-        ...decryptItem,
+        decryptItem,
         {
           label: 'Show latest in explorer',
           act: (st) => {
@@ -118,7 +128,7 @@ export const historyScreen: ScreenDef = {
           },
         },
         { label: 'Refresh', act: loadHistory },
-        ...discloseItem,
+        discloseItem,
         backItem(),
       ],
       hint: '↑↓ move · enter select · / filter · pgup/pgdn scroll · esc back',
