@@ -25,6 +25,16 @@ import { errorLines, fieldErrorFrom } from '../errors.js';
 import { decryptAll, refreshEth, reload } from './data.js';
 import { decryptHistory } from './history.js';
 import { popTo } from '../nav.js';
+import { isWrongPassword } from '../../cli/utils/passwordInput.js';
+
+/**
+ * The field error after a failed unlock: "did not unlock" only for a wrong password
+ * (like the CLI); a missing or damaged keystore and other failures say what happened.
+ */
+function unlockFailure(err: unknown, name: string, tail: string): [string, string] {
+  if (isWrongPassword(err)) return [`That password did not unlock ${name}.`, tail];
+  return fieldErrorFrom(err, 'Nothing was decrypted. Check it under Home › Wallets.');
+}
 
 /** How long an unlock lasts, from the "Stay unlocked for" setting. */
 export function unlockDurationMs(minutes: number): number {
@@ -74,15 +84,16 @@ export function unlock(
           if (after === 'history') return [...decryptAll(st), ...decryptHistory(st)];
           return decryptAll(st);
         };
-      } catch {
+      } catch (err) {
         return (st) => {
           delete st.inputs.unlock;
           if (st.stack[st.stack.length - 1] !== requester) return;
           st.busy = null;
-          st.fieldError = [
-            `That password did not unlock ${wallet.name}.`,
+          st.fieldError = unlockFailure(
+            err,
+            wallet.name,
             'Check it and try again. Nothing was signed.',
-          ];
+          );
         };
       }
     }),
@@ -219,14 +230,11 @@ export function exportPrivateKey(s: AppState): Effect[] {
       let key: string;
       try {
         key = await exportWalletPrivateKey(wallet.name, password);
-      } catch {
+      } catch (err) {
         return (st) => {
           st.busy = null;
           delete st.inputs.password;
-          st.fieldError = [
-            `That password did not unlock ${wallet.name}.`,
-            'Check it and try again.',
-          ];
+          st.fieldError = unlockFailure(err, wallet.name, 'Check it and try again.');
         };
       }
       await deps.showSecret(`Private key for ${wallet.name}`, [key]);
@@ -260,14 +268,11 @@ export function exportRecoveryPhrase(s: AppState): Effect[] {
       try {
         const w = await loadWallet(wallet.name, password);
         phrase = 'mnemonic' in w ? w.mnemonic?.phrase : undefined;
-      } catch {
+      } catch (err) {
         return (st) => {
           st.busy = null;
           delete st.inputs.password;
-          st.fieldError = [
-            `That password did not unlock ${wallet.name}.`,
-            'Check it and try again.',
-          ];
+          st.fieldError = unlockFailure(err, wallet.name, 'Check it and try again.');
         };
       }
       if (!phrase) {

@@ -57,7 +57,13 @@ describe('send wizard', () => {
     expect(h.text()).toMatch(/Confirm and sign/);
     await h.keys('{enter}');
     expect(h.screen).toBe('send-sign');
-    // No keystore on disk in this harness: a wrong password is reported on the field.
+    // A keystore with another password: a wrong password is reported on the field.
+    const { saveWalletKeystore } = await import('../../src/storage/WalletStore.js');
+    saveWalletKeystore(
+      'alice',
+      h.signer.encryptSync('right', { scrypt: { N: 1024 } } as never),
+      h.signer.address,
+    );
     await h.keys('nope', '{enter}');
     expect(h.screen).toBe('send-sign');
     expect(h.text()).toMatch(/did not unlock alice/);

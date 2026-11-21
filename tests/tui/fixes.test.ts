@@ -295,3 +295,23 @@ describe('back up the recovery phrase', () => {
     expect(h.s.inputs.password).toBeUndefined();
   });
 });
+
+describe('unlock failures other than a wrong password (N6)', () => {
+  it('Export recovery phrase says "did not unlock" only for a wrong password', async () => {
+    const { exportRecoveryPhrase } = await import('../../src/tui/flows/wallet.js');
+    const { saveWalletKeystore } = await import('../../src/storage/WalletStore.js');
+    const h = new Harness();
+    // No keystore for alice yet: that is not a wrong password.
+    h.s.inputs.password = 'pw';
+    h.queue.push(...exportRecoveryPhrase(h.s));
+    await h.settle();
+    expect(h.s.fieldError?.[0]).not.toMatch(/did not unlock/);
+    // With a keystore, a wrong password is said as such.
+    const ks = h.signer.encryptSync('right', { scrypt: { N: 1024 } } as never);
+    saveWalletKeystore('alice', ks, h.signer.address);
+    h.s.inputs.password = 'wrong';
+    h.queue.push(...exportRecoveryPhrase(h.s));
+    await h.settle();
+    expect(h.s.fieldError?.[0]).toBe('That password did not unlock alice.');
+  });
+});
