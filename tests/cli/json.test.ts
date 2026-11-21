@@ -4,6 +4,8 @@ import { toJsonValue } from '../../src/cli/utils/json.js';
 import { saveWalletKeystore } from '../../src/storage/WalletStore.js';
 import { setDefaultWallet } from '../../src/storage/ConfigStore.js';
 import { addTokenWithInfo } from '../../src/core/token/TokenRegistry.js';
+import { addAddress } from '../../src/storage/AddressBook.js';
+import { prompts } from '../../src/cli/utils/prompts.js';
 import { wipeTestDataDir } from '../helpers/dataDir.js';
 
 const ADDRESS = '0x52908400098527886E0F7030069857D2E4169EE7';
@@ -132,6 +134,37 @@ describe('--json output', () => {
     );
     expect(dis.error.code).toBe('INVALID_REF');
     expect(process.exitCode).toBe(1);
+  });
+
+  it('operator set stops on a look-alike of a contact', async () => {
+    // Regression: grants skipped the address-poisoning check that `fhew send` has.
+    const BOB = '0x91Be4C2a6d0f83B1e7c5a9d2f4E8b0C6D3d207AF';
+    const LOOKALIKE = '0x91bE9f71c0aE2B58d4a3f6C0B9e1D7a5f33207Af';
+    saveWalletKeystore('alice', '{}', ADDRESS);
+    setDefaultWallet('alice');
+    addAddress('bob', BOB);
+    addTokenWithInfo({ address: TOKEN, name: 'Tok', symbol: 'TOK', decimals: 6 }, 'sepolia');
+    const args = ['operator', 'set', LOOKALIKE, '--for', '1d', '-n', 'sepolia'];
+    const doc = JSON.parse(await stdoutOf(...args, '--yes', '--password-stdin', '--json'));
+    expect(doc.error.code).toBe('LOOKALIKE_ADDRESS');
+    expect(doc.error.message).toMatch(/fhew operator set bob/);
+
+    // At a terminal it asks, and "no" stops before the wallet is unlocked.
+    const tty = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    const confirm = vi.spyOn(prompts, 'confirm').mockResolvedValue(false);
+    process.exitCode = undefined;
+    try {
+      const out = await stdoutOf(...args);
+      expect(confirm).toHaveBeenCalledTimes(1);
+      expect(String(confirm.mock.calls[0][0].message)).toMatch(/Grant the pasted address/);
+      expect(out).toMatch(/looks like your contact bob/);
+      expect(process.exitCode).toBe(1);
+    } finally {
+      confirm.mockRestore();
+      if (tty) Object.defineProperty(process.stdin, 'isTTY', tty);
+      else delete (process.stdin as { isTTY?: boolean }).isTTY;
+    }
   });
 
   it('history --decrypt --json needs --password-stdin', async () => {

@@ -50,6 +50,7 @@ import { txCountScreen, txReviewScreen, txSignScreen } from './tx.js';
 import {
   operatorAddrScreen,
   operatorExpiryCustomScreen,
+  operatorCheckScreen,
   operatorExpiryScreen,
   operatorForeverScreen,
   operatorRevokeScreen,
@@ -112,6 +113,7 @@ export const SCREENS: Record<string, ScreenDef> = {
   operators: operatorsScreen,
   'operator-token': operatorTokenScreen,
   'operator-addr': operatorAddrScreen,
+  'operator-check': operatorCheckScreen,
   'operator-expiry': operatorExpiryScreen,
   'operator-expiry-custom': operatorExpiryCustomScreen,
   'operator-forever': operatorForeverScreen,

@@ -49,6 +49,7 @@ export function startOperatorGrant(
   token: string,
   operator: string,
   until: number,
+  notes: string[] = [],
 ): Effect[] {
   const t = tokenOf(s, token);
   const who = addressLabel(s, operator);
@@ -59,7 +60,7 @@ export function startOperatorGrant(
     until,
     title: `Let ${who} move your ${t?.symbol ?? 'tokens'} ${describeExpiry(until)}`,
     short: `operator: ${who}`,
-    warning: operatorWarning(t?.symbol ?? 'tokens', until),
+    warning: [...notes, ...operatorWarning(t?.symbol ?? 'tokens', until)],
     then: 'operators',
   });
 }

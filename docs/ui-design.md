@@ -107,7 +107,10 @@ pending public decryption → public) and offers the next step.
 Lists contacts and recent counterparties with `operator` / `not an operator` for the
 selected token (`Switch token` when several are tracked). Grant: address or contact →
 expiry (1 hour, 1 day, 7 days, custom date or duration, `No expiry…` which asks to type
-`forever`) → Review. Revoke: pick an operator or paste an address → Review.
+`forever`) → Review. A pasted look-alike of a contact stops first, like Send (`Grant to
+bob instead` / `I checked it`); a first-time address is noted on the expiry step and on
+Review. Custom dates are capped at a year, like durations; longer means `forever`.
+Revoke: pick an operator or paste an address → Review.
 
 ## Review for operator changes and disclosures
 

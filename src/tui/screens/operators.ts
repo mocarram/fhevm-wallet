@@ -9,15 +9,18 @@ import {
   confirmForever,
   loadOperators,
   submitOperatorAddress,
+  useOperatorContactInstead,
+  usePastedOperatorLookalike,
 } from '../flows/operators.js';
 import { startOperatorRevoke } from '../flows/tx.js';
 import { spinner } from '../format.js';
 import { open } from '../nav.js';
 import type { InputSpec, Item, MenuEntry, ScreenDef } from '../screen.js';
 import { popTo } from '../nav.js';
-import type { AppState } from '../state.js';
+import { top, type AppState } from '../state.js';
 import { dimLine, line, pad, seg, type Line } from '../text.js';
 import { backItem, BLANK, inputLine, SEP } from './common.js';
+import { comparedAddress } from './send.js';
 
 function tokenSymbol(s: AppState): string {
   const t = s.data.tokens.find((x) => x.address.toLowerCase() === s.operators?.token.toLowerCase());
@@ -135,12 +138,64 @@ export const operatorAddrScreen: ScreenDef = {
   },
 };
 
+/** Look-alike stop before a grant: the same check as Send, since an operator takes all. */
+export const operatorCheckScreen: ScreenDef = {
+  crumb: ['Operators', 'Address'],
+  view: (s) => {
+    const { address = '', contact = '' } = top(s).params;
+    const saved = s.data.contacts.find((c) => c.name === contact);
+    const body: Line[] = [
+      line(
+        '  ',
+        seg(
+          `✗ Careful: this looks like your contact ${contact}, but it is a different address.`,
+          'red bold',
+        ),
+      ),
+      BLANK,
+    ];
+    if (saved) {
+      body.push([
+        seg(`  ${pad(`${contact} (saved)`, 16)}`),
+        ...comparedAddress(saved.address, 'dim'),
+      ]);
+    }
+    body.push([seg(`  ${pad('pasted', 16)}`), ...comparedAddress(address, 'red')]);
+    body.push(
+      BLANK,
+      dimLine('  Scammers send tiny transfers from look-alike addresses so you copy'),
+      dimLine('  the wrong one. An operator could move ALL of your tokens.'),
+    );
+    return {
+      body,
+      items: [
+        {
+          label: `Grant to ${contact} instead`,
+          act: (st) => useOperatorContactInstead(st, contact),
+        },
+        {
+          label: 'I checked it, use the pasted address',
+          act: (st) => usePastedOperatorLookalike(st, address),
+        },
+        backItem(),
+      ],
+      hint: 'enter select · esc back',
+    };
+  },
+};
+
 export const operatorExpiryScreen: ScreenDef = {
   crumb: ['Operators', 'Expiry'],
   view: (s) => ({
     body: [
       line(`  How long may it move your ${tokenSymbol(s)}?`),
       dimLine('  Shorter is safer. You can revoke at any time.'),
+      ...(top(s).params.isNew
+        ? [
+            BLANK,
+            line('  ', seg('! First time using this address. Check it with its owner.', 'yellow')),
+          ]
+        : []),
     ],
     items: [
       ...EXPIRY_CHOICES.map((c): Item => ({

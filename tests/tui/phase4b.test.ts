@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { addTokenWithInfo } from '../../src/core/token/TokenRegistry.js';
 import { loadSnapshot } from '../../src/tui/snapshot.js';
 import { wipeTestDataDir } from '../helpers/dataDir.js';
-import { BOB, Harness } from './harness.js';
+import { BOB, BOB_LOOKALIKE, Harness } from './harness.js';
 
 beforeEach(() => wipeTestDataDir());
 
@@ -144,6 +144,29 @@ describe('operators', () => {
     await h.keys('{backspace}{backspace}{backspace}', 'forever', '{enter}');
     expect(h.screen).toBe('tx-review');
     expect(h.text()).toMatch(/with no expiry/);
+  });
+
+  it('stops a grant to a look-alike of a contact, like Send', async () => {
+    // Regression: a poisoned address went straight to the expiry step.
+    const h = new Harness({ unlocked: true });
+    await h.keys('6', '4', '1', BOB_LOOKALIKE, '{enter}');
+    expect(h.screen).toBe('operator-check');
+    expect(h.text()).toMatch(/looks like your contact bob, but it is a different address/);
+    await h.keys('1'); // Grant to bob instead
+    expect(h.screen).toBe('operator-expiry');
+    expect(h.s.stack[h.s.stack.length - 1].params.address).toBe(BOB);
+    expect(h.text()).not.toMatch(/First time/);
+  });
+
+  it('a confirmed look-alike or new address is flagged on Review', async () => {
+    const h = new Harness({ unlocked: true });
+    await h.keys('6', '4', '1', BOB_LOOKALIKE, '{enter}', '2');
+    expect(h.screen).toBe('operator-expiry');
+    expect(h.text()).toMatch(/First time using this address/);
+    await h.keys('2'); // 1 day
+    expect(h.screen).toBe('tx-review');
+    expect(h.text()).toMatch(/look-alike of a contact/);
+    expect(h.text()).toMatch(/First time using this address/);
   });
 
   it('shows SENT_UNCONFIRMED with the hash when the confirmation is lost', async () => {

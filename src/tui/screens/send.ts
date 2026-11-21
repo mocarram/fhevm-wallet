@@ -124,7 +124,7 @@ export const sendPasteScreen: ScreenDef = {
 };
 
 /** Address with the compared start and end in bold and the rest in `midStyle`. */
-function comparedAddress(address: string, midStyle: string): Line {
+export function comparedAddress(address: string, midStyle: string): Line {
   const [head, mid, tail] = splitForComparison(address);
   return [seg(head, 'bold'), seg(mid, midStyle), seg(tail, 'bold')];
 }

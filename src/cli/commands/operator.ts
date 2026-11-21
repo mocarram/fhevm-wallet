@@ -18,10 +18,11 @@ import {
   operatorWarning,
   parseOperatorExpiry,
 } from '../../core/send/operatorExpiry.js';
+import { findLookAlike } from '../../core/send/recipient.js';
 import { resolveRecipient } from '../../core/send/resolve.js';
 import { listAddresses } from '../../storage/AddressBook.js';
 import { listTransactions } from '../../storage/TransactionStore.js';
-import { bold, formatAddress } from '../../utils/formatting.js';
+import { bold, formatAddress, warning } from '../../utils/formatting.js';
 import { MAINNET_OPTION_HELP } from '../utils/mainnetGuard.js';
 import { PASSWORD_STDIN_HELP } from '../utils/passwordInput.js';
 import { prompts } from '../utils/prompts.js';
@@ -198,6 +199,35 @@ async function change(operatorText: string, options: OperatorOptions, mode: 'set
   }
   const who = r.contact ? `${r.contact.name} (${r.address})` : r.address;
 
+  // An operator can move everything, so a grant gets the same address-poisoning stop as
+  // `fhew send`. A revoke only removes power and skips it.
+  const notes: string[] = [];
+  if (mode === 'set' && !r.contact) {
+    const lookalike = findLookAlike(r.address, contacts);
+    if (lookalike) {
+      console.log(
+        warning(
+          `Careful: ${r.address} looks like your contact ${lookalike.name} (${lookalike.address}), but it is a different address.`,
+        ),
+      );
+      if (options.yes || options.json || !process.stdin.isTTY) {
+        return fail(
+          `Stopped. Nothing was signed or sent. To grant ${lookalike.name}, use: fhew operator set ${lookalike.name} …`,
+          'LOOKALIKE_ADDRESS',
+        );
+      }
+      const goOn = await prompts.confirm({
+        message: 'I checked every character. Grant the pasted address anyway?',
+        default: false,
+      });
+      if (!goOn) return fail('Stopped. Nothing was signed or sent.', 'CANCELLED');
+      notes.push('You confirmed a look-alike of a contact. Check every character once more.');
+    }
+    if (isFirstTime(walletRef.address, r.address, network)) {
+      notes.push('First time using this address: it is not a contact and you never sent to it.');
+    }
+  }
+
   let until = 0;
   if (mode === 'set') {
     const e = parseOperatorExpiry(options.for ?? '', Date.now());
@@ -238,7 +268,7 @@ async function change(operatorText: string, options: OperatorOptions, mode: 'set
       `Operator: ${who}`,
       `Expiry:   ${mode === 'set' ? describeExpiry(until) : 'now (revoked)'}`,
     ],
-    warnings: mode === 'set' ? operatorWarning(token.symbol, until) : [],
+    warnings: mode === 'set' ? [...notes, ...operatorWarning(token.symbol, until)] : [],
     yes: options.yes,
     question: mode === 'set' ? 'Grant this operator?' : 'Revoke this operator?',
   });
@@ -263,5 +293,22 @@ async function change(operatorText: string, options: OperatorOptions, mode: 'set
         ? chalk.green(`${who} is now an operator for ${token.symbol} ${describeExpiry(until)}.`)
         : chalk.green(`${who} can no longer move your ${token.symbol}.`),
     );
+  }
+}
+
+/**
+ * True when this wallet never sent to `other` on `network`. Received-from does not count:
+ * poisoners send tiny transfers precisely so their address shows up in your history.
+ */
+function isFirstTime(wallet: string, other: string, network: 'mainnet' | 'sepolia'): boolean {
+  const w = wallet.toLowerCase();
+  const o = other.toLowerCase();
+  try {
+    return !listTransactions({ walletAddress: wallet, network, limit: 10_000 }).some(
+      (t) => t.from.toLowerCase() === w && t.to.toLowerCase() === o,
+    );
+  } catch {
+    // History is optional: without it, say nothing rather than cry wolf.
+    return false;
   }
 }

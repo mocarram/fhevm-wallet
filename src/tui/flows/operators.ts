@@ -5,11 +5,12 @@
  */
 
 import { parseOperatorExpiry, FOREVER_CONFIRMATION } from '../../core/send/operatorExpiry.js';
+import { findLookAlike } from '../../core/send/recipient.js';
 import { resolveRecipient } from '../../core/send/resolve.js';
 import { listTransactions } from '../../storage/TransactionStore.js';
 import { describeError } from '../errors.js';
 import { effect, type Effect } from '../effects.js';
-import { open } from '../nav.js';
+import { open, openInstead } from '../nav.js';
 import { top, type AppState, type OperatorRow } from '../state.js';
 import { addressLabel, startOperatorGrant, startOperatorRevoke } from './tx.js';
 
@@ -90,8 +91,51 @@ export function submitOperatorAddress(s: AppState): Effect[] {
   }
   const token = s.operators?.token;
   if (!token) return [];
+  // Revoking only ever takes power away, so a mistyped address there costs a fee, not funds.
   if (top(s).params.mode === 'revoke') return startOperatorRevoke(s, token, r.address);
-  return open(s, 'operator-expiry', { address: r.address });
+  if (!r.contact) {
+    // Address poisoning: an operator can take everything, so the same stop as Send.
+    const lookalike = findLookAlike(r.address, s.data.contacts);
+    if (lookalike)
+      return open(s, 'operator-check', { address: r.address, contact: lookalike.name });
+  }
+  return open(s, 'operator-expiry', expiryParams(s, r.address));
+}
+
+/** Params for the expiry step: marks addresses that are neither contacts nor sent to. */
+function expiryParams(s: AppState, address: string, lookalike = false): Record<string, string> {
+  const a = address.toLowerCase();
+  const known =
+    s.data.contacts.some((c) => c.address.toLowerCase() === a) ||
+    s.data.knownRecipients.includes(a);
+  const params: Record<string, string> = { address };
+  if (!known) params.isNew = '1';
+  if (lookalike) params.lookalike = '1';
+  return params;
+}
+
+/** Look-alike stop: grant the saved contact instead. */
+export function useOperatorContactInstead(s: AppState, contactName: string): Effect[] {
+  const c = s.data.contacts.find((x) => x.name === contactName);
+  if (!c) return [];
+  return openInstead(s, 'operator-expiry', { address: c.address });
+}
+
+/** Look-alike stop: the user checked every character and wants the pasted address. */
+export function usePastedOperatorLookalike(s: AppState, address: string): Effect[] {
+  return openInstead(s, 'operator-expiry', expiryParams(s, address, true));
+}
+
+/** Extra Review warnings for a grant to a first-time or look-alike address. */
+export function operatorAddressNotes(params: Record<string, string>): string[] {
+  const out: string[] = [];
+  if (params.lookalike) {
+    out.push('You confirmed a look-alike of a contact. Check every character once more.');
+  }
+  if (params.isNew) {
+    out.push('First time using this address: it is not a contact and you never sent to it.');
+  }
+  return out;
 }
 
 /** Expiry chosen from the menu or typed (1h, 1d, 7d, a date). "forever" asks to type it. */
@@ -106,9 +150,9 @@ export function chooseExpiry(s: AppState, text: string): Effect[] {
   }
   if (r.forever) {
     delete s.inputs.operatorForever;
-    return open(s, 'operator-forever', { address });
+    return open(s, 'operator-forever', { ...top(s).params });
   }
-  return startOperatorGrant(s, token, address, r.until);
+  return startOperatorGrant(s, token, address, r.until, operatorAddressNotes(top(s).params));
 }
 
 /** "No expiry" needs the word typed out: an operator can move everything, for good. */
@@ -124,5 +168,7 @@ export function confirmForever(s: AppState): Effect[] {
     return [];
   }
   const r = parseOperatorExpiry(FOREVER_CONFIRMATION, s.now);
-  return r.ok ? startOperatorGrant(s, token, address, r.until) : [];
+  return r.ok
+    ? startOperatorGrant(s, token, address, r.until, operatorAddressNotes(top(s).params))
+    : [];
 }
