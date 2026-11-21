@@ -5,6 +5,7 @@
  */
 
 import { DEFAULT_RPC_URLS } from '../../core/network/NetworkConfig.js';
+import { maskUrl } from '../../utils/redact.js';
 import { COUNTDOWN_CHOICES, UNLOCK_MINUTES_CHOICES } from '../../storage/UiPrefsStore.js';
 import { MAINNET_MIN_COUNTDOWN } from '../flows/send.js';
 import {
@@ -35,15 +36,9 @@ export function countdownChoiceText(seconds: number): string {
   return seconds === 0 ? 'off' : `${seconds} s`;
 }
 
-/**
- * Show an RPC URL without anything that could be a provider key: scheme and host only,
- * with "/…" when there was more.
- */
+/** Show an RPC URL without anything that could be a provider key (shared `maskUrl`). */
 export function displayRpcUrl(url: string): string {
-  const m = url.match(/^(https?:\/\/[^/?#\s]+)(.*)$/i);
-  if (!m) return 'custom URL';
-  const host = m[1].replace(/\/\/[^@/]*@/, '//'); // never show user:password@
-  return m[2] && m[2] !== '/' ? `${host}/…` : host;
+  return maskUrl(url);
 }
 
 function row(label: string, value: string, valueStyle: string, act: Item['act']): Item {
@@ -163,7 +158,13 @@ export const settingsRpcScreen: ScreenDef = {
   },
 };
 
-const RPC_SPEC: InputSpec = { field: 'rpcUrl', placeholder: 'https://…', maxLength: 300 };
+// Masked like a password: RPC URLs usually carry a provider key (as in `fhew config`).
+const RPC_SPEC: InputSpec = {
+  field: 'rpcUrl',
+  secret: true,
+  placeholder: 'https://… (hidden as you type)',
+  maxLength: 300,
+};
 
 export const settingsRpcUrlScreen: ScreenDef = {
   crumb: ['Settings', 'RPC endpoint'],

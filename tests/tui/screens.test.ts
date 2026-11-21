@@ -255,9 +255,14 @@ describe('Settings', () => {
     const h = new Harness();
     await h.keys('8', '3', '1');
     expect(h.text()).toMatch(/RPC answers with chain id 11155111/);
-    await h.keys('2', 'http://insecure.example', '{enter}');
+    await h.keys('2', 'http://insecure.example/KEY123');
+    expect(h.text()).not.toMatch(/KEY123/);
+    await h.keys('{enter}');
     expect(h.screen).toBe('settings-rpc-url');
     expect(h.s.fieldError).not.toBeNull();
+    expect(h.text()).not.toMatch(/KEY123/);
+    await h.keys('{escape}');
+    expect(h.s.inputs.rpcUrl).toBeUndefined();
   });
 });
 

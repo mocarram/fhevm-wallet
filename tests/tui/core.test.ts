@@ -199,7 +199,7 @@ describe('settings helpers', () => {
     expect(unlockChoiceText(15)).toBe('15 min');
     expect(countdownChoiceText(0)).toBe('off');
     expect(displayRpcUrl('https://eth.example.com/v3/secretkey')).toBe('https://eth.example.com/…');
-    expect(displayRpcUrl('https://user:pw@rpc.example.com')).toBe('https://rpc.example.com');
-    expect(displayRpcUrl('nonsense')).toBe('custom URL');
+    expect(displayRpcUrl('https://user:pw@rpc.example.com')).toBe('https://rpc.example.com/…');
+    expect(displayRpcUrl('nonsense')).not.toContain('nonsense');
   });
 });

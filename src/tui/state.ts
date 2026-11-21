@@ -198,9 +198,17 @@ export function inSetup(s: AppState): boolean {
 
 /**
  * Ids of text fields that hold secrets. They survive moving forward (a wizard needs the
- * password on its last step) but are cleared on Esc, Ctrl+C and once used.
+ * password on its last step) but are cleared on Esc, Ctrl+C and once used. `rpcUrl` is
+ * here because RPC URLs usually embed a provider key.
  */
-export const SECRET_FIELDS = new Set(['password', 'password2', 'importSecret', 'apiKey', 'unlock']);
+export const SECRET_FIELDS = new Set([
+  'password',
+  'password2',
+  'importSecret',
+  'apiKey',
+  'unlock',
+  'rpcUrl',
+]);
 
 /** Forget every secret text field. */
 export function clearSecrets(s: AppState): void {
