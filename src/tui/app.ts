@@ -22,7 +22,7 @@ import { openFromRoot } from './nav.js';
 import { indexForDigit, isItem, type ScreenView } from './screen.js';
 import { SCREENS } from './screens/registry.js';
 import { BLANK } from './screens/common.js';
-import { back, goHome, inSetup, top, type AppState } from './state.js';
+import { back, goHome, inSetup, lockWallet, sendInProgress, top, type AppState } from './state.js';
 import { statusBar } from './statusBar.js';
 import { clipLine, dimLine, line, pad, seg, wrapLine, type Line } from './text.js';
 import { isPrintable, type Key } from './keys.js';
@@ -140,6 +140,15 @@ function typeInto(s: AppState, view: ScreenView, key: Key): boolean {
  * Handle one key. Mutates `s` and returns effects for the shell to run.
  */
 export function handleKey(s: AppState, key: Key): Effect[] {
+  const wasSending = sendInProgress(s);
+  const effects = handleKeyInner(s, key);
+  // "Every action" unlock mode: whatever route left the send (Esc, a shortcut, the
+  // command bar, a menu jump), the key and any prepared send go with it.
+  if (wasSending && !sendInProgress(s) && s.data.prefs.unlockMinutes === 0) lockWallet(s);
+  return effects;
+}
+
+function handleKeyInner(s: AppState, key: Key): Effect[] {
   if (s.quit) return [];
 
   if (s.help) {

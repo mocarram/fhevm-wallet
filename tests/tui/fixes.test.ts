@@ -64,6 +64,23 @@ describe('"every action" unlock mode', () => {
     expect(h.s.send.prepared).toBeUndefined();
   });
 
+  it('leaving the send by Esc all the way to Home, or the command bar, locks', async () => {
+    const h = new Harness({ unlocked: true });
+    h.s.data.prefs.unlockMinutes = 0;
+    await toReview(h);
+    await h.keys('{escape}', '{escape}', '{escape}', '{escape}');
+    expect(h.screen).toBe('home');
+    expect(h.s.signer).toBeNull();
+
+    const h2 = new Harness({ unlocked: true });
+    h2.s.data.prefs.unlockMinutes = 0;
+    await toReview(h2);
+    await h2.keys(':', 'h', 'i', 's', 't', 'o', 'r', 'y', '{enter}'); // command bar jump
+    expect(h2.screen).toBe('history');
+    expect(h2.s.signer).toBeNull();
+    expect(h2.s.send.prepared).toBeUndefined();
+  });
+
   it('a timed unlock survives backing out of Review', async () => {
     const h = new Harness({ unlocked: true });
     h.s.data.prefs.unlockMinutes = 15;
