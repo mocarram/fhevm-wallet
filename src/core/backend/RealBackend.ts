@@ -14,10 +14,10 @@ import {
   RPC_PROBE_TIMEOUT_MS,
   RpcNoRealAnswerError,
 } from '../network/ProviderFactory.js';
-import { MainnetConfig, SepoliaConfig } from '@zama-fhe/relayer-sdk/node';
+import { RELAYER_NETWORKS } from '../fhe/relayerConfig.js';
 import { maskUrl } from '../../utils/redact.js';
 import { setCustomRpc } from '../network/rpcSettings.js';
-import { checkFheReadiness } from '../fhe/FheService.js';
+import { checkFheReadiness, warmUpFheInstance } from '../fhe/FheService.js';
 import { DecryptSession, decryptDaysFromEnv, normaliseHandle } from '../fhe/DecryptSession.js';
 import { publicDecryptHandle, relayerDecryptAuthority } from '../fhe/DecryptionService.js';
 import {
@@ -74,7 +74,7 @@ import type {
 const RELAYER_PROBE_TIMEOUT_MS = 8_000;
 /** The Zama ACL contract for a network (from the relayer SDK's network config). */
 function aclAddress(network: NetworkName): string {
-  return (network === 'mainnet' ? MainnetConfig : SepoliaConfig).aclContractAddress;
+  return RELAYER_NETWORKS[network].aclContractAddress;
 }
 
 /** Adapt a TokenService PreparedCall to the Backend's PreparedTx. */
@@ -146,6 +146,9 @@ export class RealBackend implements Backend {
   }
 
   newDecryptSession(signer: UnlockedSigner, network: NetworkName): DecryptSession {
+    // An unlocked wallet will encrypt or decrypt soon: build the relayer instance (about
+    // 4 s) in the background now instead of on the first balance or send.
+    if (!checkFheReadiness(network)) warmUpFheInstance(network);
     return new DecryptSession(signer, network, relayerDecryptAuthority(network), {
       durationDays: decryptDaysFromEnv(),
     });
@@ -408,7 +411,7 @@ export class RealBackend implements Backend {
   }
 
   async checkRelayer(network: NetworkName): Promise<RelayerCheck> {
-    const base = network === 'mainnet' ? MainnetConfig.relayerUrl : SepoliaConfig.relayerUrl;
+    const base = RELAYER_NETWORKS[network].relayerUrl;
     // The key-URL endpoint the SDK fetches first; any HTTP answer means it is reachable.
     const url = `${base.replace(/\/$/, '')}/v1/keyurl`;
     const started = Date.now();
