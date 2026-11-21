@@ -17,6 +17,7 @@ import { moveCursor, renderMenu, validCursor } from './components/list.js';
 import { QUIT, type Effect } from './effects.js';
 import { broadcast, commandSend } from './flows/send.js';
 import { lockNow } from './flows/data.js';
+import { findBusy } from './flows/find.js';
 import { spinner } from './format.js';
 import { openFromRoot } from './nav.js';
 import { indexForDigit, isItem, type ScreenView } from './screen.js';
@@ -290,6 +291,7 @@ export function isAnimating(s: AppState): boolean {
     s.send.checking ||
     s.history?.loading ||
     (top(s).id === 'doctor' && !s.doctor) ||
+    findBusy(s) ||
     (top(s).id === 'setup-gas' && (!s.doctor || !s.eth)),
   );
 }

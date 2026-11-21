@@ -10,6 +10,8 @@ import type { BackendKind, PreparedSend, UnlockedSigner } from '../core/backend/
 import type { NetworkName } from '../core/network/NetworkConfig.js';
 import type { TokenInfo } from '../core/token/TokenService.js';
 import type { TokenCheck } from '../core/token/erc7984Check.js';
+import type { FindResult } from '../core/token/findTokens.js';
+import type { ScanProgress } from '../core/token/tokenScan.js';
 import type { ShownError } from './errors.js';
 import type { Snapshot } from './snapshot.js';
 import type { Line } from './text.js';
@@ -118,6 +120,13 @@ export interface AppState {
   offerSave: string | null;
   history: { rows: HistoryRow[]; loading: boolean; error?: string } | null;
   doctor: DoctorRow[] | null;
+  /** Find tokens: progress while scanning, then the candidates. */
+  find: {
+    phase: 'scanning' | 'checking' | 'done';
+    progress?: ScanProgress;
+    result?: FindResult;
+    error?: string;
+  } | null;
   /** The failed ERC-7984 check shown on "Add anyway?" (token-add-confirm). */
   tokenCheck: TokenCheck | null;
   /** Tokens the backend suggests during first-run setup (loaded on the Token step). */
@@ -178,6 +187,7 @@ export function initialState(opts: {
     history: null,
     doctor: null,
     tokenCheck: null,
+    find: null,
     quit: false,
   };
 }

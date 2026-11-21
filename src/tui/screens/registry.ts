@@ -42,6 +42,7 @@ import {
 import {
   tokenAddConfirmScreen,
   tokenAddScreen,
+  tokenFindScreen,
   tokenRemoveScreen,
   tokensScreen,
 } from './tokens.js';
@@ -94,6 +95,7 @@ export const SCREENS: Record<string, ScreenDef> = {
   tokens: tokensScreen,
   'token-add': tokenAddScreen,
   'token-add-confirm': tokenAddConfirmScreen,
+  'token-find': tokenFindScreen,
   'token-remove': tokenRemoveScreen,
 
   contacts: contactsScreen,

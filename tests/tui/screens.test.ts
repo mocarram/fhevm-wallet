@@ -207,13 +207,37 @@ describe('Tokens', () => {
     expect(h.text()).toMatch(/Stopped tracking cUSDC, cDAI/);
   });
 
-  it('shows Find tokens as a disabled slot', async () => {
-    const h = new Harness();
+  it('Find tokens: one list, verified pre-selected, unverified labelled, bulk add', async () => {
+    const h = new Harness({ seed: false });
     await h.keys('6');
-    expect(h.text()).toMatch(/3 {2}Find tokens +coming soon/);
+    expect(h.text()).toMatch(/3 {2}Find tokens/);
     await h.keys('3');
+    expect(h.screen).toBe('token-find');
+    const text = h.text(120, 50);
+    expect(text).toMatch(/\[x\] cDAI .*known list · found in your history/);
+    expect(text).toMatch(/\[x\] cUSDC .*known list/);
+    expect(text).toMatch(/\[ \] cGIFT .*found in your history · unverified/);
+    expect(text).toMatch(/PLAIN .*not ERC-7984, not offered/);
+    await h.keys('{enter}');
     expect(h.screen).toBe('tokens');
-    expect(h.text()).toMatch(/coming in a later update/);
+    expect(listTokens('sepolia').map((t) => t.symbol).sort()).toEqual(['cDAI', 'cUSDC']);
+    expect(h.text()).toMatch(/Added cDAI, cUSDC/);
+    // Again: the tracked ones are gone from the list; "a" picks the unverified one.
+    await h.keys('3');
+    expect(h.text(120, 50)).toMatch(/2 already tracked/);
+    await h.keys('a');
+    await h.keys('{enter}');
+    expect(listTokens('sepolia').map((t) => t.symbol)).toContain('cGIFT');
+  });
+
+  it('Find tokens: Esc stops the scan and keeps the screen', async () => {
+    const h = new Harness({ seed: false });
+    h.press('6', '3');
+    expect(h.text()).toMatch(/Reading the known token lists|Scanning/);
+    h.press('{escape}');
+    expect(h.screen).toBe('token-find');
+    await h.settle();
+    expect(h.text()).toMatch(/Scan stopped at block/);
   });
 
   it('explains when the token cannot be read', async () => {

@@ -6,6 +6,9 @@
 import { shortAddress } from '../../core/send/recipient.js';
 import { describeNonCompliant } from '../../core/token/erc7984Check.js';
 import { addTokenFromInput, removeTrackedTokens, trackChecked } from '../flows/manage.js';
+import { abandonFind, addFound, selectableCandidates, startFind, stopFind } from '../flows/find.js';
+import { sourceLabel } from '../../core/token/findTokens.js';
+import { spinner } from '../format.js';
 import {
   MULTI_SELECT_HELP,
   multiSelectKey,
@@ -46,15 +49,8 @@ export const tokensScreen: ScreenDef = {
         { label: 'Remove tokens', act: (st) => open(st, 'token-remove') },
         {
           label: 'Find tokens',
-          value: 'coming soon',
-          valueStyle: 'dim',
-          disabled: true,
-          act: (st) => {
-            st.flash = [
-              dimLine('  Finding tokens you have received is coming in a later update.'),
-              dimLine('  For now, add a token by its contract address.'),
-            ];
-          },
+          note: 'known lists and your history',
+          act: (st) => open(st, 'token-find'),
         },
         backItem(),
       ],
@@ -121,6 +117,147 @@ export const tokenAddConfirmScreen: ScreenDef = {
     return { body, items, hint: 'enter select · esc back' };
   },
 };
+
+function findOptions(s: AppState): MultiOption[] {
+  return selectableCandidates(s).map((c) => ({
+    id: c.address,
+    label: `${pad(c.symbol, 8)} ${pad(c.name, 20)} ${shortAddress(c.address)}`,
+    note: c.status === 'unverified' ? `${sourceLabel(c)} · unverified` : sourceLabel(c),
+    noteStyle: c.status === 'unverified' ? 'yellow' : 'dim',
+  }));
+}
+
+/** Tokens › Find tokens: progress, then one multi-select list of candidates. */
+export const tokenFindScreen: ScreenDef = {
+  crumb: ['Tokens', 'Find'],
+  onEnter: startFind,
+  view: (s) => {
+    const f = s.find;
+    const body: Line[] = [];
+    if (!f || f.phase !== 'done') {
+      const p = f?.progress;
+      if (f?.phase === 'checking') {
+        body.push(line('  ', seg(`${spinner(s.now)} Checking each token for ERC-7984…`, 'cyan')));
+      } else if (p) {
+        const total = Math.max(1, p.toBlock - p.fromBlock + 1);
+        const pct = Math.floor(((p.current - p.fromBlock + 1) / total) * 100);
+        body.push(
+          line(
+            '  ',
+            seg(
+              `${spinner(s.now)} Scanning your history: block ${p.current} of ${p.toBlock} (${pct}%)`,
+              'cyan',
+            ),
+            seg(` · ${p.found} found`, 'dim'),
+          ),
+        );
+      } else {
+        body.push(line('  ', seg(`${spinner(s.now)} Reading the known token lists…`, 'cyan')));
+      }
+      body.push(BLANK, dimLine('  Esc stops the scan. What was scanned so far is saved.'));
+      return {
+        body,
+        items: [],
+        hint: 'esc stop scan',
+        onKey: (st, key) => {
+          if (key === 'escape') {
+            stopFind(st);
+            return { handled: true };
+          }
+          if (key === 'ctrl-c') abandonFind();
+          return { handled: false };
+        },
+      };
+    }
+
+    const r = f.result;
+    if (f.error || !r) {
+      body.push(line('  ', seg(`✗ ${f.error ?? 'Nothing to show.'}`, 'red')));
+    } else {
+      const sc = r.scan;
+      if (sc?.cancelled)
+        body.push(
+          line(
+            '  ',
+            seg(
+              `! Scan stopped at block ${sc.scannedTo}. Find tokens again to continue.`,
+              'yellow',
+            ),
+          ),
+        );
+      else if (sc?.error)
+        body.push(
+          line('  ', seg(`! The scan stopped early: ${sc.error.message}`, 'yellow')),
+          dimLine('    What was found so far is listed. Find tokens again to continue.'),
+        );
+      else if (sc)
+        body.push(
+          dimLine(
+            sc.upToDate
+              ? `  Your history is scanned up to block ${sc.toBlock}.`
+              : `  Scanned blocks ${sc.fromBlock} to ${sc.toBlock} of ${s.network}.`,
+          ),
+        );
+      if (r.listError) body.push(line('  ', seg(`! Your token list: ${r.listError}`, 'yellow')));
+      body.push(BLANK);
+      const options = findOptions(s);
+      if (options.length) body.push(...renderMultiSelect(top(s), filtered(s, options)));
+      else body.push(dimLine('  No new tokens to add.'));
+      const notOffered = r.candidates.filter(
+        (c) => c.status === 'not-erc7984' || c.status === 'unchecked',
+      );
+      if (notOffered.length) {
+        body.push(BLANK);
+        for (const c of notOffered) {
+          body.push(
+            dimLine(
+              `  ${pad(c.symbol, 8)} ${shortAddress(c.address)}  ${c.status === 'unchecked' ? "couldn't check it" : 'not ERC-7984, not offered'}`,
+            ),
+          );
+        }
+      }
+      const tracked = r.candidates.filter((c) => c.status === 'tracked').length;
+      if (tracked) body.push(dimLine(`  ${tracked} already tracked.`));
+      if (r.candidates.some((c) => c.status === 'unverified')) {
+        body.push(
+          BLANK,
+          dimLine('  Unverified: sent to you, but on no known list. Anyone can send you a token;'),
+          dimLine('  only add ones you recognise.'),
+        );
+      }
+    }
+    return {
+      body,
+      items: [],
+      hint: 'space select · a all · enter add · r scan again · / filter · esc back',
+      help: [...MULTI_SELECT_HELP, ['r', 'Scan again (continues from where it stopped)']],
+      onKey: (st, key) => {
+        if (key === 'escape' || key === 'ctrl-c') {
+          abandonFind();
+          return { handled: false };
+        }
+        if (key === 'r') return { handled: true, effects: startFind(st) };
+        const res = multiSelectKey(top(st), filtered(st, findOptions(st)), key);
+        if (res.kind === 'ignored') return { handled: false };
+        st.fieldError = null;
+        if (res.kind !== 'confirm') return { handled: true };
+        if (!res.ids.length) {
+          st.fieldError = [
+            'Nothing selected.',
+            'Press Space on a token to select it, or a for all.',
+          ];
+          return { handled: true };
+        }
+        return { handled: true, effects: addFound(st, res.ids) };
+      },
+    };
+  },
+};
+
+/** Options matching the list filter (`/`), if one is set. Placeholder until the filter. */
+function filtered(_s: AppState, options: MultiOption[]): MultiOption[] {
+  return options;
+}
 
 function removeOptions(s: AppState): MultiOption[] {
   return s.data.tokens.map((t) => ({
