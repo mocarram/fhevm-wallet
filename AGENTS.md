@@ -88,6 +88,15 @@ tests/e2e/                 end-to-end runs of dist/index.js in a throwaway HOME
   chain before any step is sent again. Never resend a request from a resume; never send a
   finalize while ours may still land. The store holds amounts: owner-only, like
   amount-cache.json, and a damaged file is never overwritten.
+- "The RPC does not know this transaction" is not "dropped": behind a load balancer it
+  may be pending on another node. The request's nonce is recorded when it is signed
+  (`onSigned(hash, { nonce })`), and `checkForget` lets `--forget` drop a `signed` entry
+  only once `Backend.minedNonce` is past it and a second look still finds no receipt
+  (entries without a nonce: 30 minutes old). A mined request without an
+  `UnwrapRequested` log is `unclear` (tokens may be burnt), never "failed, nothing burnt".
+- A TUI effect that signs later (an unwrap's step 2) asks `deps.unlockedSigner()` right
+  before each use and stops when the wallet locked or changed; it never keeps the key it
+  started with.
 - Re-read the wrapper (`Backend.wrapperInfo`) before signing; `wrappers.json` is a cache
   for display only.
 - "The contract did not answer" is decided by one rule, `isContractNoAnswer`
@@ -97,7 +106,11 @@ tests/e2e/                 end-to-end runs of dist/index.js in a throwaway HOME
   failure.
 - A wrap (mint) or unwrap request (burn) is recorded in `transactions.json` when it
   confirms, and at block 0 (unconfirmed, with its hash) when the receipt does not come
-  (`src/core/token/wrapHistory.ts`), like a send.
+  (`src/core/token/wrapHistory.ts`), like a send; a resume that learns the request's
+  receipt records it too. Block 0 sorts first in `listTransactions`, so a limit never
+  cuts it. A new wrap of a token with an unconfirmed one warns (`unconfirmedWrapIn`).
+- A wrap step priced after the review (the wrap after its approval) must fit in what is
+  left of the reviewed "up to" fee, or it stops with `WRAP_APPROVED_ONLY`.
 
 ## Offline mock backend
 
@@ -279,8 +292,11 @@ Every unit of work goes through this loop until it comes out clean:
   token) plus `eth`, saved after every chunk, and stores transfers keyed by tx hash + log
   index. eth_getLogs goes through `walkBlockRange` (`src/core/network/logRange.ts`:
   shrinks to a named cap such as nodies' 50 blocks, backs off on rate limits, request
-  budget); Find tokens uses the same walker. On the built-in public endpoints a first RPC
-  sync covers only a recent window and says so; Etherscan replies with `status: "0"` are
+  budget); Find tokens uses the same walker. Tokens with equal cursors are read with one
+  address-list eth_getLogs per direction. On the built-in public endpoints a first RPC
+  sync covers only a recent window (`PUBLIC_HISTORY_WINDOW`, 10k blocks) and says so; a
+  start refused as "pruned" moves forward (the provider counts those refusals) instead of
+  crawling a 50-block fallback; Etherscan replies with `status: "0"` are
   errors unless "No records found". Test sync changes against `tests/helpers/stubRpc.ts`
   (real provider + sync code), not only the MockBackend.
 - Never write plaintext token amounts to the audit log. Decrypted transfer amounts live

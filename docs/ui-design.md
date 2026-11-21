@@ -152,7 +152,10 @@ broadcast) with detail lines:
 After the confirm both transactions go out in order; the wrap is simulated only after the
 approval confirmed (it cannot be simulated before). If that simulation fails, the notice
 says "The approval went through, the wrap was not sent" and Wrap again skips the
-approval. On confirmation the confidential balance re-decrypts and the notice shows
+approval. The same happens when the wrap, priced again after the approval, would cost
+more than the fee shown ("Wrap again to see the new fee"). After a reset to 0 alone the
+notice says "The old approval was reset to 0, but the wrap was not sent" (no approval is
+in place: Wrap again approves, then wraps). On confirmation the confidential balance re-decrypts and the notice shows
 `✔ Wrapped 2.00 ZAMA → 2.00 cZAMA · cZAMA 97.00 → 99.00`. Amounts on these
 screens use the TUI's exact format (at least two decimals), like Send. A wrap whose
 confirmation does not arrive in time ends like an unconfirmed send: the hash, "Do not
@@ -162,8 +165,21 @@ refresh 30 s later.
 Unwrap Review: "Unwrap 10.00 cZAMA into 10.00 ZAMA", warning "The unwrapped amount becomes
 public on-chain.", `Step 1 Request: burns 10.00 cZAMA and asks Zama to decrypt the amount`,
 `Step 2 Finish: publish the decrypted amount with its proof; ZAMA arrives`. One confirm
-covers both. The request is saved as pending the moment it is signed. After it confirms
-the wallet waits for the public decryption (up to a minute) and sends step 2 itself.
+covers both while the wallet stays unlocked ("This one confirmation covers both steps
+while the wallet stays unlocked."; in "every action" lock mode instead: "The wallet locks
+after every action: after step 1, unlock and use Home › Finish unwrap for step 2."). The
+request is saved as pending the moment it is signed. After it confirms the wallet waits
+for the public decryption (up to a minute) and sends step 2 itself, asking for the key
+again right before: if the wallet locked meanwhile, nothing is signed and the notice says
+"! Step 1 done: … Step 2 not sent yet." with "unlock, then Home › Finish unwrap sends
+step 2". While it runs, the Home item reads "finishing in the background…" and cannot be
+started twice. Wrap and unwrap notices end with the explorer link of the latest
+transaction (OSC 8 where colour is on). The crumbs are "Home › Balances › Wrap › Review"
+(or Unwrap, Finish unwrap; "Wrapping"/"Unwrapping" during the countdown) when opened
+from Balances. If an earlier wrap of the token is unconfirmed, the wrap Review starts with
+"An earlier wrap of this token (0x…) is not confirmed yet and may still be mined …".
+A mined request whose unwrap the wallet cannot find says "Tokens may have been burnt:
+check the transaction on the explorer" with the link, never "nothing burnt".
 
 Pending unwraps (not finished yet) show on Home above the menu as an unnumbered item
 `Finish unwrap: 10.00 cZAMA → ZAMA` (key `u`, value `waiting`) and under Balances. Finish

@@ -34,6 +34,31 @@
 - A JSON-RPC batch the RPC dropped ("missing response") is never read as "not a
   wrapper".
 
+### Fixed
+- `fhew unwrap --forget` no longer drops a request the RPC cannot see yet but that may
+  still be mined; the nonce of each request is recorded and must be taken first.
+- A mined unwrap request without its UnwrapRequested log is "check the explorer", never
+  "reverted, nothing burnt".
+- `fhew unwrap --resume --json` with a wrong password prints exactly one document.
+- Terminal UI: unwrap step 2 is not signed once the wallet locked; Home's Finish unwrap
+  cannot start a second finish while one runs; wrap/unwrap notices link the explorer.
+- Wrap: truthful hint after a reset-only approval; a wrap re-priced above the reviewed
+  fee stops (`WRAP_APPROVED_ONLY`); a warning before wrapping again while an earlier
+  wrap is unconfirmed.
+- Disclosure step 2 is refused when the earlier one cannot be checked (RPC error).
+- History: unconfirmed entries are listed first (a limit never hides them); an unwrap
+  finished by `--resume` gets its burn in history; counterparties are checksummed.
+- History sync on the default endpoints: one request per direction for all tokens, a
+  10,000-block first window, and a pruned start moves forward instead of 50-block
+  chunks (minutes → seconds on Sepolia).
+- The first wallet created or imported becomes the default; with no default the only
+  wallet is used.
+- Smaller things: "did not unlock" only for a wrong password (TUI), wrap notes under
+  their token rows, wrap breadcrumbs, aligned balance columns and CLI summaries, fees
+  with significant digits instead of "0.0000" or 18 decimals, the lock badge minutes,
+  Ctrl+C without "Cancelled" when nothing was in progress, no emoji in `fhew history`,
+  clearer invalid-address and wallet-address-as-token messages.
+
 ### Verified on Sepolia
 - Wrap ZAMA → cZAMA (approve + wrap), unwrap cZAMA → ZAMA end to end (request, public
   decryption, finish), and `fhew unwrap --resume` after killing the process after step 1

@@ -261,7 +261,7 @@ fhew wrap max czama       # your whole ZAMA balance; any dust stays in your wall
 fhew unwrap 10 czama      # amount in the CONFIDENTIAL token (10 cZAMA)
 fhew unwrap --list        # unwraps that are not finished (--all: also finished ones)
 fhew unwrap --resume      # finish them (checks the chain first, never sends a step twice)
-fhew unwrap --forget <id> # drop a failed or dropped one from the list
+fhew unwrap --forget <id> # drop one that can no longer finish (see below)
 fhew wrap 5 -t czama      # the token can also be given with -t, as for send and balance
 ```
 
@@ -277,7 +277,19 @@ An unwrap is two transactions: a request (burns the amount and makes it publicly
 decryptable) and, once Zama has decrypted it (usually within a minute), a finish that
 publishes the amount with its proof and sends the ERC-20. One confirmation covers both.
 If the finish cannot be sent right away, the unwrap is kept in `unwraps.json` and
-`fhew unwrap --resume` (or Home › Finish unwrap in the terminal UI) completes it later. In
+`fhew unwrap --resume` (or Home › Finish unwrap in the terminal UI) completes it later;
+with `--json` and a wrong password it prints one `WRONG_PASSWORD` document. The terminal
+UI sends step 2 only while the wallet stays unlocked: if it locks first (or the lock is
+set to "every action"), unlock and use Home › Finish unwrap.
+
+`fhew unwrap --forget <id>` never drops an unwrap that could still burn tokens: one
+waiting for step 2 is refused, and a request the network does not know yet is only
+dropped once a later transaction of the wallet has taken its nonce (it may still be
+pending on another node until then; requests recorded by older versions need 30 minutes).
+A request that was mined but whose unwrap the wallet could not find is shown as
+"check the explorer" (tokens may have been burnt) and asks before it is removed.
+Wrapping a token again while an earlier wrap of it is unconfirmed shows a warning
+(`warning` in `--json`). In
 the terminal UI: Balances or Tokens › Wrap or unwrap (`w`), `Tab` switches direction,
 `:wrap 25 czama` and `:unwrap 10 czama` work from anywhere. A wrap and an unwrap request
 appear in History (as a mint and a burn) as soon as they confirm, or marked unconfirmed
