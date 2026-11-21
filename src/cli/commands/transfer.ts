@@ -149,6 +149,19 @@ async function send(
   const notReady = backend.readinessProblem(network);
   if (notReady) return fail(notReady);
 
+  // -c picks the recipient, so the positionals mean [amount] [token].
+  const contacts = listAddresses();
+  let contact: { name: string; address: string } | undefined;
+  if (options.contact) {
+    const wanted = options.contact.toLowerCase();
+    contact = contacts.find((c) => c.name.toLowerCase() === wanted);
+    if (!contact) return fail(`Contact "${options.contact}" not found`);
+    const shifted = shiftForContact(contact, to, amount, tokenArg);
+    if (!shifted.ok) return fail(shifted.error);
+    amount = shifted.amount;
+    tokenArg = shifted.token;
+  }
+
   const tokens = listTokens(network);
   if (tokens.length === 0) {
     return fail(`No tokens tracked on ${network}. Add one with: fhevm-wallet token add <address>`);
@@ -188,12 +201,8 @@ async function send(
   }
 
   // Recipient: -c, a contact name or an address, or a choice.
-  const contacts = listAddresses();
   let recipientText = to;
-  if (options.contact) {
-    const wanted = options.contact.toLowerCase();
-    const contact = contacts.find((c) => c.name.toLowerCase() === wanted);
-    if (!contact) return fail(`Contact "${options.contact}" not found`);
+  if (contact) {
     recipientText = contact.address;
     console.log(`Using contact: ${contact.name} (${formatAddress(contact.address)})`);
   } else if (!recipientText) {
@@ -389,6 +398,33 @@ async function send(
   console.log(`  Transaction: ${result.txHash}`);
   console.log(`  Explorer:    ${backend.explorerTxUrl(result.txHash, network)}`);
   for (const line of describeBalanceCheck(result, token.symbol, token.decimals)) console.log(line);
+}
+
+/**
+ * With `-c <contact>` the recipient is already chosen, so the positionals shift left:
+ * `fhew send -c bob 3 cusdc` means amount 3, token cusdc. A positional recipient is
+ * still accepted when it names the same contact (by name or address); any other one
+ * conflicts with -c and is refused rather than silently overridden.
+ */
+export function shiftForContact(
+  contact: { name: string; address: string },
+  to: string | undefined,
+  amount: string | undefined,
+  token: string | undefined,
+): { ok: true; amount?: string; token?: string } | { ok: false; error: string } {
+  if (to === undefined) return { ok: true, amount, token };
+  const t = to.trim();
+  const same =
+    t.toLowerCase() === contact.address.toLowerCase() ||
+    t.toLowerCase() === contact.name.toLowerCase();
+  if (same) return { ok: true, amount, token };
+  if (t.toLowerCase().startsWith('0x') || token !== undefined) {
+    return {
+      ok: false,
+      error: `Two recipients: -c ${contact.name} and ${to}. Use one of them.`,
+    };
+  }
+  return { ok: true, amount: to, token: amount };
 }
 
 /** True when `typed` is exactly the reviewed amount `value` (friendly forms allowed). */

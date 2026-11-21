@@ -240,6 +240,26 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     });
     expect(no.status).toBe(1);
     expect(no.stdout).toMatch(/Nothing was sent: confirm in a terminal, or pass --yes/);
+    // -c picks the recipient; the positionals are then the amount and the token.
+    const byContact = spawnSync(
+      process.execPath,
+      [CLI, 'send', '-c', 'bob', '3', 'cusdc', '--password-stdin', '--yes'],
+      {
+        env: {
+          PATH: process.env.PATH ?? '',
+          HOME: home,
+          FHEVM_WALLET_HOME: join(home, 'wallet-data'),
+          FHEW_BACKEND: 'mock',
+          FHEW_MOCK_LATENCY_MS: '20',
+          FHEW_MOCK_CONFIRM_MS: '200',
+        },
+        input: `${PASSWORD}\n`,
+        encoding: 'utf-8',
+        timeout: 60_000,
+      },
+    );
+    expect(byContact.stdout).toMatch(/Sent 3 cUSDC to bob\. Transfer confirmed \(mock\)/);
+    expect(byContact.status).toBe(0);
   });
 
   it('fhew send on Mainnet: no unconfirmed send unless -n mainnet and --mainnet', () => {

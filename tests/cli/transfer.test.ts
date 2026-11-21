@@ -3,7 +3,11 @@ import { homedir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createProgram } from '../../src/cli/index.js';
-import { mainnetGuardProblem, retypeMatches } from '../../src/cli/commands/transfer.js';
+import {
+  mainnetGuardProblem,
+  retypeMatches,
+  shiftForContact,
+} from '../../src/cli/commands/transfer.js';
 import { addAddress } from '../../src/storage/AddressBook.js';
 import { saveConfig } from '../../src/storage/ConfigStore.js';
 import { wipeTestDataDir } from '../helpers/dataDir.js';
@@ -186,5 +190,47 @@ describe('retypeMatches', () => {
     expect(retypeMatches('25.000000', 25_000_000n, 6)).toBe(true);
     expect(retypeMatches('25.1', 25_000_000n, 6)).toBe(false);
     expect(retypeMatches('', 25_000_000n, 6)).toBe(false);
+  });
+});
+
+describe('shiftForContact (-c with positionals)', () => {
+  const bob = { name: 'bob', address: '0x91Be4C2a6d0f83B1e7c5a9d2f4E8b0C6D3d207AF' };
+  it('reads the positionals as [amount] [token] after -c', () => {
+    expect(shiftForContact(bob, '3', undefined, undefined)).toEqual({ ok: true, amount: '3' });
+    expect(shiftForContact(bob, '2', 'cusdc', undefined)).toEqual({
+      ok: true,
+      amount: '2',
+      token: 'cusdc',
+    });
+    expect(shiftForContact(bob, undefined, undefined, undefined)).toEqual({ ok: true });
+  });
+  it('accepts the same contact again, by name or address', () => {
+    expect(shiftForContact(bob, 'Bob', '2', 'cusdc')).toMatchObject({
+      amount: '2',
+      token: 'cusdc',
+    });
+    expect(shiftForContact(bob, bob.address.toLowerCase(), '2', undefined)).toMatchObject({
+      amount: '2',
+    });
+  });
+  it('refuses a different positional recipient', () => {
+    const other = '0xde709f2102306220921060314715629080e2fb77';
+    expect(shiftForContact(bob, other, '2', undefined)).toEqual({
+      ok: false,
+      error: `Two recipients: -c bob and ${other}. Use one of them.`,
+    });
+    expect(shiftForContact(bob, 'alice', '2', 'cusdc')).toMatchObject({ ok: false });
+  });
+});
+
+describe('send -c with positionals', () => {
+  it('takes the amount and token from the positionals', async () => {
+    saveConfig({ defaultNetwork: 'sepolia' });
+    seedToken('sepolia', KNOWN_ADDRESS);
+    addAddress('bob', '0x91Be4C2a6d0f83B1e7c5a9d2f4E8b0C6D3d207AF');
+    // Token "cxyz" is reached as the token, not misread as the amount.
+    expect(await runSend('-c', 'bob', '2', 'cxyz')).toMatch(/No tracked token called "cxyz"/);
+    logSpy.mockRestore();
+    expect(await runSend('-c', 'bob', OTHER_ADDRESS, '2')).toMatch(/Two recipients: -c bob and/);
   });
 });
