@@ -42,6 +42,14 @@ export type TxErrorCode =
   | 'DISCLOSE_IS_BALANCE'
   | 'DISCLOSE_UNKNOWN_HANDLE'
   | 'DECRYPT_NOT_ALLOWED'
+  // Wrap / unwrap (src/core/token/wrapper.ts)
+  | 'NOT_A_WRAPPER'
+  | 'WRAP_AMOUNT'
+  | 'INSUFFICIENT_ALLOWANCE'
+  | 'WRAP_APPROVED_ONLY'
+  | 'WRAPPER_SUPPLY_FULL'
+  | 'UNWRAP_ALREADY_FINISHED'
+  | 'UNWRAP_UNCONFIRMED'
   | 'UNKNOWN';
 
 /** A user-facing transaction error. `raw` is only shown when the user asks for details. */
@@ -317,6 +325,45 @@ const CUSTOM_ERRORS: Record<
     title: 'This wallet has no balance of that token.',
     cause: 'The token has never credited this address.',
     hint: 'Check you picked the right wallet and token.',
+  },
+  // ERC7984ERC20Wrapper and the ERC-20 behind it (OpenZeppelin), for wrap and unwrap.
+  InvalidUnwrapRequest: {
+    code: 'UNWRAP_ALREADY_FINISHED',
+    title: 'This unwrap is already finished, or was never requested.',
+    cause: 'The wrapper has no open request with this id: someone (any account may) finished it.',
+    hint: 'Check your public balance of the underlying token. Nothing was sent.',
+  },
+  ERC7984TotalSupplyOverflow: {
+    code: 'WRAPPER_SUPPLY_FULL',
+    title: 'The wrapper cannot mint that much.',
+    cause:
+      'Its confidential total supply is capped at the 64-bit limit, and this wrap would pass it.',
+    hint: 'Wrap a smaller amount.',
+  },
+  ERC20InsufficientAllowance: {
+    code: 'INSUFFICIENT_ALLOWANCE',
+    title: 'The wrapper may not take that much of your tokens yet.',
+    cause: 'The approval for the wrapper is smaller than the amount (or was not confirmed yet).',
+    hint: 'Wrap again: the wallet approves exactly the amount first.',
+  },
+  ERC20InsufficientBalance: {
+    code: 'INSUFFICIENT_TOKEN_BALANCE',
+    title: 'That is more than this wallet holds.',
+    cause: 'The public token balance is smaller than the amount.',
+    hint: 'Enter a smaller amount.',
+  },
+  SafeERC20FailedOperation: {
+    code: 'CONTRACT_REJECTED',
+    title: 'The underlying token refused the transfer.',
+    cause:
+      'Its transferFrom or transfer returned false (not enough balance or allowance, or a paused token).',
+    hint: 'Check your public balance and the approval, then try again.',
+  },
+  ERC7984UnauthorizedCaller: {
+    code: 'UNAUTHORIZED',
+    title: 'The wrapper refused this caller.',
+    cause: 'Only the underlying token may call this function.',
+    hint: 'Use Wrap instead of sending tokens to the wrapper directly.',
   },
   ZamaProtocolUnsupported: {
     code: 'CONTRACT_REJECTED',

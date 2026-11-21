@@ -23,10 +23,25 @@ export type AuditEvent =
   | 'TOKEN_REMOVED'
   | 'OPERATOR_SET'
   | 'DISCLOSE_REQUESTED'
-  | 'AMOUNT_DISCLOSED';
+  | 'AMOUNT_DISCLOSED'
+  // Wrap / unwrap (wrapper.ts). Like every event, never with an amount.
+  | 'APPROVAL_SET'
+  | 'WRAPPED'
+  | 'UNWRAP_REQUESTED'
+  | 'UNWRAP_FINALIZED';
 
 /** Audit fields that only ever hold a network name, a transaction hash or an address. */
-const SAFE_FIELDS = new Set(['network', 'txHash', 'address', 'token', 'to', 'from', 'operator']);
+const SAFE_FIELDS = new Set([
+  'network',
+  'txHash',
+  'address',
+  'token',
+  'to',
+  'from',
+  'operator',
+  'spender',
+  'requestId',
+]);
 /** What those look like: `sepolia`, or 0x-hex. Anything else is redacted as usual. */
 const SAFE_VALUE_RE = /^(?:mainnet|sepolia|0x[0-9a-fA-F]{40}|0x[0-9a-fA-F]{64})$/;
 

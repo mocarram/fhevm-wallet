@@ -189,6 +189,8 @@ interface SignAndBroadcastOptions {
   network: NetworkName;
   /** What is being sent, for error titles: "send" or "operator change". */
   action: string;
+  /** Decodes the contract's custom errors (default: ERC-7984's). */
+  iface?: Interface;
   /** Best-effort hooks for the audit log. Never given amounts. */
   onSigned?: (txHash: string) => void;
   onBroadcast?: (txHash: string) => void;
@@ -204,7 +206,7 @@ interface SignAndBroadcastOptions {
  */
 async function signAndBroadcast(opts: SignAndBroadcastOptions): Promise<TransferResult> {
   const { signer, provider, network, action } = opts;
-  const translateOpts = { iface: ERC7984_INTERFACE, action };
+  const translateOpts = { iface: opts.iface ?? ERC7984_INTERFACE, action };
 
   // Step 1: build and sign locally. Nothing has left this machine yet, so a failure
   // here is safe to retry.
@@ -890,9 +892,14 @@ export interface PreparedCall {
 }
 
 /** What `prepareTokenCall` sends. */
-interface TokenCallSpec {
+export interface TokenCallSpec {
   /** Full function signature, e.g. `setOperator(address,uint48)`. */
   fn: string;
+  /**
+   * ABI of the contract called (default: ERC-7984). Wrap and unwrap call the wrapper and
+   * its ERC-20 (`approve`) with their own ABIs, whose custom errors decode through it.
+   */
+  abi?: Interface;
   args: unknown[];
   /** For error titles: "operator change", "disclosure request", "disclosure". */
   action: string;
@@ -906,14 +913,15 @@ interface TokenCallSpec {
  * until `send` is called; then it goes through `signAndBroadcast`, so after the
  * broadcast every failure keeps its hash (SENT_UNCONFIRMED, TX_REVERTED, TX_REPLACED).
  */
-async function prepareTokenCall(
+export async function prepareTokenCall(
   wallet: Wallet | HDNodeWallet,
   tokenAddress: string,
   network: NetworkName,
   spec: TokenCallSpec,
 ): Promise<PreparedCall> {
   const chainId = network === 'mainnet' ? CHAIN_IDS.MAINNET : CHAIN_IDS.SEPOLIA;
-  const translateOpts = { iface: ERC7984_INTERFACE, action: spec.action };
+  const iface = spec.abi ?? ERC7984_INTERFACE;
+  const translateOpts = { iface, action: spec.action };
   try {
     const provider = getProvider(network);
     const rpcChainId = BigInt((await provider.send('eth_chainId', [])) as string);
@@ -926,7 +934,9 @@ async function prepareTokenCall(
       );
     }
     const connectedWallet = wallet.connect(provider);
-    const contract = getTokenContract(tokenAddress, network, connectedWallet);
+    const contract = spec.abi
+      ? new Contract(tokenAddress, spec.abi, connectedWallet)
+      : getTokenContract(tokenAddress, network, connectedWallet);
     const fn = contract.getFunction(spec.fn);
     // Simulate first: a revert here means the real transaction would fail too.
     const estimate = await fn.estimateGas(...spec.args);
@@ -960,6 +970,7 @@ async function prepareTokenCall(
         build: () => fn.populateTransaction(...spec.args, { gasLimit, ...pinnedFees(feeData) }),
         network,
         action: spec.action,
+        iface,
         onSigned: (txHash) => {
           if (hooks.onSigned) bestEffort(() => hooks.onSigned!(txHash));
         },

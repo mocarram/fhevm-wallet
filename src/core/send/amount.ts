@@ -25,6 +25,14 @@ export interface ParseAmountOptions {
   decimals: number;
   /** Decrypted balance in base units. Needed for `half` / `max` and the over-balance check. */
   balance?: bigint;
+  /**
+   * Largest accepted value in base units (default: the euint64 limit). Wrapping takes a
+   * public ERC-20 amount, whose own limit is higher; its euint64 bound applies after the
+   * wrapper's rate (wrapMath.ts), so it passes `null` here.
+   */
+  limit?: bigint | null;
+  /** Hint under the over-balance error (default: the ERC-7984 "would send 0" reason). */
+  overBalanceHint?: string;
 }
 
 const HINT = 'Numbers like 25 or 1,250.50, or 1k, half, max.';
@@ -87,18 +95,21 @@ export function parseFriendlyAmount(input: string, opts: ParseAmountOptions): Am
   if (value <= 0n) {
     return { ok: false, error: 'Enter an amount greater than 0.', hint: HINT };
   }
-  if (value > MAX_EUINT64) {
+  const limit = opts.limit === undefined ? MAX_EUINT64 : opts.limit;
+  if (limit !== null && value > limit) {
     return {
       ok: false,
       error: 'That is above the 64-bit limit for confidential amounts.',
-      hint: `The most this token can send at once is ${formatTokenAmount(MAX_EUINT64, decimals, decimals)}.`,
+      hint: `The most this token can send at once is ${formatTokenAmount(limit, decimals, decimals)}.`,
     };
   }
   if (balance !== undefined && value > balance) {
     return {
       ok: false,
       error: `That's more than your ${formatExactAmount(balance, decimals)}.`,
-      hint: 'ERC-7984 would send 0 instead of failing, so this is blocked here.',
+      hint:
+        opts.overBalanceHint ??
+        'ERC-7984 would send 0 instead of failing, so this is blocked here.',
     };
   }
   return { ok: true, value, meaning };
