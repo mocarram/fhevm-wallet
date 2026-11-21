@@ -241,4 +241,16 @@ describe('MockBackend: one-signature decrypt, history amounts, operators, disclo
       m.prepareDiscloseRequest(Wallet.createRandom(), t.address, h, 'sepolia'),
     ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
   });
+
+  it("refuses to disclose the wallet's own balance handle", async () => {
+    const m = new MockBackend(instant);
+    const t = m.catalogue('sepolia')[0];
+    const priv = m as unknown as {
+      balanceHandle(n: string, token: string, wallet: string): string;
+    };
+    const h = priv.balanceHandle('sepolia', t.address, signer.address);
+    await expect(m.prepareDiscloseRequest(signer, t.address, h, 'sepolia')).rejects.toMatchObject({
+      code: 'DISCLOSE_IS_BALANCE',
+    });
+  });
 });

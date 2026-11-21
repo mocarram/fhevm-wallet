@@ -38,6 +38,7 @@ import {
   pendingPublicDecryption,
   sentButUnconfirmed,
   translateTxError,
+  discloseIsBalanceError,
   WalletTxError,
 } from '../token/txErrors.js';
 import { ERC7984_INTERFACE, type TokenInfo } from '../token/TokenService.js';
@@ -481,11 +482,14 @@ export class MockBackend implements Backend {
 
   async prepareDiscloseRequest(
     signer: UnlockedSigner,
-    _tokenAddress: string,
+    tokenAddress: string,
     handle: string,
     network: NetworkName,
   ): Promise<PreparedTx> {
     const h = normaliseHandle(handle);
+    if (h === this.balanceHandle(network, tokenAddress, signer.address)) {
+      throw discloseIsBalanceError();
+    }
     this.recallHandle(h, network, signer.address);
     if (!this.handles.get(h)?.allowed.has(signer.address.toLowerCase())) {
       // What ERC7984UnauthorizedUseOfEncryptedAmount looks like after translation.

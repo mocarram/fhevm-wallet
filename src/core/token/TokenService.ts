@@ -15,6 +15,7 @@ import {
 } from 'ethers';
 import {
   DecryptionFailedError,
+  discloseIsBalanceError,
   isEmptyRevert,
   isNoContractAnswer,
   sentButUnconfirmed,
@@ -1280,6 +1281,9 @@ export async function prepareDiscloseRequest(
   handle: string,
   network: NetworkName,
 ): Promise<PreparedCall> {
+  // The contract would accept the wallet's own balance handle and publish the balance.
+  const balance = await getEncryptedBalance(tokenAddress, wallet.address, network);
+  if (normaliseHandle(balance) === normaliseHandle(handle)) throw discloseIsBalanceError();
   return prepareTokenCall(wallet, tokenAddress, network, {
     fn: 'requestDiscloseEncryptedAmount(bytes32)',
     args: [normaliseHandle(handle)],

@@ -16,12 +16,17 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import { createBackend } from '../../core/backend/select.js';
-import type { AmountRequest, PreparedDisclose } from '../../core/backend/types.js';
+import type {
+  AmountRequest,
+  Backend,
+  PreparedDisclose,
+  UnlockedSigner,
+} from '../../core/backend/types.js';
 import { normaliseHandle } from '../../core/fhe/DecryptSession.js';
 import { formatExactAmount } from '../../core/send/amount.js';
 import { listTokens } from '../../core/token/TokenRegistry.js';
 import { formatTxError, translateTxError } from '../../core/token/txErrors.js';
-import { setCachedAmounts } from '../../storage/AmountCache.js';
+import { getCachedAmount, setCachedAmounts } from '../../storage/AmountCache.js';
 import { getTransactionByHash, listTransactions } from '../../storage/TransactionStore.js';
 import { bold } from '../../utils/formatting.js';
 import { MAINNET_OPTION_HELP } from '../utils/mainnetGuard.js';
@@ -59,6 +64,12 @@ const PUBLIC_DECRYPT_WAIT_MS = 10_000;
 const WARNING = [
   'Disclosing publishes this amount on-chain. Anyone can read it afterwards,',
   'and it cannot be made private again.',
+];
+
+/** Step 1 alone already publishes: the relayer will decrypt the handle for anyone. */
+const REQUEST_WARNING = [
+  'Step 1 makes this amount publicly decryptable FOREVER: anyone can read it from then',
+  'on, even if step 2 is never sent.',
 ];
 
 /** Register `fhew disclose`. */
@@ -141,13 +152,23 @@ async function disclose(ref: string, options: DiscloseOptions): Promise<void> {
       backend.prepareDiscloseRequest(wallet, token.address, handle, network),
     );
     if (!req) return;
+    // Show what will become public before anything is signed.
+    const known = await knownAmount(backend, wallet, token.address, handle, network);
     const sent = await confirmAndSend({
       backend,
       network,
       prepared: req,
       title: bold('Disclose an amount: step 1 of 2 (request)'),
-      lines: [`Token:   ${token.symbol} (${token.address})`, `Amount:  handle ${handle}`],
-      warnings: WARNING,
+      lines: [
+        `Token:   ${token.symbol} (${token.address})`,
+        `Amount:  ${
+          known === null
+            ? 'could not decrypt it here (check the handle)'
+            : `${formatExactAmount(known, token.decimals)} ${token.symbol}`
+        }`,
+        `Handle:  ${handle}`,
+      ],
+      warnings: [...REQUEST_WARNING, ...WARNING],
       yes: options.yes,
       question: 'Request disclosure of this amount?',
     });
@@ -227,6 +248,35 @@ async function disclose(ref: string, options: DiscloseOptions): Promise<void> {
   console.log(
     chalk.green(`Disclosed ${formatExactAmount(value, token.decimals)} ${token.symbol} publicly.`),
   );
+}
+
+/**
+ * The plaintext behind `handle`, from the local cache or a user decrypt with a one-off
+ * session (cleared before returning). Null when this wallet cannot decrypt it.
+ */
+async function knownAmount(
+  backend: Backend,
+  wallet: UnlockedSigner,
+  tokenAddress: string,
+  handle: string,
+  network: 'mainnet' | 'sepolia',
+): Promise<bigint | null> {
+  try {
+    const cached = getCachedAmount(network, handle);
+    if (cached !== null) return cached;
+  } catch {
+    // a damaged cache only costs a decrypt
+  }
+  const session = backend.newDecryptSession(wallet, network);
+  try {
+    const contracts = listTokens(network).map((t) => t.address);
+    const out = await backend.decryptAmounts(session, [{ token: tokenAddress, handle }], contracts);
+    return out[handle.toLowerCase()] ?? null;
+  } catch {
+    return null;
+  } finally {
+    session.clear();
+  }
 }
 
 /** Resolve a tx hash or handle to (token, handle): local history first, then the receipt. */

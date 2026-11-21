@@ -584,6 +584,9 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     const tx = store.transactions.find((t: { amountHandle?: string }) => t.amountHandle);
     const res = cli(home, ['disclose', tx.txHash, '--password-stdin', '--yes']);
     expect(res.stdout).toMatch(/step 1 of 2/);
+    // Step 1 shows the amount that becomes public and says it is permanent.
+    expect(res.stdout).toMatch(/Amount:\s+25(\.0+)? cUSDC/);
+    expect(res.stdout).toMatch(/publicly decryptable FOREVER/);
     expect(res.stdout).toMatch(/Disclosed 25(\.0+)? cUSDC publicly/);
     expect(res.status).toBe(0);
   });

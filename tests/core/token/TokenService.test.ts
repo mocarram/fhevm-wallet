@@ -903,4 +903,22 @@ describe('TokenService batch decrypt and disclosure calls', () => {
     expect(p.feeWei).toBe(48_000n * 10n);
     expect(signingWallet.signTransaction).not.toHaveBeenCalled();
   });
+
+  it('prepareDiscloseRequest refuses the wallet balance handle', async () => {
+    // Regression: disclosing confidentialBalanceOf(wallet) would publish the whole balance.
+    const fn = Object.assign(vi.fn(), { estimateGas: vi.fn(async () => 40_000n) });
+    contractStubs.getFunction.mockImplementation(() => fn);
+    const h = '0x' + 'b'.repeat(60) + '0500';
+    contractStubs.confidentialBalanceOf.mockResolvedValueOnce(h);
+    const { prepareDiscloseRequest } = await import('../../../src/core/token/TokenService.js');
+    await expect(
+      prepareDiscloseRequest(
+        signingWallet as never,
+        TOKEN,
+        h.toUpperCase().replace('0X', '0x'),
+        'sepolia',
+      ),
+    ).rejects.toMatchObject({ code: 'DISCLOSE_IS_BALANCE' });
+    expect(fn.estimateGas).not.toHaveBeenCalled();
+  });
 });

@@ -36,6 +36,7 @@ export type TxErrorCode =
   | 'RPC_AUTH'
   | 'RPC_BAD_ANSWER'
   | 'PUBLIC_DECRYPT_PENDING'
+  | 'DISCLOSE_IS_BALANCE'
   | 'UNKNOWN';
 
 /** A user-facing transaction error. `raw` is only shown when the user asks for details. */
@@ -621,5 +622,19 @@ export function pendingPublicDecryption(raw?: string): WalletTxError {
     'Step 1 (the disclosure request) has to be confirmed on-chain, and the Zama gateway then needs a little time.',
     'Wait a minute and try again. Nothing was signed or sent.',
     raw,
+  );
+}
+
+/**
+ * Refusal to disclose a balance handle. `requestDiscloseEncryptedAmount` accepts any
+ * handle the caller may use, including its own `confidentialBalanceOf`, and would make
+ * the whole balance publicly decryptable for good.
+ */
+export function discloseIsBalanceError(): WalletTxError {
+  return new WalletTxError(
+    'DISCLOSE_IS_BALANCE',
+    'That handle is your current balance, not a transfer amount.',
+    'Disclosing it would make your whole balance public, for good.',
+    'Pass the transaction hash of the transfer you want to disclose.',
   );
 }
