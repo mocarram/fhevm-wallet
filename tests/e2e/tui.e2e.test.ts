@@ -277,7 +277,7 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
       JSON.stringify({
         argv: [process.execPath, CLI],
         env: { PATH: process.env.PATH ?? '', HOME: home, TERM: 'xterm', FHEW_BACKEND: 'mock' },
-        steps: [{ expect: 'FHEVM_WALLET_HOME is not set' }, { exit: 1 }],
+        steps: [{ expect: 'needs FHEVM_WALLET_HOME' }, { exit: 1 }],
       }),
     );
     let out = JSON.parse(
@@ -306,9 +306,46 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     expect(out.ok).toBe(true);
   });
 
+  it('keeps mock and real data apart, whatever the settings files say', () => {
+    const run = (args: string[], env: Record<string, string>) =>
+      spawnSync(process.execPath, [CLI, ...args], {
+        env: { PATH: process.env.PATH ?? '', ...env },
+        encoding: 'utf-8',
+        timeout: 30_000,
+      });
+    const home = freshHome();
+    const mockDir = join(home, 'wallet-data');
+    // A mock folder is refused for real use, by every command.
+    for (const args of [['wallet', 'list'], ['balance']]) {
+      const res = run(args, { HOME: home, FHEVM_WALLET_HOME: mockDir });
+      expect(res.status).toBe(1);
+      expect(res.stderr).toMatch(/holds simulated data from FHEW_BACKEND=mock/);
+    }
+    // Under the mock, commands that would reach the real network are refused.
+    const bal = run(['balance'], { HOME: home, FHEVM_WALLET_HOME: mockDir, FHEW_BACKEND: 'mock' });
+    expect(bal.status).toBe(1);
+    expect(bal.stderr).toMatch(/would use the real network/);
+    // A real folder with data is never turned into a mock folder.
+    const realDir = join(home, 'real-data');
+    expect(run(['wallet', 'list'], { HOME: home, FHEVM_WALLET_HOME: realDir }).status).toBe(0);
+    writeFileSync(join(realDir, 'tokens.json'), '{"tokens":[]}');
+    const mixed = run(['wallet', 'list'], {
+      HOME: home,
+      FHEVM_WALLET_HOME: realDir,
+      FHEW_BACKEND: 'mock',
+    });
+    expect(mixed.status).toBe(1);
+    expect(mixed.stderr).toMatch(/not a mock folder/);
+    // FHEW_BACKEND in a .env file does not switch to the mock.
+    writeFileSync(join(realDir, '.env'), 'FHEW_BACKEND=mock\n');
+    chmodSync(join(realDir, '.env'), 0o600);
+    const viaEnv = run(['wallet', 'list'], { HOME: home, FHEVM_WALLET_HOME: realDir });
+    expect(viaEnv.stdout + viaEnv.stderr).not.toMatch(/mock/i);
+  });
+
   it('refuses to start without a terminal and says what to do', () => {
     const res = spawnSync(process.execPath, [CLI], {
-      env: { PATH: process.env.PATH ?? '', HOME: freshHome(), FHEW_BACKEND: 'mock' },
+      env: { PATH: process.env.PATH ?? '', HOME: freshHome() },
       encoding: 'utf-8',
       input: '',
       timeout: 30_000,

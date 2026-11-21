@@ -6,6 +6,15 @@
  * A CLI wallet for managing encrypted ERC-7984 tokens using Zama's FHE technology.
  */
 
+// Must be imported before loadEnv() runs: it captures FHEW_BACKEND and FHEVM_WALLET_HOME
+// from the launch environment, so a .env file can never switch to (or away from) the mock.
+import {
+  assertCommandSupportsMock,
+  assertNotMockDataDir,
+  MockDataDirError,
+  prepareMockDataDir,
+  wantsMock,
+} from './core/backend/mockGuard.js';
 import {
   DATA_DIR,
   ENV_FILE_PATH,
@@ -20,6 +29,15 @@ import { takeInvalidRpcSettings } from './core/network/NetworkConfig.js';
 try {
   // Check and tighten the data dir before reading anything from it (its .env included).
   const { tightened, warning } = secureExistingData();
+  // The mock and real wallet data never share a folder (see core/backend/mockGuard.ts).
+  // Decided from the launch environment, after the trust check and before any .env file
+  // is read.
+  if (wantsMock()) {
+    assertCommandSupportsMock(process.argv);
+    prepareMockDataDir();
+  } else {
+    assertNotMockDataDir();
+  }
   const env = loadEnv();
   // A ./.env can point the wallet at another RPC: say where settings came from.
   if (env.fromCwd.length > 0) {
@@ -54,7 +72,7 @@ try {
 } catch (err) {
   const code = (err as NodeJS.ErrnoException).code;
   process.stderr.write(
-    err instanceof UntrustedDataDirError
+    err instanceof UntrustedDataDirError || err instanceof MockDataDirError
       ? `${err.message}\n`
       : code === 'EACCES' || code === 'EPERM'
         ? `Cannot use the wallet data folder ${DATA_DIR}: permission denied. Make it writable by your user, or set FHEVM_WALLET_HOME to another folder.\n`

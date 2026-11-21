@@ -181,6 +181,8 @@ export const WALLET_DATA_ENTRIES = [
   'addressbook.json',
   'transactions.json',
   'balance-cache.json',
+  'ui-prefs.json',
+  '.fhew-mock',
 ] as const;
 
 /** Outcome of the startup permission check, for one short stderr notice. */
