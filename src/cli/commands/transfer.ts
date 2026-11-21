@@ -19,6 +19,7 @@ import { PASSWORD_STDIN_HELP, walletPassword } from '../utils/passwordInput.js';
 import { prompts } from '../utils/prompts.js';
 import { describeBalanceCheck } from '../utils/transferReport.js';
 import { describeError } from '../utils/userError.js';
+import { printJson } from '../utils/json.js';
 import { createBackend } from '../../core/backend/select.js';
 import type { Backend, UnlockedSigner } from '../../core/backend/types.js';
 import {
@@ -58,6 +59,7 @@ interface SendOptions {
   passwordStdin?: boolean;
   yes?: boolean;
   mainnet?: boolean;
+  json?: boolean;
 }
 
 /**
@@ -77,9 +79,27 @@ export function mainnetGuardProblem(opts: {
   return 'Nothing was sent: this would move real funds on Mainnet without asking you. To allow it, pass both -n mainnet and --mainnet, or run the command in a terminal without --yes.';
 }
 
-function fail(message: string): void {
+/** Set by `--json`: errors and the result are printed as JSON on stdout. */
+let jsonMode = false;
+
+/**
+ * Report a failure: a red line, or with --json `{"error": {code, message}}`. After a
+ * broadcast the hash (and explorer link) are included, so a script can check the
+ * transfer instead of sending again.
+ */
+function fail(message: string, code = 'SEND_FAILED', extra: Record<string, string> = {}): void {
   process.exitCode = 1;
-  console.log(error(message));
+  if (jsonMode) printJson({ error: { code, message, ...extra } });
+  else console.log(error(message));
+}
+
+/** Route console.log to stderr, so with --json stdout holds only the JSON document. */
+function progressToStderr(): () => void {
+  const original = console.log;
+  console.log = (...args: unknown[]) => console.error(...args);
+  return () => {
+    console.log = original;
+  };
 }
 
 /** Register `fhew send`. */
@@ -100,11 +120,23 @@ export function registerTransferCommand(program: Command): void {
       '--mainnet',
       'Allow a Mainnet send without confirmation (with --yes or no terminal); needs -n mainnet too',
     )
+    .option('--json', 'Print the result as JSON (needs --yes and --password-stdin)')
     .action(async (to?: string, amount?: string, tokenArg?: string, options: SendOptions = {}) => {
+      jsonMode = Boolean(options.json);
+      const restore = jsonMode ? progressToStderr() : () => {};
       try {
+        if (jsonMode && (!options.yes || !options.passwordStdin || !to || !amount)) {
+          // Prompts write to stdout and would break the JSON document.
+          return fail(
+            'With --json, give the recipient and amount, and pass --yes and --password-stdin: there is nobody to answer prompts.',
+            'PROMPT_NOT_ALLOWED',
+          );
+        }
         await send(to, amount, tokenArg, options);
       } catch (err) {
         fail(describeError(err, 'Failed to send transaction'));
+      } finally {
+        restore();
       }
     });
 }
@@ -290,7 +322,8 @@ async function send(
     checkSpinner.succeed('Simulation passed');
   } catch (err) {
     checkSpinner.fail('Send stopped. Nothing was signed or sent.');
-    return fail(formatTxError(translateTxError(err)));
+    const txErr = translateTxError(err);
+    return fail(formatTxError(txErr), txErr.code);
   }
 
   const exact = formatTokenAmount(value, token.decimals, token.decimals);
@@ -357,7 +390,12 @@ async function send(
         txErr.code === 'TX_REVERTED' ? 'Transaction reverted' : 'Transaction failed',
       );
     }
-    return fail(formatTxError(txErr));
+    const extra: Record<string, string> = {};
+    if (txErr.txHash) {
+      extra.txHash = txErr.txHash;
+      extra.explorerUrl = backend.explorerTxUrl(txErr.txHash, network);
+    }
+    return fail(formatTxError(txErr), txErr.code, extra);
   }
 
   // Local history is a convenience; failing to save it must not hide a confirmed transfer.
@@ -376,6 +414,23 @@ async function send(
     console.log(warning("Couldn't save this transfer to local history."));
   }
 
+  if (jsonMode) {
+    printJson({
+      status: 'confirmed',
+      mock: backend.kind === 'mock',
+      network,
+      from: wallet.address,
+      to: recipient,
+      contact: contactName ?? null,
+      token: { address: token.address, symbol: token.symbol, decimals: token.decimals },
+      amount: { baseUnits: value, formatted: exact },
+      txHash: result.txHash,
+      blockNumber: result.blockNumber,
+      explorerUrl: backend.explorerTxUrl(result.txHash, network),
+      balanceCheck: result.balanceCheck ?? null,
+    });
+    return;
+  }
   const where = backend.kind === 'mock' ? ' (mock)' : ' on-chain';
   console.log();
   console.log(

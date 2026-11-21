@@ -24,6 +24,7 @@ import {
 } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
 import { DynamicBalanceTable } from '../utils/DynamicBalanceTable.js';
+import { balanceJson } from './balanceJson.js';
 import { describeError, describeErrorShort } from '../utils/userError.js';
 
 export function registerBalanceCommand(program: Command): void {
@@ -35,6 +36,7 @@ export function registerBalanceCommand(program: Command): void {
     .option('-n, --network <network>', 'Network (sepolia or mainnet)')
     .option('-r, --refresh', 'Force refresh balances (bypass cache)')
     .option('--password-stdin', PASSWORD_STDIN_HELP)
+    .option('--json', 'Print machine-readable JSON (needs --password-stdin)')
     .action(
       async (options: {
         wallet?: string;
@@ -42,7 +44,9 @@ export function registerBalanceCommand(program: Command): void {
         network?: string;
         refresh?: boolean;
         passwordStdin?: boolean;
+        json?: boolean;
       }) => {
+        if (options.json) return balanceJson(options);
         try {
           // Determine network
           let network: NetworkName = getDefaultNetwork();

@@ -21,6 +21,7 @@ import { RPC_ENV_KEYS, setCustomRpc, validateRpcUrl } from '../../core/network/r
 import { maskUrl } from '../../utils/redact.js';
 import { maskUrlWhenAnswered } from '../utils/secretInput.js';
 import { describeError } from '../utils/userError.js';
+import { historyJson } from './historyJson.js';
 
 /**
  * Format date for display
@@ -250,87 +251,92 @@ export function registerHistoryCommand(program: Command): void {
     .description('View transaction history')
     .option('-n, --network <network>', 'Network (sepolia or mainnet)')
     .option('-a, --address <address>', 'Wallet address to view')
-    .action(async (options: { network?: string; address?: string }) => {
-      try {
-        // Validate network if provided
-        let network: NetworkName = getDefaultNetwork();
-        if (options.network) {
-          if (!isValidNetwork(options.network)) {
+    .option('--limit <n>', 'With --json: how many transfers to print (default 10)')
+    .option('--json', 'Print machine-readable JSON')
+    .action(
+      async (options: { network?: string; address?: string; limit?: string; json?: boolean }) => {
+        if (options.json) return historyJson(options);
+        try {
+          // Validate network if provided
+          let network: NetworkName = getDefaultNetwork();
+          if (options.network) {
+            if (!isValidNetwork(options.network)) {
+              process.exitCode = 1;
+              console.log(error('Invalid network. Use "sepolia" or "mainnet"'));
+              return;
+            }
+            network = options.network;
+          }
+
+          // Require wallet address for CLI
+          if (!options.address) {
             process.exitCode = 1;
-            console.log(error('Invalid network. Use "sepolia" or "mainnet"'));
+            console.log(error('Please specify a wallet address with --address'));
             return;
           }
-          network = options.network;
-        }
 
-        // Require wallet address for CLI
-        if (!options.address) {
-          process.exitCode = 1;
-          console.log(error('Please specify a wallet address with --address'));
-          return;
-        }
+          if (!isValidAddress(options.address)) {
+            process.exitCode = 1;
+            console.log(error('Invalid wallet address'));
+            return;
+          }
 
-        if (!isValidAddress(options.address)) {
-          process.exitCode = 1;
-          console.log(error('Invalid wallet address'));
-          return;
-        }
+          const walletAddress = options.address;
+          const tokens = listTokens(network);
 
-        const walletAddress = options.address;
-        const tokens = listTokens(network);
+          if (tokens.length === 0) {
+            process.exitCode = 1;
+            console.log(
+              error(
+                `No tokens tracked on ${network}. Add one with: fhevm-wallet token add <address>`,
+              ),
+            );
+            return;
+          }
 
-        if (tokens.length === 0) {
-          process.exitCode = 1;
-          console.log(
-            error(
-              `No tokens tracked on ${network}. Add one with: fhevm-wallet token add <address>`,
-            ),
-          );
-          return;
-        }
+          // Sync from blockchain
+          const hasApiKey = !!process.env.ETHERSCAN_API_KEY;
 
-        // Sync from blockchain
-        const hasApiKey = !!process.env.ETHERSCAN_API_KEY;
-
-        if (hasApiKey) {
-          // Use Etherscan API (fast)
-          const syncSpinner = ora('Syncing transactions from blockchain...').start();
-          const newTxCount = await syncTransactions(walletAddress, network, tokens, 'etherscan');
-          syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
-        } else {
-          // Default to RPC with hint
-          const syncSpinner = ora('Syncing via RPC...').start();
-          syncSpinner.suffixText = chalk.dim(
-            '(tip: set Etherscan API key in Settings for faster sync)',
-          );
-          try {
-            const newTxCount = await syncTransactions(walletAddress, network, tokens, 'rpc');
+          if (hasApiKey) {
+            // Use Etherscan API (fast)
+            const syncSpinner = ora('Syncing transactions from blockchain...').start();
+            const newTxCount = await syncTransactions(walletAddress, network, tokens, 'etherscan');
             syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
-          } catch (err) {
-            syncSpinner.fail('RPC sync failed');
-            if (!(await handleSyncError(err, walletAddress, network, tokens))) {
-              process.exitCode = 1; // the history below is only what was saved earlier
+          } else {
+            // Default to RPC with hint
+            const syncSpinner = ora('Syncing via RPC...').start();
+            syncSpinner.suffixText = chalk.dim(
+              '(tip: set Etherscan API key in Settings for faster sync)',
+            );
+            try {
+              const newTxCount = await syncTransactions(walletAddress, network, tokens, 'rpc');
+              syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+            } catch (err) {
+              syncSpinner.fail('RPC sync failed');
+              if (!(await handleSyncError(err, walletAddress, network, tokens))) {
+                process.exitCode = 1; // the history below is only what was saved earlier
+              }
             }
           }
+
+          // Get last 10 transactions
+          const transactions = listTransactions({
+            walletAddress,
+            network,
+            limit: 10,
+          });
+
+          console.log();
+          console.log(bold('Transaction History'));
+          console.log(chalk.dim(`Wallet: ${formatAddress(walletAddress)}`));
+          console.log(chalk.dim(`Network: ${formatNetworkName(network)}`));
+          console.log();
+
+          displayTransactionTable(transactions, walletAddress);
+        } catch (err) {
+          process.exitCode = 1;
+          console.log(error(describeError(err, 'Failed to load history')));
         }
-
-        // Get last 10 transactions
-        const transactions = listTransactions({
-          walletAddress,
-          network,
-          limit: 10,
-        });
-
-        console.log();
-        console.log(bold('Transaction History'));
-        console.log(chalk.dim(`Wallet: ${formatAddress(walletAddress)}`));
-        console.log(chalk.dim(`Network: ${formatNetworkName(network)}`));
-        console.log();
-
-        displayTransactionTable(transactions, walletAddress);
-      } catch (err) {
-        process.exitCode = 1;
-        console.log(error(describeError(err, 'Failed to load history')));
-      }
-    });
+      },
+    );
 }

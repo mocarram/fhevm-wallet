@@ -20,6 +20,7 @@ import { clearProviderCache } from '../core/network/ProviderFactory.js';
 import { describeError } from './utils/userError.js';
 import { adoptTypedNetwork } from './utils/networkOption.js';
 import { maskUrl } from '../utils/redact.js';
+import { enterJsonMode, printJson, printJsonError } from './utils/json.js';
 import { resolveSecretOption, rpcOptionHelp, secretOptionHelp } from './utils/secretInput.js';
 
 /**
@@ -38,6 +39,45 @@ const SOURCE_LABELS: Record<SettingSource, string> = {
   environment: 'from the environment',
 };
 
+/** Where an RPC setting comes from, and whether it is used, for `config --show --json`. */
+function rpcJson(key: 'MAINNET_RPC_URL' | 'SEPOLIA_RPC_URL', fallback: string) {
+  const value = process.env[key];
+  const source = settingSource(key);
+  const invalid = invalidRpcReason(key);
+  if (value && source && !invalid) {
+    return { url: maskUrl(value), custom: true, source };
+  }
+  return {
+    url: fallback,
+    custom: false,
+    source: 'default',
+    ...(value && source && invalid ? { ignored: { source, reason: invalid } } : {}),
+  };
+}
+
+/** Keys are shown as "set" plus their last 4 characters, like the text output. */
+function keyJson(key: string) {
+  const value = process.env[key];
+  const source = settingSource(key);
+  return value && source ? { set: true, last4: value.slice(-4), source } : { set: false };
+}
+
+/** `config --show --json`: stable keys, URLs masked, API keys never in full. */
+function configJson(config: { defaultNetwork: string; defaultWallet?: string }) {
+  return {
+    defaultNetwork: config.defaultNetwork,
+    defaultWallet: config.defaultWallet ?? null,
+    rpc: {
+      mainnet: rpcJson('MAINNET_RPC_URL', DEFAULT_RPC_URLS.mainnet),
+      sepolia: rpcJson('SEPOLIA_RPC_URL', DEFAULT_RPC_URLS.sepolia),
+    },
+    apiKeys: {
+      etherscan: keyJson('ETHERSCAN_API_KEY'),
+      zama: keyJson('ZAMA_MAINNET_API_KEY'),
+    },
+  };
+}
+
 export function createProgram(): Command {
   const program = new Command();
 
@@ -51,8 +91,12 @@ export function createProgram(): Command {
     .option('-n, --network <network>', 'Network to use (sepolia or mainnet)')
     .hook('preAction', (thisCommand, actionCommand) => {
       const options = thisCommand.opts();
+      // --json: no colours anywhere, and errors as JSON (see utils/json.ts).
+      const json = Boolean(actionCommand.opts().json);
+      if (json) enterJsonMode();
       if (options.network && !isValidNetwork(options.network)) {
-        console.log(chalk.red('Invalid network. Use "sepolia" or "mainnet"'));
+        if (json) printJsonError('INVALID_NETWORK', 'Invalid network. Use "sepolia" or "mainnet"');
+        else console.log(chalk.red('Invalid network. Use "sepolia" or "mainnet"'));
         process.exit(1);
       }
       // `fhew balance -n mainnet`: commander hands -n to this program-level option, so
@@ -83,6 +127,7 @@ export function createProgram(): Command {
     .option('--rpc-sepolia <url>', rpcOptionHelp('Sepolia'))
     .option('--etherscan-key [key]', secretOptionHelp('the Etherscan API key'))
     .option('--zama-key [key]', secretOptionHelp('the Zama mainnet API key'))
+    .option('--json', 'With --show (or no other option): print machine-readable JSON')
     .action(
       async (options: {
         network?: string;
@@ -91,6 +136,7 @@ export function createProgram(): Command {
         rpcSepolia?: string;
         etherscanKey?: string | true;
         zamaKey?: string | true;
+        json?: boolean;
       }) => {
         const hasSetOption =
           options.network ||
@@ -99,8 +145,19 @@ export function createProgram(): Command {
           options.etherscanKey ||
           options.zamaKey;
 
+        if (options.json && hasSetOption) {
+          printJsonError(
+            'JSON_NOT_SUPPORTED',
+            '--json only works with --show. Change settings without --json.',
+          );
+          return;
+        }
         if (options.show || !hasSetOption) {
           const config = loadConfig();
+          if (options.json) {
+            printJson(configJson(config));
+            return;
+          }
           // Show what is in effect (saved settings, ./.env or the environment), masked,
           // and where it comes from: a ./.env in this folder can change the RPC.
           const rpcLine = (key: 'MAINNET_RPC_URL' | 'SEPOLIA_RPC_URL', fallback: string) => {

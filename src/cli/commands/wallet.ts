@@ -3,6 +3,7 @@
  */
 
 import { Command } from 'commander';
+import { printJson } from '../utils/json.js';
 import chalk from 'chalk';
 import ora from 'ora';
 import { formatPhrase, showSecretScreen } from '../utils/secretScreen.js';
@@ -222,9 +223,22 @@ export function registerWalletCommands(program: Command): void {
     .alias('ls')
     .description('List all wallets')
     .option('--full', 'Show full wallet addresses')
-    .action((options: { full?: boolean }) => {
+    .option('--json', 'Print machine-readable JSON')
+    .action((options: { full?: boolean; json?: boolean }) => {
       const wallets = listWallets();
       const defaultWallet = getDefaultWallet();
+
+      if (options.json) {
+        printJson({
+          wallets: wallets.map((w) => ({
+            name: w.name,
+            address: w.address,
+            createdAt: w.createdAt,
+            isDefault: w.name === defaultWallet,
+          })),
+        });
+        return;
+      }
 
       if (wallets.length === 0) {
         console.log('No wallets found. Create one with: fhevm-wallet wallet create');

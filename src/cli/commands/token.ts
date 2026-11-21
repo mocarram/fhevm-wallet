@@ -19,6 +19,9 @@ import { getDefaultNetwork } from '../../storage/ConfigStore.js';
 import { formatAddress, success, error, warning } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
 import { describeError } from '../utils/userError.js';
+import { printJson, printJsonError } from '../utils/json.js';
+
+const NETWORK_ERROR = 'Invalid network. Use "sepolia" or "mainnet"';
 
 export function registerTokenCommands(program: Command): void {
   const token = program.command('token').description('Manage tracked tokens');
@@ -112,18 +115,34 @@ export function registerTokenCommands(program: Command): void {
     .description('List tracked tokens')
     .option('-n, --network <network>', 'Filter by network')
     .option('--full', 'Show full token addresses')
-    .action((options?: { network?: string; full?: boolean }) => {
+    .option('--json', 'Print machine-readable JSON')
+    .action((options?: { network?: string; full?: boolean; json?: boolean }) => {
       let network: NetworkName | undefined;
       if (options?.network) {
         if (!isValidNetwork(options.network)) {
+          if (options.json) return printJsonError('INVALID_NETWORK', NETWORK_ERROR);
           process.exitCode = 1;
-          console.log(error('Invalid network. Use "sepolia" or "mainnet"'));
+          console.log(error(NETWORK_ERROR));
           return;
         }
         network = options.network;
       }
 
       const tokens = listTokens(network);
+
+      if (options?.json) {
+        printJson({
+          tokens: tokens.map((t) => ({
+            address: t.address,
+            name: t.name,
+            symbol: t.symbol,
+            decimals: t.decimals,
+            network: t.network,
+            addedAt: t.addedAt,
+          })),
+        });
+        return;
+      }
 
       if (tokens.length === 0) {
         console.log('No tokens tracked. Add one with: fhevm-wallet token add <address>');
