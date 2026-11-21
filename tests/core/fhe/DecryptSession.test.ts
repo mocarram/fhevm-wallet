@@ -130,6 +130,10 @@ describe('DecryptSession', () => {
     expect(decryptDaysFromEnv({})).toBe(1);
     expect(decryptDaysFromEnv({ FHEW_DECRYPT_DAYS: '7' })).toBe(7);
     expect(decryptDaysFromEnv({ FHEW_DECRYPT_DAYS: '400' })).toBe(1);
+    expect(decryptDaysFromEnv({ FHEW_DECRYPT_DAYS: '30' })).toBe(30);
+    // Above a month falls back to the default rather than signing a long-lived permit.
+    expect(decryptDaysFromEnv({ FHEW_DECRYPT_DAYS: '31' })).toBe(1);
+    expect(decryptDaysFromEnv({ FHEW_DECRYPT_DAYS: '365' })).toBe(1);
   });
 });
 

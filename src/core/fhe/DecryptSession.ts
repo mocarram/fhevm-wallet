@@ -84,10 +84,17 @@ export interface DecryptOutcome {
   errors: Map<string, unknown>;
 }
 
-/** Validity in days from `FHEW_DECRYPT_DAYS` (1-365), else the default. */
+/**
+ * Longest validity `FHEW_DECRYPT_DAYS` may ask for. The signed authorisation lets anyone
+ * holding it (and the session keypair) decrypt this wallet's balances until it expires,
+ * so a leaked one should not stay useful for a year.
+ */
+export const MAX_DECRYPT_DAYS = 30;
+
+/** Validity in days from `FHEW_DECRYPT_DAYS` (1-30), else the default. */
 export function decryptDaysFromEnv(env: NodeJS.ProcessEnv = process.env): number {
   const n = Number(env.FHEW_DECRYPT_DAYS);
-  return Number.isInteger(n) && n >= 1 && n <= 365 ? n : DEFAULT_DECRYPT_DAYS;
+  return Number.isInteger(n) && n >= 1 && n <= MAX_DECRYPT_DAYS ? n : DEFAULT_DECRYPT_DAYS;
 }
 
 /** Encrypted bits of a handle, from its type byte. Unknown types count as 256. */

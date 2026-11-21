@@ -158,7 +158,7 @@ fhew disclose <txHash>
 ```
 
 The decrypt signature (an EIP-712 user-decrypt authorisation, valid 1 day by default;
-`FHEW_DECRYPT_DAYS` sets 1-365) is kept in memory only and dropped on lock, auto-lock,
+`FHEW_DECRYPT_DAYS` sets 1-30) is kept in memory only and dropped on lock, auto-lock,
 wallet switch and exit. Operator changes and disclosures go through the same checks as a
 send: simulation, fee, an explicit confirmation and, after the broadcast, the transaction
 hash even when the confirmation is lost.
