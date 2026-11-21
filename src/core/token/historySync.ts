@@ -110,6 +110,26 @@ export interface SyncReport {
   head: number;
   /** Plain-English note on what was not covered and what to do, when something was not. */
   notice?: string;
+  /**
+   * RPC sync stopped early (request budget): the blocks still to search, first `from` the
+   * stopped walk, up to the head. The next sync continues there.
+   */
+  unsearched?: { from: number; to: number };
+}
+
+/** The one-line outcome of a sync for a spinner or notice: "Synced" or "Synced up to block N". */
+export function syncOutcomeText(r: Pick<SyncReport, 'added' | 'complete' | 'unsearched'>): {
+  ok: boolean;
+  text: string;
+} {
+  const added = r.added > 0 ? ` (${r.added} new)` : '';
+  if (r.complete) return { ok: true, text: `Synced${added}` };
+  return {
+    ok: false,
+    text: r.unsearched
+      ? `Synced up to block ${r.unsearched.from - 1}${added}`
+      : `Partly synced${added}`,
+  };
 }
 
 /**
@@ -385,13 +405,16 @@ async function syncViaRpc(
       `History before ${where} was not searched: the public RPC endpoints keep only recent logs (a few days or less). Set an Etherscan API key (fhevm-wallet config --etherscan-key -) to get the full history.`,
     );
   }
-  if (stopped && !opts.signal?.aborted) {
-    const from = Math.max(stopped.at + 1, stopped.group.start);
+  const unsearched = stopped
+    ? { from: Math.max(stopped.at + 1, stopped.group.start), to: head }
+    : undefined;
+  if (stopped && unsearched && !opts.signal?.aborted) {
+    const from = unsearched.from;
     const others = stopped.later
       ? ` (and ${stopped.later} more token group${stopped.later === 1 ? '' : 's'} not synced this time)`
       : '';
     notes.push(
-      `History from block ${from} to ${head} not searched yet for ${stopped.group.tokens.map((t) => t.symbol).join(', ')}${others}: this RPC endpoint allows only small log searches. Sync again to continue, or set an Etherscan API key.`,
+      `Synced up to block ${from - 1}. History from block ${from} to ${head} not searched yet for ${stopped.group.tokens.map((t) => t.symbol).join(', ')}${others}: this RPC endpoint allows only small log searches. Sync again to continue, or set an Etherscan API key.`,
     );
   }
   return {
@@ -399,6 +422,7 @@ async function syncViaRpc(
     complete: stopped === null,
     head,
     ...(notes.length ? { notice: notes.join(' ') } : {}),
+    ...(unsearched ? { unsearched } : {}),
   };
 }
 

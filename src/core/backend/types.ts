@@ -116,6 +116,8 @@ export interface HistorySyncResult {
   method: 'etherscan' | 'rpc' | 'mock';
   /** What the sync did not cover and what to do (public RPC window, request budget). */
   notice?: string;
+  /** False when the sync stopped before the head (request budget): sync again. */
+  complete?: boolean;
 }
 
 /** Everything the UI needs from chain and relayer (wrap/unwrap: wrapTypes.ts). */

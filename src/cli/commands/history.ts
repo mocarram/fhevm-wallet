@@ -10,7 +10,11 @@ import chalk from 'chalk';
 import { prompts, SECRET_MASK } from '../utils/prompts.js';
 import { listTransactions, Transaction } from '../../storage/TransactionStore.js';
 import { listTokens, TokenEntry } from '../../core/token/TokenRegistry.js';
-import { syncTransactions } from '../../core/token/historySync.js';
+import {
+  syncOutcomeText,
+  syncTransactions,
+  type SyncReport,
+} from '../../core/token/historySync.js';
 import { getDefaultNetwork } from '../../storage/ConfigStore.js';
 import { clearProviderForNetwork, clearProviderCache } from '../../core/network/ProviderFactory.js';
 import {
@@ -58,6 +62,19 @@ function formatShortDate(timestamp: string): string {
     month: 'short',
     day: 'numeric',
   });
+}
+
+/**
+ * End a sync spinner truthfully: "✔ Synced" only when the sync reached the head, else
+ * the warning mark and "Synced up to block N" (the notice after it names the rest).
+ */
+function finishSyncSpinner(
+  spin: { succeed: (t: string) => unknown; warn: (t: string) => unknown },
+  synced: SyncReport,
+): void {
+  const o = syncOutcomeText(synced);
+  if (o.ok) spin.succeed(o.text);
+  else spin.warn(o.text);
 }
 
 /**
@@ -209,8 +226,7 @@ async function handleSyncError(
     const retrySpinner = ora('Retrying sync with Etherscan...').start();
     try {
       const synced = await syncTransactions(walletAddress, network, tokens, 'etherscan');
-      const newTxCount = synced.added;
-      retrySpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+      finishSyncSpinner(retrySpinner, synced);
       if (synced.notice) console.log(chalk.yellow(synced.notice));
       return true;
     } catch (retryErr) {
@@ -247,8 +263,7 @@ async function handleSyncError(
     const retrySpinner = ora('Retrying sync with new RPC...').start();
     try {
       const synced = await syncTransactions(walletAddress, network, tokens, 'rpc');
-      const newTxCount = synced.added;
-      retrySpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+      finishSyncSpinner(retrySpinner, synced);
       if (synced.notice) console.log(chalk.yellow(synced.notice));
       return true;
     } catch (retryErr) {
@@ -379,8 +394,7 @@ export function registerHistoryCommand(program: Command): void {
           // Use Etherscan API (fast)
           const syncSpinner = ora('Syncing transactions from blockchain...').start();
           const synced = await syncTransactions(walletAddress, network, tokens, 'etherscan');
-          const newTxCount = synced.added;
-          syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+          finishSyncSpinner(syncSpinner, synced);
           if (synced.notice) console.log(chalk.yellow(synced.notice));
         } else {
           // Default to RPC with hint
@@ -390,8 +404,7 @@ export function registerHistoryCommand(program: Command): void {
           );
           try {
             const synced = await syncTransactions(walletAddress, network, tokens, 'rpc');
-            const newTxCount = synced.added;
-            syncSpinner.succeed(`Synced${newTxCount > 0 ? ` (${newTxCount} new)` : ''}`);
+            finishSyncSpinner(syncSpinner, synced);
             if (synced.notice) console.log(chalk.yellow(synced.notice));
           } catch (err) {
             syncSpinner.fail('RPC sync failed');

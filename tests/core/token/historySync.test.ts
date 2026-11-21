@@ -15,8 +15,13 @@ vi.mock('../../../src/core/network/NetworkConfig.js', async (importOriginal) => 
   return { ...orig, getRpcUrls: () => net.urls, usesPublicRpc: () => net.publicRpc };
 });
 
-const { syncTransactions, PUBLIC_HISTORY_WINDOW, ETHERSCAN_LAG_BLOCKS, resetPrunedReach } =
-  await import('../../../src/core/token/historySync.js');
+const {
+  syncTransactions,
+  syncOutcomeText,
+  PUBLIC_HISTORY_WINDOW,
+  ETHERSCAN_LAG_BLOCKS,
+  resetPrunedReach,
+} = await import('../../../src/core/token/historySync.js');
 const { SCAN_START_BLOCK, CONFIDENTIAL_TRANSFER_TOPIC0 } =
   await import('../../../src/core/token/tokenScan.js');
 const { clearProviderCache, resetRefusedEndpoints } =
@@ -203,8 +208,18 @@ describe('RPC history sync', () => {
     expect(saved.lastBlock).toBeGreaterThan(cursor.lastBlock - 12);
     expect(saved.lastBlock).toBeLessThan(head - 6_000);
     expect(r.notice).toContain(
-      `History from block ${saved.lastBlock + 1} to ${head} not searched yet for cA`,
+      `Synced up to block ${saved.lastBlock}. History from block ${saved.lastBlock + 1} to ${head} not searched yet for cA`,
     );
+    expect(r.unsearched).toEqual({ from: saved.lastBlock + 1, to: head });
+    // The spinner line: the warning mark and "Synced up to block N", never "✔ Synced".
+    expect(syncOutcomeText(r)).toEqual({
+      ok: false,
+      text: `Synced up to block ${saved.lastBlock}`,
+    });
+    expect(syncOutcomeText({ added: 2, complete: true })).toEqual({
+      ok: true,
+      text: 'Synced (2 new)',
+    });
   });
 
   it('keeps per-token cursors when tokens with different cursors are synced (L1)', async () => {

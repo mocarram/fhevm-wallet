@@ -1,7 +1,7 @@
 /**
  * Regression tests for the Phase 3 review findings.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { handleKey, tick } from '../../src/tui/app.js';
 import { normalizeKey } from '../../src/tui/keys.js';
 import { createWallet } from '../../src/core/wallet/WalletManager.js';
@@ -342,5 +342,23 @@ describe('small Review and status bar fixes (L4)', () => {
     await h.keys('{ctrl-c}');
     expect(h.screen).toBe('home');
     expect(h.text()).not.toMatch(/Cancelled/);
+  });
+});
+
+describe('a history sync that stopped early (live check)', () => {
+  it('shows "Synced up to block N" with the warning mark on every refresh', async () => {
+    const h = new Harness({ unlocked: true });
+    const notice = 'Synced up to block 41. History from block 42 to 99 not searched yet for cUSDC.';
+    vi.spyOn(h.backend, 'syncHistory').mockResolvedValue({
+      newCount: 0,
+      method: 'rpc',
+      complete: false,
+      notice,
+    });
+    await h.keys('h');
+    expect(h.text(160)).toContain(`! ${notice}`);
+    await h.keys('{escape}');
+    await h.keys('h');
+    expect(h.text(160)).toContain(`! ${notice}`);
   });
 });

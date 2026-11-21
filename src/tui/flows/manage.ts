@@ -432,8 +432,9 @@ export function loadHistory(s: AppState): Effect[] {
         const synced = rows();
         return (st) => {
           st.history = { rows: synced, loading: false };
-          // Shown once per session for each distinct notice, not after every refresh.
-          if (notice && !st.seenNotices.has(notice)) {
+          // Shown once per session for each distinct notice, not after every refresh; a
+          // sync that stopped early ("Synced up to block N …") is shown every time.
+          if (notice && (result.complete === false || !st.seenNotices.has(notice))) {
             st.seenNotices.add(notice);
             st.history.notice = notice;
           }

@@ -99,6 +99,7 @@ export async function historyJson(options: HistoryJsonOptions): Promise<void> {
       newCount?: number;
       complete?: boolean;
       notice?: string;
+      unsearched?: { from: number; to: number };
       error?: { code: string; message: string };
     };
     try {
@@ -111,6 +112,8 @@ export async function historyJson(options: HistoryJsonOptions): Promise<void> {
           newCount: r.added,
           complete: r.complete,
           ...(r.notice ? { notice: r.notice } : {}),
+          // Added only when the sync stopped early (request budget); existing keys unchanged.
+          ...(r.unsearched ? { unsearched: r.unsearched } : {}),
         };
       }
     } catch (err) {
