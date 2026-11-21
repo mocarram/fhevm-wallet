@@ -81,6 +81,28 @@ Notes on how these landed:
   - `./.env` only supplies RPC URLs and API keys; API key flags take `-` or no value for
     hidden input; the terminal is restored if the process is killed while a secret
     screen is open; `make env` and `docker` create owner-only files.
+- Review round 2 (verifier, code review, security review), all fixed:
+  - `balance` printed ethers' response body, which echoed the RPC path key. Every
+    command now uses `describeError`. Redaction masks pieces of the configured RPC URLs
+    wherever they appear. A pty e2e sweep runs balance and send past the password
+    prompt against servers that echo the key: 500, chain-then-500, a JSON-RPC error
+    and 429, with and without `FHEW_DEBUG`.
+  - Clear wording for:
+    - an address with no token there ("not a token contract on <network>");
+    - relayer failures (`RELAYER_UNAVAILABLE`);
+    - an RPC that returned an error rather than not answering.
+  - `FHEW_DEBUG=1` adds redacted details everywhere.
+  - The data dir is only chmodded when it is the wallet's own, never a shared or sticky
+    folder. One that others can write to is refused before anything is loaded from it.
+  - RPC URLs from ./.env and the environment are validated, and `config --show` says
+    which value is in effect and where it comes from. Typed URLs are masked once
+    entered, and `--rpc-* -` reads them hidden.
+  - Smaller fixes:
+    - stdout drains before the exit timer;
+    - a rate-limited RPC fails fast;
+    - basic-auth RPC URLs work;
+    - more invisible characters are stripped;
+    - the keystore export no longer fails on an audit-log error.
 
 Acceptance: tests assert file modes; a wrong-chain RPC is refused; no test output or log
 contains a private key, phrase or API key.

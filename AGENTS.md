@@ -123,13 +123,20 @@ Every unit of work goes through this loop until it comes out clean:
   exports to a user-chosen path). Do not call `fs.writeFileSync`, `mkdirSync` or
   `appendFileSync` on user data directly.
 - Startup tightening (`tightenPermissions`) only touches the data dir and the paths in
-  `WALLET_DATA_ENTRIES`, only clears group/other bits, and does nothing when
-  `FHEVM_WALLET_HOME` is the home folder, the current folder or `/`. A new store file must
-  be added to `WALLET_DATA_ENTRIES`.
+  `WALLET_DATA_ENTRIES`, and only clears group/other bits. The data dir itself is only
+  chmodded when the wallet owns it (`getDataDirPolicy` in `src/storage/paths.ts`): the
+  default `~/.fhevm-wallet`, a folder the wallet created, or one holding only wallet
+  files. Never home or above, the temp folder, the current folder, `/` or a sticky
+  folder (`sharedLocationReason`). A data dir or `wallets/` that group or others can
+  write to is refused before any keystore or `.env` is read (`assertTrustedDataDir`).
+  A new store file must be added to `WALLET_DATA_ENTRIES`.
 - Network calls have timeouts: JSON-RPC through `getProvider` (20 s per request, chain-ID
   check per URL, fallback endpoints, `abortableGetUrl` so a timed-out socket is closed),
   `fetch` with `AbortSignal.timeout`, relayer SDK calls via `withTimeout`
-  (`src/utils/timeout.ts`). The relayer SDK reads the chain through `getEip1193Provider`,
+  (`src/utils/timeout.ts`). HTTP 429 is retried 3 times, not ethers' 12. Custom RPC URLs
+  from anywhere (settings, ./.env, the environment) must pass `validateRpcUrl`.
+  `user:password@` in an RPC URL is sent as a Basic header. The relayer SDK reads the
+  chain through `getEip1193Provider`,
   which answers `eth_chainId` locally. A one-shot command exits about a second after it
   finishes even if a timed-out relayer request is still open (`src/index.ts`).
 - A failing command sets `process.exitCode = 1`. A prompt without a terminal ends with
@@ -151,12 +158,21 @@ Every unit of work goes through this loop until it comes out clean:
   transaction is `TX_REPLACED`. Both keep the hash. The wait for a receipt is bounded
   (`CONFIRMATION_TIMEOUT_MS`) and also ends in `SENT_UNCONFIRMED`.
 - Never write plaintext token amounts to the audit log.
-- Set `FHEW_DEBUG=1` to print redacted technical details under error messages.
+- Set `FHEW_DEBUG=1` to print redacted technical details under error messages
+  (`describeError` adds them; `describeErrorShort` is for table cells and never does).
 - A `.env` in the current directory is only trusted for `CWD_ENV_ALLOWED_KEYS`
   (`src/storage/paths.ts`: RPC URLs and API keys). Never add behaviour switches such as
   `FHEW_DEBUG`, `FHEW_BACKEND` or `FHEVM_WALLET_HOME` to that list.
-- Print caught errors only through `describeError` (`src/cli/utils/userError.ts`) and
-  RPC URLs only through `maskUrl`: raw ethers messages include the request URL and key.
+- Print caught errors only through `describeError` / `describeErrorShort`
+  (`src/cli/utils/userError.ts`) and RPC URLs only through `maskUrl`: raw ethers messages
+  include the request URL, and providers echo the path and key in response bodies.
+  `redactSecrets` masks pieces of the configured RPC URLs (path segments of 8+
+  characters, query values, credentials) wherever they appear; keep new secret-bearing
+  settings in its lists.
+- Prompts for an RPC URL use `transformer: maskUrlWhenAnswered`; `--rpc-*` and
+  `--*-key` options accept `-` for hidden or piped input (one piped value per run).
+- e2e tests that need a terminal (password prompts) use `tests/e2e/pty-run.py`
+  (python3); they are skipped where python3 is missing.
 - No emoji in menus (they break column alignment in many terminals).
 
 ## Where the plan lives

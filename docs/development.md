@@ -35,7 +35,8 @@ make env
 | `ZAMA_MAINNET_API_KEY` | Zama relayer API key (mainnet FHE only)     | For mainnet     |
 
 Only these four keys are read from a `.env` in the current directory, and they never
-override variables already set in your shell. Anything else in that file (for example
+override variables already set in your shell. RPC URLs there must be https (plain http
+only to localhost), or they are ignored with a notice. Anything else in that file (for example
 `FHEW_DEBUG`) is ignored with a notice on stderr, so a folder you `cd` into cannot change
 how the wallet behaves. Settings saved with `fhew config` go to the private
 `~/.fhevm-wallet/.env` instead, which takes precedence.

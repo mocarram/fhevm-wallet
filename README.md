@@ -97,9 +97,10 @@ fhew config --show
 # Set default network
 fhew config --network sepolia
 
-# Set RPC endpoints (https only; the wallet checks the chain ID before saving)
+# Set RPC endpoints (https only; the wallet checks the chain ID before saving).
+# Use - to type the URL hidden, so its key stays out of your shell history.
 fhew config --rpc-mainnet https://mainnet.infura.io/v3/YOUR_KEY
-fhew config --rpc-sepolia https://sepolia.infura.io/v3/YOUR_KEY
+fhew config --rpc-sepolia -
 
 # Set API keys
 fhew config --etherscan-key YOUR_ETHERSCAN_KEY

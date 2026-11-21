@@ -163,6 +163,12 @@ All data is stored centrally in `~/.fhevm-wallet` in your home directory. This a
 The folder is owner-only (`0700`) and every file in it `0600`. If an older version left
 looser permissions, the wallet fixes them on start and prints a one-line notice on stderr.
 
+If `FHEVM_WALLET_HOME` points at an existing folder that also holds other files, or at a
+shared folder (your home or a folder above it, the temp folder, the current folder, `/`
+or any sticky folder), the wallet leaves that folder's permissions alone and only
+restricts its own files. It refuses to start when other users can write to the data
+folder or `wallets/`, because they could plant a keystore or settings there.
+
 ```
 ~/.fhevm-wallet/
 ├── wallets/              # Encrypted keystores
