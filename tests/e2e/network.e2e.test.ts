@@ -163,7 +163,9 @@ describe('failing commands set a non-zero exit code', () => {
     try {
       const res = await runCliAsync(['wallet', 'import', 'x'], t.home, {}, 30_000);
       expect(res.code).toBe(1);
-      expect(res.stdout + res.stderr).toMatch(/no interactive terminal/);
+      // It names what to add instead of prompting (wallet import without a terminal).
+      expect(res.stdout + res.stderr).toMatch(/add --mnemonic or --key/);
+      expect((res.stdout + res.stderr).trim().split('\n')).toHaveLength(1);
       expect(res.stderr).not.toMatch(/\n\s+at /);
     } finally {
       t.cleanup();
