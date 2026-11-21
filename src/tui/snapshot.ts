@@ -10,7 +10,7 @@ import type { NetworkName } from '../core/network/NetworkConfig.js';
 import { listAddresses } from '../storage/AddressBook.js';
 import { loadConfig } from '../storage/ConfigStore.js';
 import { getEnvVar, DATA_DIR } from '../storage/paths.js';
-import { listTransactions } from '../storage/TransactionStore.js';
+import { listTransactions, type Transaction } from '../storage/TransactionStore.js';
 import { loadUiPrefs, type UiPrefs } from '../storage/UiPrefsStore.js';
 import { RPC_ENV_KEYS } from '../core/network/rpcSettings.js';
 import { stripUnsafeChars } from '../utils/text.js';
@@ -39,6 +39,8 @@ export interface Snapshot {
   wrappers: Record<string, WrapperInfo>;
   /** Unwraps of this wallet on this network that are not finished (unwraps.json). */
   unwraps: UnwrapEntry[];
+  /** Local history: recent wraps of this wallet recorded unconfirmed (block 0). */
+  unconfirmedWraps: Transaction[];
 }
 
 /** Read the snapshot for `network` and the given wallet address (for history-based facts). */
@@ -69,6 +71,7 @@ export function loadSnapshot(network: NetworkName, walletAddress?: string): Snap
     dataDir: DATA_DIR,
     wrappers: safe(() => cachedWrappers(network), {}),
     unwraps: walletAddress ? listUnwrapsSafe({ network, wallet: walletAddress, open: true }) : [],
+    unconfirmedWraps: txs.filter((t) => t.type === 'mint' && t.blockNumber === 0),
   };
 }
 

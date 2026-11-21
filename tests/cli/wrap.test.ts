@@ -127,6 +127,22 @@ describe('fhew wrap', () => {
     expect(doc.error.code).toBe('MAINNET_NOT_CONFIRMED');
   });
 
+  it('warns before wrapping again while an earlier wrap is unconfirmed (N7)', async () => {
+    backend = new MockBackend({ ...instant, fail: 'unconfirmed' });
+    // An allowance in place: only the wrap is sent, and its receipt is lost.
+    const info = (await backend.wrapperInfo(backend.catalogue('sepolia')[0].address, 'sepolia'))!;
+    backend.wrapOps.setAllowance('sepolia', info, wallet.address, 10n ** 12n);
+    const first = await run('wrap', '5', 'cusdc', ...yes);
+    expect(first.error.code).toBe('SENT_UNCONFIRMED');
+    backend = new MockBackend(instant);
+    const again = await run('wrap', '5', 'cusdc', ...yes);
+    expect(again.status).toBe('wrapped');
+    expect(again.warning).toMatch(/earlier wrap of this token \(0x[0-9a-f]{64}\) is not confirmed/);
+    expect(again.warning).toContain(first.error.txHash);
+    // Another token: no warning.
+    expect((await run('wrap', '1', 'cdai', ...yes)).warning).toBeUndefined();
+  });
+
   it('needs --yes and --password-stdin with --json', async () => {
     expect((await run('wrap', '1', 'cusdc')).error.code).toBe('PROMPT_NOT_ALLOWED');
   });

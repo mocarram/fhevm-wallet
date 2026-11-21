@@ -11,7 +11,11 @@
 
 import type { NetworkName } from '../network/NetworkConfig.js';
 import type { PreparedWrap, WrapHooks, WrapResult, WrapStep } from '../backend/wrapTypes.js';
-import { recordLocalTransaction } from '../../storage/TransactionStore.js';
+import {
+  listTransactions,
+  recordLocalTransaction,
+  type Transaction,
+} from '../../storage/TransactionStore.js';
 import { formatTokenAmount } from '../../utils/formatting.js';
 import { translateTxError } from './txErrors.js';
 import type { WrapperInfo } from './wrapper.js';
@@ -82,4 +86,55 @@ export async function sendWrapRecorded(
     }
     throw err;
   }
+}
+
+/** An unconfirmed wrap older than this is not warned about any more (it was dropped). */
+export const UNCONFIRMED_WRAP_WARN_MS = 24 * 3600_000;
+
+/**
+ * The most recent wrap of `token` into `wallet` that is recorded unconfirmed (block 0)
+ * in `txs`, within `UNCONFIRMED_WRAP_WARN_MS` of `now`; null when there is none.
+ */
+export function unconfirmedWrapIn(
+  txs: readonly Transaction[],
+  wallet: string,
+  token: string,
+  now = Date.now(),
+): Transaction | null {
+  return (
+    txs.find(
+      (t) =>
+        t.type === 'mint' &&
+        t.blockNumber === 0 &&
+        t.tokenAddress.toLowerCase() === token.toLowerCase() &&
+        t.to.toLowerCase() === wallet.toLowerCase() &&
+        now - Date.parse(t.timestamp) < UNCONFIRMED_WRAP_WARN_MS,
+    ) ?? null
+  );
+}
+
+/** `unconfirmedWrapIn` over the local history (best effort: null if it cannot be read). */
+export function findUnconfirmedWrap(
+  network: NetworkName,
+  wallet: string,
+  token: string,
+): Transaction | null {
+  try {
+    return unconfirmedWrapIn(
+      listTransactions({ walletAddress: wallet, network, limit: 10_000 }),
+      wallet,
+      token,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The warning before wrapping again while an earlier wrap may still be mined: a second
+ * one would wrap (and pull) the amount twice. A warning, not a refusal: the earlier one
+ * may have been dropped.
+ */
+export function unconfirmedWrapWarning(t: Pick<Transaction, 'txHash'>): string {
+  return `An earlier wrap of this token (${t.txHash}) is not confirmed yet and may still be mined: wrapping again could wrap twice. Check it on the explorer first.`;
 }

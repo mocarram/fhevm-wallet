@@ -45,7 +45,11 @@ import {
   planWrap,
   type AmountProblem,
 } from '../../core/token/wrapMath.js';
-import { sendWrapRecorded } from '../../core/token/wrapHistory.js';
+import {
+  findUnconfirmedWrap,
+  sendWrapRecorded,
+  unconfirmedWrapWarning,
+} from '../../core/token/wrapHistory.js';
 import { loadWrappers, resolveWrapToken } from '../../core/token/wrapTokens.js';
 import type { WrapperInfo } from '../../core/token/wrapper.js';
 import {
@@ -326,6 +330,8 @@ async function wrapCommand(
   const state = await backend.wrapState(info, walletRef.address, network);
   const plan = planWrap(amountText, info, { balance: state.balance, supplyRoom: state.supplyRoom });
   if (!plan.ok) return failAmount(plan);
+  const earlier = findUnconfirmedWrap(network, walletRef.address, info.address);
+  const earlierWarning = earlier ? unconfirmedWrapWarning(earlier) : undefined;
 
   const wallet = await unlockWallet(walletRef.name, network, options.passwordStdin);
   if (!wallet) return;
@@ -361,7 +367,7 @@ async function wrapCommand(
       title: `Wrap ${u.symbol} into ${info.symbol}`,
       lines,
       feeLine,
-      warnings: [WRAP_PRIVACY],
+      warnings: [...(earlierWarning ? [earlierWarning] : []), WRAP_PRIVACY],
       yes: options.yes,
       question: `Wrap ${amt(plan.pull, u.decimals, u.symbol)} into ${info.symbol}?`,
     });
@@ -417,6 +423,7 @@ async function wrapCommand(
         balanceCheck: result.balanceCheck,
         balanceBefore: result.balanceBefore ?? null,
         balanceAfter: result.balanceAfter ?? null,
+        ...(earlierWarning ? { warning: earlierWarning } : {}),
       });
     }
     console.log(`  Transaction: ${result.txHash}`);

@@ -138,6 +138,26 @@ describe('Unwrap', () => {
 });
 
 describe('a wrap that ends unconfirmed', () => {
+  it('the next wrap of the token shows a review note about the earlier one (N7)', async () => {
+    const h = new Harness({ unlocked: true, mock: { fail: 'unconfirmed' } });
+    const info = (await h.backend.wrapperInfo(
+      h.backend.catalogue('sepolia')[0].address,
+      'sepolia',
+    ))!;
+    h.backend.wrapOps.setAllowance('sepolia', info, h.signer.address, 10n ** 12n);
+    await h.keys('b');
+    await h.keys('w', '25{enter}');
+    await confirm(h);
+    expect(h.s.lastSendError?.error.code).toBe('SENT_UNCONFIRMED');
+    (h.backend as unknown as { opts: { fail?: string } }).opts.fail = undefined;
+    h.s.data = loadSnapshot('sepolia', h.signer.address);
+    await h.keys('b', 'w', '{ctrl-u}', '5{enter}');
+    expect(h.screen).toBe('tx-review');
+    expect(h.text(200)).toMatch(
+      /An earlier wrap of this token \(0x[0-9a-f]+\) is not confirmed yet/,
+    );
+  });
+
   it('keeps the hash, says not to send again and re-checks later', async () => {
     const h = new Harness({ unlocked: true, mock: { fail: 'unconfirmed' } });
     await h.keys('b');

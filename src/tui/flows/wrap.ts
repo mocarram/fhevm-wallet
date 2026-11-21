@@ -31,7 +31,11 @@ import { loadWrappers, resolveWrapToken } from '../../core/token/wrapTokens.js';
 import type { WrapperInfo } from '../../core/token/wrapper.js';
 import { assertUnwrapStoreWritable, type UnwrapEntry } from '../../storage/UnwrapStore.js';
 import { describeError } from '../errors.js';
-import { sendWrapRecorded } from '../../core/token/wrapHistory.js';
+import {
+  sendWrapRecorded,
+  unconfirmedWrapIn,
+  unconfirmedWrapWarning,
+} from '../../core/token/wrapHistory.js';
 import { effect, type Deps, type Effect } from '../effects.js';
 import { formatAmount, formatEth, shortHash } from '../format.js';
 import { open, openFromRoot, openInstead } from '../nav.js';
@@ -338,6 +342,13 @@ function wrapDetails(info: WrapperInfo, plan: WrapPlan) {
   };
 }
 
+/** The Review note when an earlier wrap of this token is still unconfirmed (N7). */
+function earlierWarning(s: AppState, info: WrapperInfo): string[] {
+  const t =
+    s.wallet && unconfirmedWrapIn(s.data.unconfirmedWraps, s.wallet.address, info.address, s.now);
+  return t ? [unconfirmedWrapWarning(t)] : [];
+}
+
 /** Start the Review of a checked wrap. */
 export function startWrap(s: AppState, info: WrapperInfo, plan: WrapPlan): Effect[] {
   const u = info.underlying;
@@ -348,7 +359,10 @@ export function startWrap(s: AppState, info: WrapperInfo, plan: WrapPlan): Effec
     token: info.address,
     title: `Wrap ${amt(plan.pull, u.decimals, u.symbol)} into ${amt(plan.wrapped, info.decimals, info.symbol)}`,
     short: `wrap ${formatAmount(plan.pull, u.decimals)} ${u.symbol}`,
-    warning: ['The wrapped amount is public on-chain; later balances and transfers are private.'],
+    warning: [
+      ...earlierWarning(s, info),
+      'The wrapped amount is public on-chain; later balances and transfers are private.',
+    ],
     then: 'balances',
     details: wrapDetails(info, plan),
     custom: {
