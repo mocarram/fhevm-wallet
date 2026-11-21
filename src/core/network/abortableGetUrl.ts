@@ -22,14 +22,20 @@ export const abortableGetUrl: FetchGetUrlFunc = async (
     req.timeout,
   );
   timer.unref();
+  const { url, headers: requestHeaders } = withCredentialsAsHeader(req.url, req.headers);
   try {
-    const res = await fetch(req.url, {
+    const res = await fetch(url, {
       method: req.method,
-      headers: req.headers,
+      headers: requestHeaders,
       body: req.body ?? undefined,
       signal: controller.signal,
-      // Hand redirects back to ethers: FetchRequest follows them itself, with its
-      // redirect limit and its refusal to move from https to plain http.
+      // Hand redirects back to ethers rather than following (or refusing) them here.
+      // FetchRequest follows them itself, with its redirect limit and its refusal to move
+      // from https to plain http. 'error' would be stricter but breaks providers that
+      // redirect legitimately (http -> https upgrades, regional endpoints), and 'follow'
+      // would skip ethers' checks. Credentials are never forwarded: ethers builds a new
+      // request for the Location URL, and the Authorization header below is derived only
+      // from the original URL.
       redirect: 'manual',
     });
     const body = new Uint8Array(await res.arrayBuffer());
@@ -54,3 +60,32 @@ export const abortableGetUrl: FetchGetUrlFunc = async (
     clearTimeout(timer);
   }
 };
+
+/**
+ * Node's fetch refuses URLs with `user:password@` in them, which some providers (and
+ * self-hosted nodes behind a proxy) use. Move them into an `Authorization: Basic` header,
+ * unless one is set already, and fetch the URL without them.
+ */
+export function withCredentialsAsHeader(
+  rawUrl: string,
+  headers: Record<string, string>,
+): { url: string; headers: Record<string, string> } {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    return { url: rawUrl, headers };
+  }
+  if (!parsed.username && !parsed.password) return { url: rawUrl, headers };
+  const user = decodeURIComponent(parsed.username);
+  const pass = decodeURIComponent(parsed.password);
+  parsed.username = '';
+  parsed.password = '';
+  const hasAuth = Object.keys(headers).some((h) => h.toLowerCase() === 'authorization');
+  return {
+    url: parsed.toString(),
+    headers: hasAuth
+      ? headers
+      : { ...headers, authorization: `Basic ${Buffer.from(`${user}:${pass}`).toString('base64')}` },
+  };
+}

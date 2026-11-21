@@ -2,10 +2,14 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
 import { BrowserProvider, FetchRequest, Network } from 'ethers';
-import { abortableGetUrl } from '../../../src/core/network/abortableGetUrl.js';
+import {
+  abortableGetUrl,
+  withCredentialsAsHeader,
+} from '../../../src/core/network/abortableGetUrl.js';
 import {
   assertRpcChain,
   describeProbeFailure,
+  probeRpc,
   clearProviderCache,
   clearProviderForNetwork,
   FailoverJsonRpcProvider,
@@ -159,6 +163,33 @@ describe('FailoverJsonRpcProvider', () => {
     expect(hops).toBeGreaterThanOrEqual(2); // chain check and the call both redirected
     expect(calls.redirected).toEqual(['eth_chainId', 'eth_blockNumber']);
     provider.destroy();
+  });
+
+  it('sends user:password@ from the URL as a Basic Authorization header', async () => {
+    let seen: string | undefined;
+    let path: string | undefined;
+    const node = createServer((req, res) => {
+      seen = req.headers.authorization;
+      path = req.url;
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        const m = JSON.parse(body) as { id: number };
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: '0xaa36a7' }));
+      });
+    });
+    await new Promise<void>((r) => node.listen(0, '127.0.0.1', () => r()));
+    servers.push(node);
+    const url = `http://al%40ice:p%3Ass@127.0.0.1:${(node.address() as AddressInfo).port}/rpc`;
+    const probe = await probeRpc(url);
+    expect(probe.chainId).toBe(11155111n);
+    expect(seen).toBe(`Basic ${Buffer.from('al@ice:p:ss').toString('base64')}`);
+    expect(path).toBe('/rpc');
+    // An Authorization header set by the caller wins.
+    expect(withCredentialsAsHeader(url, { Authorization: 'Bearer x' }).headers).toEqual({
+      Authorization: 'Bearer x',
+    });
   });
 
   it('a probe that gets HTTP 500 says the endpoint returned an error', async () => {
