@@ -5,7 +5,8 @@
  */
 
 import { spawnSync } from 'child_process';
-import { cpSync, mkdtempSync, rmSync, writeFileSync, chmodSync } from 'fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from 'fs';
+import { getAddress, id } from 'ethers';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -169,7 +170,7 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
       { expect: 'Esc stops it' },
       { expect: '1 pending', timeout: 10 },
       { expect: 'Sent 25.00 cUSDC to bob', timeout: 15 },
-      { expect: 'Next time: fhew send bob 25 cusdc' },
+      { expect: 'Next time: fhew send bob 25 cusdc -n sepolia' },
       { expect: 'repeat last send', timeout: 5 },
       { keys: '.' },
       { expect: 'Repeating your last send' },
@@ -185,7 +186,7 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
         .join('\n')
         .match(/Next time: (fhew send [^\n]*)/)?.[1]
         .trim() ?? '';
-    expect(hint).toBe('fhew send bob 25 cusdc');
+    expect(hint).toBe('fhew send bob 25 cusdc -n sepolia');
     const out = runTui(
       home,
       [
@@ -239,6 +240,71 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     });
     expect(no.status).toBe(1);
     expect(no.stdout).toMatch(/Nothing was sent: confirm in a terminal, or pass --yes/);
+  });
+
+  it('fhew send on Mainnet: no unconfirmed send unless -n mainnet and --mainnet', () => {
+    const home = freshHome();
+    // Track the mock's Mainnet cUSDC (same derivation as MockBackend's mockAddress).
+    const tokensFile = join(home, 'wallet-data', 'tokens.json');
+    const reg = JSON.parse(readFileSync(tokensFile, 'utf-8'));
+    const usdc = reg.tokens.find((t: { symbol: string }) => t.symbol === 'cUSDC');
+    reg.tokens.push({
+      ...usdc,
+      network: 'mainnet',
+      address: getAddress('0x' + id('fhew-mock:mainnet:cUSDC').slice(-40)),
+    });
+    writeFileSync(tokensFile, JSON.stringify(reg), { mode: 0o600 });
+    // The default network is the trap: the command line never names Mainnet.
+    const cfgFile = join(home, 'wallet-data', 'config.json');
+    const cfg = JSON.parse(readFileSync(cfgFile, 'utf-8'));
+    writeFileSync(cfgFile, JSON.stringify({ ...cfg, defaultNetwork: 'mainnet' }), { mode: 0o600 });
+
+    const run = (...args: string[]) =>
+      spawnSync(process.execPath, [CLI, 'send', 'bob', '1', 'cusdc', '--password-stdin', ...args], {
+        env: {
+          PATH: process.env.PATH ?? '',
+          HOME: home,
+          FHEVM_WALLET_HOME: join(home, 'wallet-data'),
+          FHEW_BACKEND: 'mock',
+          FHEW_MOCK_LATENCY_MS: '20',
+          FHEW_MOCK_CONFIRM_MS: '200',
+        },
+        input: `${PASSWORD}\n`,
+        encoding: 'utf-8',
+        timeout: 60_000,
+      });
+    for (const args of [['--yes'], ['-n', 'mainnet', '--yes'], ['--mainnet', '--yes'], []]) {
+      const res = run(...args);
+      expect(res.status, args.join(' ')).toBe(1);
+      expect(res.stdout).toMatch(/real funds on Mainnet without asking you/);
+      expect(res.stdout).not.toMatch(/Transfer confirmed/);
+    }
+    const ok = run('-n', 'mainnet', '--mainnet', '--yes');
+    expect(ok.stdout).toMatch(/Network: Ethereum Mainnet|Network: Mainnet/i);
+    expect(ok.stdout).toMatch(/Sent 1 cUSDC to bob\. Transfer confirmed \(mock\)/);
+    expect(ok.status).toBe(0);
+    // Sepolia is unaffected: -n sepolia --yes needs no --mainnet.
+    const sep = run('-n', 'sepolia', '--yes');
+    expect(sep.stdout).toMatch(/Sent 1 cUSDC to bob\. Transfer confirmed \(mock\)/);
+    expect(sep.status).toBe(0);
+
+    // In a terminal without --yes, Mainnet asks to retype the amount.
+    const screens = runTui(
+      home,
+      [
+        { expect: 'Enter wallet password', timeout: 20 },
+        { keys: `${PASSWORD}\r` },
+        { expect: 'Confirm transaction', timeout: 30 },
+        { keys: 'y\r' },
+        { expect: 'Type the amount again' },
+        { keys: '2\r' },
+        { expect: "Nothing was sent: that doesn't match 1 cUSDC", timeout: 10 },
+        { exit: 1, timeout: 15 },
+      ],
+      {},
+      ['send', 'bob', '1', 'cusdc'],
+    );
+    expect(screens.join('\n')).not.toMatch(/Transfer confirmed/);
   });
 
   it('stops on a look-alike of a contact', () => {

@@ -57,6 +57,24 @@ interface SendOptions {
   contact?: string;
   passwordStdin?: boolean;
   yes?: boolean;
+  mainnet?: boolean;
+}
+
+/**
+ * Mainnet guard for `fhew send`. When nobody will be asked to confirm (`--yes`, or no
+ * terminal), a Mainnet send needs two explicit signs of intent on the command line:
+ * `-n mainnet` (so a configured default network can never pick Mainnet silently) and
+ * `--mainnet`. Returns the refusal to show, or null when the send may go on.
+ */
+export function mainnetGuardProblem(opts: {
+  network: NetworkName;
+  networkOption?: string;
+  mainnetFlag?: boolean;
+  willAsk: boolean;
+}): string | null {
+  if (opts.network !== 'mainnet' || opts.willAsk) return null;
+  if (opts.networkOption === 'mainnet' && opts.mainnetFlag) return null;
+  return 'Nothing was sent: this would move real funds on Mainnet without asking you. To allow it, pass both -n mainnet and --mainnet, or run the command in a terminal without --yes.';
 }
 
 function fail(message: string): void {
@@ -78,13 +96,29 @@ export function registerTransferCommand(program: Command): void {
     .option('-c, --contact <name>', 'Use address book contact as recipient')
     .option('--password-stdin', PASSWORD_STDIN_HELP)
     .option('-y, --yes', 'Send without asking for confirmation (the checks still run)')
-    .action(async (to?: string, amount?: string, tokenArg?: string, options: SendOptions = {}) => {
-      try {
-        await send(to, amount, tokenArg, options);
-      } catch (err) {
-        fail(describeError(err, 'Failed to send transaction'));
-      }
-    });
+    .option(
+      '--mainnet',
+      'Allow a Mainnet send without confirmation (with --yes or no terminal); needs -n mainnet too',
+    )
+    .action(
+      async (
+        to: string | undefined,
+        amount: string | undefined,
+        tokenArg: string | undefined,
+        options: SendOptions,
+        command: Command,
+      ) => {
+        try {
+          // The program also defines -n/--network and commander gives it the flag
+          // wherever it appears, so read the merged options: otherwise `fhew send … -n
+          // sepolia` would silently use the default network.
+          const network = (command.optsWithGlobals() as SendOptions).network;
+          await send(to, amount, tokenArg, { ...options, network });
+        } catch (err) {
+          fail(describeError(err, 'Failed to send transaction'));
+        }
+      },
+    );
 }
 
 async function send(
@@ -100,6 +134,16 @@ async function send(
     }
     network = options.network;
   }
+
+  // Refuse an unconfirmed Mainnet send before anything else (no password is read).
+  const willAsk = !options.yes && Boolean(process.stdin.isTTY);
+  const guard = mainnetGuardProblem({
+    network,
+    networkOption: options.network,
+    mainnetFlag: options.mainnet,
+    willAsk,
+  });
+  if (guard) return fail(guard);
 
   const backend: Backend = createBackend();
   const notReady = backend.readinessProblem(network);
@@ -287,6 +331,17 @@ async function send(
       console.log('Transaction cancelled');
       return;
     }
+    // Mainnet: retype the amount, as in the terminal UI, so a slip of the Enter key
+    // cannot move real funds.
+    if (network === 'mainnet') {
+      const shown = formatExactAmount(value, token.decimals);
+      const retyped = await prompts.input({
+        message: `Mainnet, real funds. Type the amount again to confirm (${shown}):`,
+      });
+      if (!retypeMatches(retyped, value, token.decimals)) {
+        return fail(`Nothing was sent: that doesn't match ${shown} ${token.symbol}.`);
+      }
+    }
   }
 
   console.log();
@@ -334,6 +389,12 @@ async function send(
   console.log(`  Transaction: ${result.txHash}`);
   console.log(`  Explorer:    ${backend.explorerTxUrl(result.txHash, network)}`);
   for (const line of describeBalanceCheck(result, token.symbol, token.decimals)) console.log(line);
+}
+
+/** True when `typed` is exactly the reviewed amount `value` (friendly forms allowed). */
+export function retypeMatches(typed: string, value: bigint, decimals: number): boolean {
+  const r = parseFriendlyAmount(typed, { decimals });
+  return r.ok && r.value === value;
 }
 
 /** Pick a contact or type an address; '' when cancelled. */

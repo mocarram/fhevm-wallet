@@ -3,6 +3,7 @@ import { homedir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createProgram } from '../../src/cli/index.js';
+import { mainnetGuardProblem, retypeMatches } from '../../src/cli/commands/transfer.js';
 import { addAddress } from '../../src/storage/AddressBook.js';
 import { saveConfig } from '../../src/storage/ConfigStore.js';
 import { wipeTestDataDir } from '../helpers/dataDir.js';
@@ -103,8 +104,25 @@ describe('send command early exits', () => {
 
   it('rejects mainnet send without ZAMA API key (FHE readiness)', async () => {
     saveConfig({ defaultNetwork: 'mainnet' });
-    const out = await runSend();
+    const out = await runSend('-n', 'mainnet', '--mainnet');
     expect(out).toMatch(/Zama API key/);
+  });
+
+  it('refuses an unconfirmed Mainnet send picked by the default network', async () => {
+    saveConfig({ defaultNetwork: 'mainnet' });
+    // No terminal in tests, so nobody would be asked: the guard runs first.
+    expect(await runSend('bob', '1', '--yes')).toMatch(/pass both -n mainnet and --mainnet/);
+    logSpy.mockRestore();
+    expect(await runSend('bob', '1', '-n', 'mainnet', '--yes')).toMatch(/--mainnet/);
+    logSpy.mockRestore();
+    expect(await runSend('bob', '1', '--mainnet', '--yes')).toMatch(/-n mainnet/);
+  });
+
+  it('honours -n after the command (regression: it was ignored for the default)', async () => {
+    saveConfig({ defaultNetwork: 'mainnet' });
+    const out = await runSend('bob', '1', '-n', 'sepolia', '--yes');
+    expect(out).not.toMatch(/Mainnet/);
+    expect(out).toMatch(/No tokens tracked on sepolia/);
   });
 
   it('uses contact lookup to resolve a recipient', async () => {
@@ -143,5 +161,30 @@ describe('send command early exits', () => {
     const out = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
     expect(out).toMatch(/Using contact: Alice/);
     promptSpies.forEach((spy) => spy.mockRestore());
+  });
+});
+
+describe('mainnetGuardProblem', () => {
+  const base = { network: 'mainnet' as const, willAsk: false };
+  it('refuses Mainnet without confirmation unless -n mainnet and --mainnet are both given', () => {
+    expect(mainnetGuardProblem(base)).toMatch(/Nothing was sent/);
+    expect(mainnetGuardProblem({ ...base, networkOption: 'mainnet' })).not.toBeNull();
+    expect(mainnetGuardProblem({ ...base, mainnetFlag: true })).not.toBeNull();
+    expect(
+      mainnetGuardProblem({ ...base, networkOption: 'mainnet', mainnetFlag: true }),
+    ).toBeNull();
+  });
+  it('leaves interactive Mainnet sends and Sepolia alone', () => {
+    expect(mainnetGuardProblem({ ...base, willAsk: true })).toBeNull();
+    expect(mainnetGuardProblem({ network: 'sepolia', willAsk: false })).toBeNull();
+  });
+});
+
+describe('retypeMatches', () => {
+  it('accepts the same amount in any friendly form and nothing else', () => {
+    expect(retypeMatches('25', 25_000_000n, 6)).toBe(true);
+    expect(retypeMatches('25.000000', 25_000_000n, 6)).toBe(true);
+    expect(retypeMatches('25.1', 25_000_000n, 6)).toBe(false);
+    expect(retypeMatches('', 25_000_000n, 6)).toBe(false);
   });
 });

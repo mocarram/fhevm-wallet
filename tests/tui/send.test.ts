@@ -95,7 +95,7 @@ describe('send wizard', () => {
     await h.settle();
     expect(h.text()).not.toMatch(/1 pending/);
     expect(h.text()).toMatch(/✔ Sent 25\.00 cUSDC to bob/);
-    expect(h.text()).toMatch(/Next time: fhew send bob 25 cusdc/);
+    expect(h.text()).toMatch(/Next time: fhew send bob 25 cusdc -n sepolia/);
     expect(h.text()).toMatch(/balance moved as expected/);
     expect(h.text()).toMatch(/cUSDC 1,225\.00/);
 
@@ -275,11 +275,11 @@ describe('send errors', () => {
 });
 
 describe('nextTimeCommand', () => {
-  it('uses the contact name and token symbol when they are unambiguous', () => {
+  it('uses the contact name and token symbol, and always names the network', () => {
     const h = new Harness();
     const t = h.s.data.tokens[0];
     expect(nextTimeCommand(h.s, t, { address: BOB, name: 'bob', isNew: false }, 25_000_000n)).toBe(
-      'fhew send bob 25 cusdc',
+      'fhew send bob 25 cusdc -n sepolia',
     );
     h.s.network = 'mainnet';
     expect(nextTimeCommand(h.s, t, { address: STRANGER, isNew: true }, 1_500_000n)).toBe(

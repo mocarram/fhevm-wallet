@@ -313,8 +313,8 @@ export function nextTimeCommand(s: AppState, t: TokenEntry, to: Recipient, value
   const who = to.name && !/\s/.test(to.name) ? to.name : to.address;
   const sameSymbol = s.data.tokens.filter((x) => x.symbol.toLowerCase() === t.symbol.toLowerCase());
   const tok = sameSymbol.length === 1 && !/\s/.test(t.symbol) ? t.symbol.toLowerCase() : t.address;
-  const net = s.network === 'mainnet' ? ' -n mainnet' : '';
-  return `fhew send ${who} ${formatTokenAmount(value, t.decimals, t.decimals)} ${tok}${net}`;
+  // Always name the network: the shell's default network may differ from the TUI's.
+  return `fhew send ${who} ${formatTokenAmount(value, t.decimals, t.decimals)} ${tok} -n ${s.network}`;
 }
 
 /**

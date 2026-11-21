@@ -120,13 +120,20 @@ fhew send 0x... 1,250.50 --token 0x...
 fhew send bob half cusdc
 
 # In scripts: the password from a pipe, no confirmation prompt (the checks still run)
-pass show my-wallet | fhew send bob 25 cusdc --password-stdin --yes
+pass show my-wallet | fhew send bob 25 cusdc -n sepolia --password-stdin --yes
 pass show my-wallet | fhew balance --password-stdin
+
+# Mainnet without a confirmation prompt needs both -n mainnet and --mainnet
+pass show my-wallet | fhew send bob 25 cusdc -n mainnet --mainnet --password-stdin --yes
 ```
 
 A pasted address that looks like one of your contacts stops the send. Without a
 terminal, prompts are never shown: pass the values as arguments, `--password-stdin` and
-`--yes`. Exporting a raw private key is interactive only.
+`--yes`. On Mainnet, a send that would skip the confirmation (`--yes`, or no terminal) is
+refused unless the command line itself says `-n mainnet` **and** `--mainnet`, so a
+default network set in the config can never send real funds unasked. In a terminal
+without `--yes`, a Mainnet send asks you to retype the amount, as the terminal UI does.
+Exporting a raw private key is interactive only.
 
 ### Configuration
 
