@@ -23,6 +23,11 @@ export type AuditEvent =
   | 'TOKEN_REMOVED'
   | 'OPERATOR_SET';
 
+/** Audit fields that only ever hold a network name, a transaction hash or an address. */
+const SAFE_FIELDS = new Set(['network', 'txHash', 'address', 'token', 'to', 'from', 'operator']);
+/** What those look like: `sepolia`, or 0x-hex. Anything else is redacted as usual. */
+const SAFE_VALUE_RE = /^(?:mainnet|sepolia|0x[0-9a-fA-F]{40}|0x[0-9a-fA-F]{64})$/;
+
 /**
  * Format details as key=value pairs
  */
@@ -31,7 +36,12 @@ function formatDetails(details: Record<string, string>): string {
   // the log, and drop line breaks and control characters so one value cannot forge an
   // extra log line or hide text with terminal escapes or bidi tricks.
   return Object.entries(details)
-    .map(([key, value]) => `${key}=${stripUnsafeChars(redactSecrets(value))}`)
+    .map(([key, value]) => {
+      // Fields the wallet fills with a network name, a hash or an address are kept as
+      // they are (when they look like one), so redaction cannot garble them.
+      const safe = SAFE_FIELDS.has(key) && SAFE_VALUE_RE.test(value);
+      return `${key}=${stripUnsafeChars(safe ? value : redactSecrets(value))}`;
+    })
     .join(' ');
 }
 

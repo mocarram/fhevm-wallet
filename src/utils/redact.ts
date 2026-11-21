@@ -31,11 +31,27 @@ const RPC_URL_ENV_VARS = ['MAINNET_RPC_URL', 'SEPOLIA_RPC_URL'];
 const MIN_PATH_SECRET = 8;
 /** Shortest query value or credential treated as a possible key. */
 const MIN_VALUE_SECRET = 6;
+/** Shortest unlabelled query value that may be a key when it mixes letters and digits. */
+const MIN_UNLABELLED_SECRET = 16;
+
+/** Query parameter names that hold keys (dRPC `dkey`, `apikey`, `token`, ...). */
+const KEY_PARAM_RE =
+  /^(?:api[_-]?key|d?key|token|access[_-]?token|secret|auth|password|pass|jwt|sig(?:nature)?|credential)s?$/i;
+
+/** Letters and digits mixed: how generated keys look, unlike `eth_sepolia` or `ogrpc`. */
+function looksGenerated(value: string): boolean {
+  return /[a-z]/i.test(value) && /\d/.test(value);
+}
 
 /**
- * The parts of the configured RPC URLs that could be a key: each path segment of at least
- * 8 characters, each query value and the user:password, as written and percent-decoded.
- * Longest first, so a fragment that contains another is masked whole.
+ * The parts of the configured RPC URLs that could be a key, as written and
+ * percent-decoded, longest first (so a fragment that contains another is masked whole):
+ * - path segments of 8+ characters that mix letters and digits (`/v3/<key>`, QuickNode
+ *   tokens), not words like `eth_sepolia` or `ogrpc`;
+ * - query values under key-like names (`dkey`, `apikey`, `token`, ...), and other values
+ *   of 16+ characters that mix letters and digits; `network=sepolia` and
+ *   `chainid=11155111` stay readable;
+ * - the fragment and user:password.
  */
 export function rpcUrlSecretFragments(env: NodeJS.ProcessEnv = process.env): string[] {
   const fragments = new Set<string>();
@@ -51,11 +67,16 @@ export function rpcUrlSecretFragments(env: NodeJS.ProcessEnv = process.env): str
     } catch {
       continue; // not a URL: step 1 still masks the value as a whole
     }
-    for (const segment of url.pathname.split('/')) add(segment, MIN_PATH_SECRET);
-    for (const [, v] of url.searchParams) add(v, MIN_VALUE_SECRET);
+    for (const segment of url.pathname.split('/')) {
+      if (looksGenerated(safeDecode(segment))) add(segment, MIN_PATH_SECRET);
+    }
     for (const part of url.search.slice(1).split('&')) {
-      const raw = part.slice(part.indexOf('=') + 1);
-      if (part.includes('=')) add(raw, MIN_VALUE_SECRET);
+      const eq = part.indexOf('=');
+      if (eq < 0) continue;
+      const key = safeDecode(part.slice(0, eq));
+      const raw = part.slice(eq + 1);
+      if (KEY_PARAM_RE.test(key)) add(raw, MIN_VALUE_SECRET);
+      else if (looksGenerated(safeDecode(raw))) add(raw, MIN_UNLABELLED_SECRET);
     }
     if (url.hash.length > 1) add(url.hash.slice(1), MIN_VALUE_SECRET);
     add(url.username, MIN_VALUE_SECRET);
@@ -88,8 +109,9 @@ export function redactSecrets(text: string): string {
   // 1b. Pieces of the configured RPC URLs, wherever they appear on their own. ethers
   // echoes the request path in `responseBody` and `requestUrl`, often without the host
   // (`internal error for /v2/<key>`), so masking the whole URL is not enough.
+  // Case-insensitive: providers sometimes echo a key upper- or lower-cased.
   for (const fragment of rpcUrlSecretFragments()) {
-    out = out.split(fragment).join(REDACTED);
+    out = out.replace(new RegExp(escapeRegExp(fragment), 'gi'), REDACTED);
   }
 
   // 2. Secret-looking query parameters: ?apikey=…, &token=…
@@ -130,6 +152,11 @@ export function maskUrl(url: string): string {
   } catch {
     return REDACTED;
   }
+  // The wallet's own block-explorer links carry a transaction hash, never a key, and
+  // the user needs them whole ("check <link> before sending again").
+  if (parsed.protocol === 'https:' && EXPLORER_HOSTS.has(parsed.host) && !parsed.username) {
+    return url;
+  }
   const hidden =
     (parsed.pathname !== '/' && parsed.pathname !== '') ||
     parsed.search !== '' ||
@@ -137,6 +164,39 @@ export function maskUrl(url: string): string {
     parsed.username !== '' ||
     parsed.password !== '';
   return `${parsed.protocol}//${parsed.host}${hidden ? '/…' : ''}`;
+}
+
+/** Hosts of the explorer links the wallet itself prints (see NetworkConfig). */
+const EXPLORER_HOSTS = new Set(['etherscan.io', 'sepolia.etherscan.io']);
+
+/**
+ * Extra masking for FHEW_DEBUG technical details, which carry the most raw text: on top
+ * of `redactSecrets`, the whole path of each configured RPC URL (even a short one) and
+ * the base64 form of its user:password, as sent in a Basic Authorization header.
+ */
+export function redactDebugText(text: string, env: NodeJS.ProcessEnv = process.env): string {
+  let out = redactSecrets(text);
+  for (const name of RPC_URL_ENV_VARS) {
+    const value = env[name];
+    if (!value) continue;
+    let url: URL;
+    try {
+      url = new URL(value.trim());
+    } catch {
+      continue;
+    }
+    const pieces: string[] = [];
+    if (url.pathname.length > 1) pieces.push(url.pathname + url.search);
+    if (url.pathname.length > 1) pieces.push(url.pathname);
+    if (url.username || url.password) {
+      const creds = `${safeDecode(url.username)}:${safeDecode(url.password)}`;
+      pieces.push(Buffer.from(creds).toString('base64'));
+    }
+    for (const piece of pieces) {
+      out = out.replace(new RegExp(escapeRegExp(piece), 'gi'), REDACTED);
+    }
+  }
+  return out;
 }
 
 /** Mask every http(s) URL inside `text` with `maskUrl`, for one-line user messages. */

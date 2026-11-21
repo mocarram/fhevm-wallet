@@ -74,4 +74,20 @@ describe('AuditLog', () => {
     logEvent('WALLET_CREATED', { name: 'a' });
     expect(statSync(join(DATA_DIR, 'audit.log')).mode & 0o777).toBe(0o600);
   });
+
+  it('keeps network names, hashes and addresses intact even when a key fragment matches', () => {
+    const addr = '0x000000000000000000000000000000000000dEaD';
+    const hash = `0x${'ab'.repeat(32)}`;
+    process.env.SEPOLIA_RPC_URL = 'https://rpc.example/v2/sepolia000dEaD9';
+    try {
+      logEvent('TRANSFER', { network: 'sepolia', to: addr, txHash: hash, note: 'sepolia000dEaD9' });
+      const line = getAuditLog().at(-1)!;
+      expect(line).toContain(`to=${addr}`);
+      expect(line).toContain(`txHash=${hash}`);
+      expect(line).toContain('network=sepolia');
+      expect(line).toContain('note=[redacted]');
+    } finally {
+      delete process.env.SEPOLIA_RPC_URL;
+    }
+  });
 });

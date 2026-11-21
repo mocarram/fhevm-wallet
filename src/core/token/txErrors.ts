@@ -8,7 +8,7 @@
  */
 
 import type { Interface } from 'ethers';
-import { maskUrlsInText, redactSecrets } from '../../utils/redact.js';
+import { maskUrlsInText, redactDebugText, redactSecrets } from '../../utils/redact.js';
 import { TimeoutError } from '../../utils/timeout.js';
 import { stripUnsafeChars } from '../../utils/text.js';
 
@@ -72,7 +72,7 @@ export class WalletTxError extends Error {
     this.likelyCause = cause;
     this.hint = hint;
     // Shown with FHEW_DEBUG=1: keys masked, URLs cut to scheme and host, no escapes.
-    this.raw = stripUnsafeChars(maskUrlsInText(redactSecrets(raw)));
+    this.raw = stripUnsafeChars(maskUrlsInText(redactDebugText(raw)));
     this.txHash = txHash;
     this.replacementHash = replacementHash;
   }

@@ -13,7 +13,7 @@ import {
   wantsErrorDetails,
   WalletTxError,
 } from '../../core/token/txErrors.js';
-import { maskUrlsInText, redactSecrets } from '../../utils/redact.js';
+import { maskUrlsInText, redactDebugText, redactSecrets } from '../../utils/redact.js';
 
 /**
  * Translations that read well in any context: the network or the relayer is the problem,
@@ -106,7 +106,10 @@ export function technicalDetails(err: unknown, max = 2000): string {
       raw = String(err);
     }
   }
-  return sanitizeContractText(maskUrlsInText(redactSecrets(raw)).replace(/\s*\n\s*/g, ' | '), max);
+  return sanitizeContractText(
+    maskUrlsInText(redactDebugText(raw)).replace(/\s*\n\s*/g, ' | '),
+    max,
+  );
 }
 
 /** What a prompt library throws when stdin is closed, not a TTY, or Ctrl+C was pressed. */
