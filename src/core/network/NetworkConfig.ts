@@ -24,8 +24,9 @@ export type NetworkName = 'mainnet' | 'sepolia';
  * Default RPC URLs used when no custom URL is configured.
  *
  * Sepolia (measured Nov 2026): publicnode answers address-filtered eth_getLogs over
- * 30,000+ blocks but keeps only about a week of logs ("pruned history unavailable") and
- * refuses topic-only queries; nodies keeps old logs but caps eth_getLogs at 50 blocks.
+ * 30,000+ blocks but keeps only recent logs, unevenly behind its load balancer ("pruned
+ * history unavailable" from 12,000-30,000 blocks back; 10,000 always fine) and refuses
+ * topic-only queries; nodies keeps old logs but caps eth_getLogs at 50 blocks.
  * drpc refuses Sepolia on its free plan (HTTP 400) and was dropped.
  *
  * Mainnet is not reachable from the environment this was tested in. publicnode comes

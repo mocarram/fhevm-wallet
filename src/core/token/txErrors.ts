@@ -239,7 +239,7 @@ function rpcReplyError(reply: RpcErrorReply, raw: string): WalletTxError {
     return new WalletTxError(
       'RPC_ERROR',
       'Your RPC endpoint does not keep blocks that old.',
-      'Public endpoints keep only recent history (about a week); older logs need an archive node.',
+      'Public endpoints keep only recent history (a day or so); older logs need an archive node.',
       'Set an Etherscan API key (fhevm-wallet config --etherscan-key -) or an archive RPC URL.',
       raw,
     );

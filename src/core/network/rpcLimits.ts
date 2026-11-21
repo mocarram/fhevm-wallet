@@ -3,7 +3,7 @@
  * limits, block-range caps on eth_getLogs, pruned history and plan restrictions.
  *
  * Public endpoints differ a lot (measured on Sepolia, Nov 2026):
- * - publicnode: `4444 "pruned history unavailable"` for logs older than about a week, and
+ * - publicnode: `4444 "pruned history unavailable"` for older logs (unevenly: from about 12,000 blocks back in Nov 2026), and
  *   `-32701 "Please specify an address in your request…"` for topic-only log queries;
  * - nodies: `-32001 "Block range too large: maximum allowed is 50 blocks on your current
  *   plan…"`;

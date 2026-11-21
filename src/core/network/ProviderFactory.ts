@@ -133,6 +133,14 @@ export class FailoverJsonRpcProvider extends JsonRpcProvider {
   #index = 0;
   readonly #verified = new Set<number>();
   readonly #wrongChain = new Map<number, WrongChainError>();
+  /**
+   * eth_getLogs requests some endpoint refused as "pruned history", counted for the
+   * process, with the newest `fromBlock` refused that way. The history sync reads them to
+   * move its start forward instead of walking old blocks through a 50-block-capped
+   * fallback (`historySync.ts`).
+   */
+  prunedLogRefusals = 0;
+  newestPrunedFrom: number | null = null;
 
   constructor(urls: string[], network: Network, timeoutMs = RPC_TIMEOUT_MS) {
     if (urls.length === 0) throw new Error('At least one RPC URL is required');
@@ -202,7 +210,9 @@ export class FailoverJsonRpcProvider extends JsonRpcProvider {
         // in .env is caught before any balance read or send.
         await this.#ensureChain(index);
         const results = await this.#post(index, payload);
-        const limit = canFailOver ? limitIn(results) : null;
+        const seen = limitIn(results);
+        if (seen === 'pruned') this.#notePruned(payload);
+        const limit = canFailOver ? seen : null;
         if (!limit) {
           // Stay with the endpoint that answered, unless this request only went elsewhere
           // because of its own size or age (see `sticky`).
@@ -226,6 +236,19 @@ export class FailoverJsonRpcProvider extends JsonRpcProvider {
     }
     if (best?.results) return best.results;
     throw best?.error;
+  }
+
+  /** Remember an eth_getLogs refused as pruned (see `prunedLogRefusals`). */
+  #notePruned(payload: JsonRpcPayload | JsonRpcPayload[]): void {
+    for (const p of Array.isArray(payload) ? payload : [payload]) {
+      if (p.method !== 'eth_getLogs') continue;
+      const from = (p.params as Array<{ fromBlock?: unknown }> | undefined)?.[0]?.fromBlock;
+      this.prunedLogRefusals++;
+      if (typeof from === 'string' && /^0x[0-9a-f]+$/i.test(from)) {
+        const n = Number(BigInt(from));
+        this.newestPrunedFrom = Math.max(this.newestPrunedFrom ?? 0, n);
+      }
+    }
   }
 
   async #ensureChain(index: number): Promise<void> {

@@ -9,11 +9,14 @@
  * Two ways to read the chain:
  *
  * - **RPC** (`eth_getLogs`, no key): adaptive chunks (`walkBlockRange`), cursor saved
- *   after every chunk. Public endpoints keep only about a week of logs (publicnode:
- *   "pruned history unavailable") or cap a request at 50 blocks (nodies), so a first
- *   sync on the built-in endpoints covers only the last `PUBLIC_HISTORY_WINDOW` blocks
- *   and says so. A custom RPC URL starts at `SCAN_START_BLOCK`. A request budget stops a
- *   sync that would otherwise send thousands of requests; the next sync continues.
+ *   after every chunk. Tokens with the same cursor are read together (one request per
+ *   direction with an address list). Public endpoints keep only recent logs (publicnode
+ *   answers "pruned history unavailable", unevenly behind its load balancer) or cap a
+ *   request at 50 blocks (nodies), so a first sync on the built-in endpoints covers only
+ *   the last `PUBLIC_HISTORY_WINDOW` blocks and says so; a "pruned" start moves forward
+ *   (halving the distance to the head, remembered for the process) instead of walking
+ *   old blocks 50 at a time. A custom RPC URL starts at `SCAN_START_BLOCK`. A request
+ *   budget stops a sync that would otherwise send thousands of requests.
  * - **Etherscan** (fast, needs a key): full history, paged (1,000 rows per reply). Its
  *   index lags the chain head, so the cursor stops `ETHERSCAN_LAG_BLOCKS` behind the head
  *   and the next sync reads those blocks again (entries are upserted by hash + log index,
@@ -48,11 +51,12 @@ import {
 export type SyncMethod = 'etherscan' | 'rpc';
 
 /**
- * Blocks a first RPC sync covers on the built-in public endpoints: about 5.5 days on
- * Sepolia. publicnode answered 30,000-block log queries but no longer had logs about
- * 50,000 blocks back when measured (Nov 2026).
+ * Blocks a first RPC sync covers on the built-in public endpoints: about 33 hours on
+ * Sepolia, one request per direction. A live run (Nov 2026) found publicnode pruning
+ * unevenly: 30k and 20k blocks back "pruned", 18k and 15k fine, 12.5k refused once,
+ * 10k and less always fine.
  */
-export const PUBLIC_HISTORY_WINDOW = 40_000;
+export const PUBLIC_HISTORY_WINDOW = 10_000;
 
 /** Requests one RPC sync may send before it stops and leaves the rest for next time. */
 export const HISTORY_REQUEST_BUDGET = 1_000;
@@ -190,7 +194,7 @@ function rpcStart(
   cursor: SyncCursor | null,
   floor: number,
   head: number,
-  publicRpc: boolean,
+  window: number | null,
 ): { start: number; firstBlock: number } {
   if (cursor) {
     return {
@@ -198,8 +202,35 @@ function rpcStart(
       start: Math.max(cursor.firstBlock, cursor.lastBlock + 1 - RPC_RESCAN_BLOCKS),
     };
   }
-  const first = publicRpc ? Math.max(floor, head - PUBLIC_HISTORY_WINDOW + 1) : floor;
+  const first = window !== null ? Math.max(floor, head - window + 1) : floor;
   return { start: first, firstBlock: first };
+}
+
+/**
+ * Below this many blocks from the head, a "pruned" start is not moved forward again: the
+ * rest is walked normally (on a 50-block fallback that is a handful of requests).
+ */
+const MIN_PRUNED_SKIP = 500;
+
+/**
+ * Per first endpoint, for the process: how far back (blocks from the head) its logs
+ * were found after a "pruned" refusal. Later first syncs start inside it right away.
+ */
+const prunedReach = new Map<string, number>();
+
+/** Forget learnt prune limits (tests). */
+export function resetPrunedReach(): void {
+  prunedReach.clear();
+}
+
+/** The chunk was refused as pruned history: the walk moves its start forward. */
+class PrunedStart extends Error {}
+
+/** Tokens synced together: equal cursors, so one eth_getLogs with an address list serves all. */
+interface RpcGroup {
+  tokens: TokenEntry[];
+  start: number;
+  firstBlock: number;
 }
 
 /** The RPC sync. See the module comment. */
@@ -214,63 +245,124 @@ async function syncViaRpc(
   const me = addressTopic(wallet);
   const floor = SCAN_START_BLOCK[network];
   const publicRpc = usesPublicRpc(network);
-  // Shared by every token: a 50-block cap learned on the first is used for the rest.
+  const endpoint = provider.urls[0];
+  const window = publicRpc
+    ? Math.min(PUBLIC_HISTORY_WINDOW, prunedReach.get(endpoint) ?? PUBLIC_HISTORY_WINDOW)
+    : null;
+  // Shared by every walk: a 50-block cap learned on the first is used for the rest.
   const chunk: ChunkState = newChunkState();
   const budget: RequestBudget = { left: opts.maxRequests ?? HISTORY_REQUEST_BUDGET };
   let added = 0;
   let limitedFrom: number | null = null;
   let stoppedAt: number | null = null;
 
+  // Group tokens whose cursors give the same range (all of them on a first sync).
+  const groups: RpcGroup[] = [];
   for (const token of tokens) {
-    const cursor = getSyncCursor(wallet, network, token.address);
-    const { start, firstBlock } = rpcStart(cursor, floor, head, publicRpc);
-    if (firstBlock > floor) limitedFrom = Math.max(limitedFrom ?? 0, firstBlock);
-    const walk = await walkBlockRange({
-      from: start,
-      to: head,
-      chunk,
-      cost: 2,
-      budget,
-      signal: opts.signal,
-      sleep: opts.sleep,
-      fetchChunk: async (fromBlock, toBlock) => {
-        const base = { address: token.address, fromBlock, toBlock };
-        const [outgoing, incoming] = await Promise.all([
-          provider.getLogs({ ...base, topics: [CONFIDENTIAL_TRANSFER_TOPIC0, me, null] }),
-          provider.getLogs({ ...base, topics: [CONFIDENTIAL_TRANSFER_TOPIC0, null, me] }),
-        ]);
-        const logs = [...outgoing, ...incoming];
-        const blocks = [...new Set(logs.map((l) => l.blockNumber))];
-        budget.left -= blocks.length;
-        const times = new Map<number, number>();
-        await Promise.all(
-          blocks.map(async (n) => {
-            const block = await provider.getBlock(n);
-            if (block) times.set(n, block.timestamp);
-          }),
+    const range = rpcStart(getSyncCursor(wallet, network, token.address), floor, head, window);
+    const g = groups.find((x) => x.start === range.start && x.firstBlock === range.firstBlock);
+    if (g) g.tokens.push(token);
+    else groups.push({ tokens: [token], ...range });
+  }
+
+  for (const group of groups) {
+    const symbols = new Map(group.tokens.map((t) => [t.address.toLowerCase(), t.symbol]));
+    const addresses = group.tokens.map((t) => t.address);
+    let { start, firstBlock } = group;
+    for (;;) {
+      if (firstBlock > floor) limitedFrom = Math.max(limitedFrom ?? 0, firstBlock);
+      // Only while nothing of this walk is stored yet may its start move.
+      const movable = publicRpc && head - start + 1 > MIN_PRUNED_SKIP;
+      let skipTo: number | null = null;
+      const walk = await walkBlockRange({
+        from: start,
+        to: head,
+        chunk,
+        cost: 2,
+        budget,
+        signal: opts.signal,
+        sleep: opts.sleep,
+        fetchChunk: async (fromBlock, toBlock) => {
+          const base = {
+            address: addresses.length === 1 ? addresses[0] : addresses,
+            fromBlock,
+            toBlock,
+          };
+          const refusedBefore = provider.prunedLogRefusals;
+          let logs;
+          try {
+            const [outgoing, incoming] = await Promise.all([
+              provider.getLogs({ ...base, topics: [CONFIDENTIAL_TRANSFER_TOPIC0, me, null] }),
+              provider.getLogs({ ...base, topics: [CONFIDENTIAL_TRANSFER_TOPIC0, null, me] }),
+            ]);
+            logs = [...outgoing, ...incoming];
+          } catch (err) {
+            // An endpoint said "pruned" for this chunk (a fallback then refused its range,
+            // or there is none): the logs are not this old there. Start later instead of
+            // creeping through old blocks 50 at a time on a capped fallback.
+            if (movable && fromBlock === start && provider.prunedLogRefusals > refusedBefore) {
+              // publicnode prunes unevenly behind a load balancer: halve the distance.
+              skipTo = Math.max(
+                (provider.newestPrunedFrom ?? fromBlock) + 1,
+                fromBlock + Math.ceil((head - fromBlock + 1) / 2),
+              );
+              throw new PrunedStart();
+            }
+            throw err;
+          }
+          const blocks = [...new Set(logs.map((l) => l.blockNumber))];
+          budget.left -= blocks.length;
+          const times = new Map<number, number>();
+          await Promise.all(
+            blocks.map(async (n) => {
+              const block = await provider.getBlock(n);
+              if (block) times.set(n, block.timestamp);
+            }),
+          );
+          const entries = dedupe(
+            logs.map((l) =>
+              transferEntry(
+                l,
+                l.blockNumber,
+                times.get(l.blockNumber) ?? 0,
+                symbols.get(l.address.toLowerCase()) ?? '',
+                network,
+              ),
+            ),
+          );
+          if (entries.length) added += upsertTransactions(entries);
+          // Saved after every chunk, for every token of the group: a sync that stops later
+          // resumes from here.
+          for (const t of group.tokens) {
+            saveSyncCursor(wallet, network, t.address, { firstBlock, lastBlock: toBlock });
+          }
+          opts.onProgress?.({
+            source: group.tokens.map((t) => t.symbol).join(', '),
+            block: toBlock,
+            head,
+          });
+        },
+      });
+      if (walk.stopped === 'error' && walk.error instanceof PrunedStart && skipTo !== null) {
+        start = Math.min(skipTo, head);
+        firstBlock = start;
+        prunedReach.set(
+          endpoint,
+          Math.min(prunedReach.get(endpoint) ?? Infinity, head - start + 1),
         );
-        const entries = dedupe(
-          logs.map((l) =>
-            transferEntry(l, l.blockNumber, times.get(l.blockNumber) ?? 0, token.symbol, network),
-          ),
-        );
-        if (entries.length) added += upsertTransactions(entries);
-        // Saved after every chunk: a sync that stops later resumes from here.
-        saveSyncCursor(wallet, network, token.address, { firstBlock, lastBlock: toBlock });
-        opts.onProgress?.({ source: token.symbol, block: toBlock, head });
-      },
-    });
-    if (walk.stopped === 'error') throw rpcHistoryError(walk.error);
-    if (walk.stopped) {
-      stoppedAt = walk.scannedTo;
+        continue;
+      }
+      if (walk.stopped === 'error') throw rpcHistoryError(walk.error);
+      if (walk.stopped) stoppedAt = walk.scannedTo;
       break;
     }
+    if (stoppedAt !== null) break;
   }
 
   const notes: string[] = [];
   if (limitedFrom !== null && publicRpc) {
     notes.push(
-      `History before block ${limitedFrom} was not searched: the public RPC endpoints keep only about a week of logs. Set an Etherscan API key (fhevm-wallet config --etherscan-key -) to get the full history.`,
+      `History before block ${limitedFrom} was not searched: the public RPC endpoints keep only recent logs (a few days or less). Set an Etherscan API key (fhevm-wallet config --etherscan-key -) to get the full history.`,
     );
   }
   if (stoppedAt !== null && !opts.signal?.aborted) {

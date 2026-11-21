@@ -15,7 +15,7 @@ vi.mock('../../../src/core/network/NetworkConfig.js', async (importOriginal) => 
   return { ...orig, getRpcUrls: () => net.urls, usesPublicRpc: () => net.publicRpc };
 });
 
-const { syncTransactions, PUBLIC_HISTORY_WINDOW, ETHERSCAN_LAG_BLOCKS } =
+const { syncTransactions, PUBLIC_HISTORY_WINDOW, ETHERSCAN_LAG_BLOCKS, resetPrunedReach } =
   await import('../../../src/core/token/historySync.js');
 const { SCAN_START_BLOCK, CONFIDENTIAL_TRANSFER_TOPIC0 } =
   await import('../../../src/core/token/tokenScan.js');
@@ -69,6 +69,7 @@ beforeEach(() => {
   wipeTestDataDir();
   clearProviderCache();
   resetRefusedEndpoints();
+  resetPrunedReach();
   net.publicRpc = false;
   delete process.env.ETHERSCAN_API_KEY;
 });
@@ -103,7 +104,7 @@ describe('RPC history sync', () => {
     expect(listTransactions({ walletAddress: WALLET, network: 'sepolia' })).toHaveLength(2);
   });
 
-  it('fails over when the first endpoint has pruned the blocks (H1, M3)', async () => {
+  it('a first sync on public endpoints covers a recent window, and says so (H1, M3)', async () => {
     net.publicRpc = true;
     const head = FLOOR + 100_000;
     const windowStart = head - PUBLIC_HISTORY_WINDOW + 1;
@@ -114,9 +115,60 @@ describe('RPC history sync', () => {
     const r = await syncTransactions(WALLET, 'sepolia', [token(A, 'cA')], 'rpc');
     expect(r.added).toBe(1);
     expect(r.complete).toBe(true);
-    // A first sync on public endpoints covers a recent window, and says so.
-    expect(Math.min(...archive.ranges.map(([f]) => f))).toBe(windowStart);
+    expect(Math.min(...pruned.ranges.map(([f]) => f))).toBe(windowStart);
+    expect(archive.ranges).toEqual([]);
     expect(r.notice).toMatch(/History before block \d+ was not searched.*Etherscan API key/);
+    expect(r.notice).not.toMatch(/about a week/);
+  });
+
+  it('moves a pruned start forward instead of crawling a 50-block fallback (L1)', async () => {
+    net.publicRpc = true;
+    const head = FLOOR + 100_000;
+    // Prunes sooner than the window; the fallback keeps everything, 50 blocks a request.
+    const recent = transfer(A, head - 3_000, false);
+    const old = transfer(B, head - 9_000, true);
+    const pruned = await node({ head, prunedBelow: head - 6_000, logs: [recent, old] });
+    const capped = await node({ head, maxRange: 50, logs: [recent, old] });
+    net.urls = [pruned.url, capped.url];
+    const tokens = [token(A, 'cA'), token(B, 'cB'), token(OTHER, 'cC'), token(WALLET, 'cD')];
+    const r = await syncTransactions(WALLET, 'sepolia', tokens, 'rpc', { sleep: noSleep });
+    expect(r.complete).toBe(true);
+    expect(r.added).toBe(1); // the recent one; the old one is beyond what was searched
+    // All four tokens in one request per direction, a few tries to find the window.
+    const total = pruned.ranges.length + capped.ranges.length;
+    expect(total).toBeLessThanOrEqual(12);
+    expect(capped.ranges.length).toBeLessThanOrEqual(4);
+    expect(r.notice).toMatch(/History before block (\d+) was not searched/);
+    const from = Number(/before block (\d+)/.exec(r.notice!)![1]);
+    expect(from).toBeGreaterThanOrEqual(head - 6_000);
+    for (const t of tokens) {
+      expect(getSyncCursor(WALLET, 'sepolia', t.address)).toEqual({
+        firstBlock: from,
+        lastBlock: head,
+      });
+    }
+    // The limit is remembered: a token added later starts inside it at once.
+    pruned.ranges.length = 0;
+    capped.ranges.length = 0;
+    await syncTransactions(WALLET, 'sepolia', [token(id('x').slice(0, 42), 'cE')], 'rpc');
+    expect(capped.ranges).toEqual([]);
+    expect(Math.min(...pruned.ranges.map(([f]) => f))).toBe(from);
+  });
+
+  it('keeps per-token cursors when tokens with different cursors are synced (L1)', async () => {
+    const head = FLOOR + 999;
+    const rpc = await node({
+      head,
+      logs: [transfer(A, FLOOR + 900, false), transfer(B, FLOOR + 10, true)],
+    });
+    net.urls = [rpc.url];
+    await syncTransactions(WALLET, 'sepolia', [token(A, 'cA')], 'rpc');
+    expect(getSyncCursor(WALLET, 'sepolia', A)?.lastBlock).toBe(head);
+    const r = await syncTransactions(WALLET, 'sepolia', [token(A, 'cA'), token(B, 'cB')], 'rpc');
+    expect(r.added).toBe(1); // B's old transfer: B started from the floor, A from its cursor
+    const rows = listTransactions({ walletAddress: WALLET, network: 'sepolia' });
+    expect(rows.map((t) => t.tokenSymbol).sort()).toEqual(['cA', 'cB']);
+    expect(getSyncCursor(WALLET, 'sepolia', B)).toEqual({ firstBlock: FLOOR, lastBlock: head });
   });
 
   it('stops at the request budget and the next sync resumes from the cursor', async () => {
