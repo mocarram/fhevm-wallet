@@ -142,6 +142,29 @@ function bestEffort(fn: () => void): void {
   }
 }
 
+/**
+ * The fee fields to sign with: exactly the ones the reviewed fee (`gasLimit ×
+ * maxFeePerGas`, or `gasPrice` on a legacy chain) was computed from. Left to ethers,
+ * populateTransaction would fetch fee data again at signing time and could sign a higher
+ * maximum than the user confirmed.
+ */
+export function pinnedFees(feeData: {
+  maxFeePerGas: bigint | null;
+  maxPriorityFeePerGas: bigint | null;
+  gasPrice: bigint | null;
+}): Pick<TransactionRequest, 'maxFeePerGas' | 'maxPriorityFeePerGas' | 'gasPrice' | 'type'> {
+  if (feeData.maxFeePerGas != null) {
+    const priority = feeData.maxPriorityFeePerGas ?? feeData.maxFeePerGas;
+    return {
+      type: 2,
+      maxFeePerGas: feeData.maxFeePerGas,
+      // The tip can never exceed the cap.
+      maxPriorityFeePerGas: priority > feeData.maxFeePerGas ? feeData.maxFeePerGas : priority,
+    };
+  }
+  return feeData.gasPrice != null ? { type: 0, gasPrice: feeData.gasPrice } : {};
+}
+
 /** Options for `signAndBroadcast`. */
 interface SignAndBroadcastOptions {
   /** Wallet already connected to `provider`; it fills in nonce, fees and chain id. */
@@ -720,7 +743,8 @@ export async function prepareConfidentialTransfer(
       const result = await signAndBroadcast({
         signer: connectedWallet,
         provider,
-        build: () => transfer.populateTransaction(...args, { gasLimit }),
+        // The fee fields the review showed, so the signed fee can never exceed it.
+        build: () => transfer.populateTransaction(...args, { gasLimit, ...pinnedFees(feeData) }),
         network,
         action: 'send',
         // Signed is not sent: TRANSFER_SIGNED without TRANSFER_BROADCAST means the
@@ -918,7 +942,7 @@ async function prepareTokenCall(
       const result = await signAndBroadcast({
         signer: connectedWallet,
         provider,
-        build: () => fn.populateTransaction(...spec.args, { gasLimit }),
+        build: () => fn.populateTransaction(...spec.args, { gasLimit, ...pinnedFees(feeData) }),
         network,
         action: spec.action,
         onSigned: (txHash) => {

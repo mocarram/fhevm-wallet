@@ -276,12 +276,12 @@ describe('TokenService.confidentialTransfer', () => {
       '0xhandle',
       '0xproof',
     );
-    // 100k estimate + 20% buffer, on the standard function
+    // 100k estimate + 20% buffer, on the standard function, with the reviewed fee (M7)
     expect(contractStubs.confidentialTransfer.populateTransaction).toHaveBeenCalledWith(
       RECIPIENT,
       '0xhandle',
       '0xproof',
-      { gasLimit: 120_000n },
+      { gasLimit: 120_000n, type: 2, maxFeePerGas: 10n, maxPriorityFeePerGas: 10n },
     );
     expect(fakeProvider.broadcastTransaction).toHaveBeenCalledWith(SIGNED);
   });
@@ -751,7 +751,7 @@ describe('TokenService operators', () => {
     expect(contractStubs.setOperator.populateTransaction).toHaveBeenCalledWith(
       RECIPIENT,
       1_900_000_000,
-      { gasLimit: 60_000n },
+      { gasLimit: 60_000n, type: 2, maxFeePerGas: 10n, maxPriorityFeePerGas: 10n },
     );
     expect(fakeProvider.broadcastTransaction).toHaveBeenCalledWith(SIGNED);
   });
@@ -813,6 +813,26 @@ describe('TokenService.getTxExplorerUrl', () => {
     const { getTxExplorerUrl } = await import('../../../src/core/token/TokenService.js');
     expect(getTxExplorerUrl('0xabc', 'sepolia')).toBe('https://sepolia.etherscan.io/tx/0xabc');
     expect(getTxExplorerUrl('0xabc', 'mainnet')).toBe('https://etherscan.io/tx/0xabc');
+  });
+});
+
+describe('TokenService.pinnedFees', () => {
+  it('signs with the fee fields the review used, tip never above the cap', async () => {
+    const { pinnedFees } = await import('../../../src/core/token/TokenService.js');
+    expect(pinnedFees({ maxFeePerGas: 30n, maxPriorityFeePerGas: 2n, gasPrice: 20n })).toEqual({
+      type: 2,
+      maxFeePerGas: 30n,
+      maxPriorityFeePerGas: 2n,
+    });
+    expect(pinnedFees({ maxFeePerGas: 3n, maxPriorityFeePerGas: 5n, gasPrice: null })).toEqual({
+      type: 2,
+      maxFeePerGas: 3n,
+      maxPriorityFeePerGas: 3n,
+    });
+    expect(pinnedFees({ maxFeePerGas: null, maxPriorityFeePerGas: null, gasPrice: 7n })).toEqual({
+      type: 0,
+      gasPrice: 7n,
+    });
   });
 });
 
