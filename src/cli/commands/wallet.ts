@@ -340,10 +340,18 @@ export function registerWalletCommands(program: Command): void {
       console.log(warning('Never share it with anyone or enter it on untrusted websites.'));
       console.log();
 
-      const confirm = await prompts.confirm({
-        message: 'Do you understand the risks and want to continue?',
-        default: false,
-      });
+      let confirm: boolean;
+      try {
+        confirm = await prompts.confirm({
+          message: 'Do you understand the risks and want to continue?',
+          default: false,
+        });
+      } catch (err) {
+        // No terminal (or Ctrl+C): one "✗" line like every other refusal, never "Error:".
+        process.exitCode = 1;
+        console.log(error(describeError(err, 'Cancelled')));
+        return;
+      }
 
       if (!confirm) {
         console.log('Cancelled');

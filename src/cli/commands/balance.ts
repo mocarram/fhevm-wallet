@@ -3,7 +3,8 @@
  */
 
 import { Command } from 'commander';
-import { prompts, SECRET_MASK } from '../utils/prompts.js';
+import { PASSWORD_STDIN_HELP, walletPassword } from '../utils/passwordInput.js';
+import { prompts } from '../utils/prompts.js';
 import ora from 'ora';
 import chalk from 'chalk';
 import { loadWallet, listWallets, hasWallet } from '../../core/wallet/index.js';
@@ -33,8 +34,15 @@ export function registerBalanceCommand(program: Command): void {
     .option('-t, --token <address>', 'Specific token address')
     .option('-n, --network <network>', 'Network (sepolia or mainnet)')
     .option('-r, --refresh', 'Force refresh balances (bypass cache)')
+    .option('--password-stdin', PASSWORD_STDIN_HELP)
     .action(
-      async (options: { wallet?: string; token?: string; network?: string; refresh?: boolean }) => {
+      async (options: {
+        wallet?: string;
+        token?: string;
+        network?: string;
+        refresh?: boolean;
+        passwordStdin?: boolean;
+      }) => {
         try {
           // Determine network
           let network: NetworkName = getDefaultNetwork();
@@ -85,10 +93,7 @@ export function registerBalanceCommand(program: Command): void {
           }
 
           // Get password
-          const password = await prompts.password({
-            message: 'Enter wallet password:',
-            mask: SECRET_MASK,
-          });
+          const password = await walletPassword(options.passwordStdin);
 
           // Load wallet
           const loadSpinner = ora('Decrypting wallet...').start();
@@ -165,8 +170,9 @@ export function registerBalanceCommand(program: Command): void {
 
           dynamicTable.stop();
 
-          // Show interactive menu after displaying balances
-          let continueLoop = true;
+          // Show interactive menu after displaying balances (not in scripts: stdin is
+          // the password pipe there, and nobody is there to answer).
+          let continueLoop = Boolean(process.stdin.isTTY) && !options.passwordStdin;
           while (continueLoop) {
             console.log('');
             const action = await prompts.select({
