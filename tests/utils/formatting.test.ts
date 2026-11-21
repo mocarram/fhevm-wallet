@@ -60,3 +60,25 @@ describe('formatTokenAmount / parseTokenAmount', () => {
     expect(() => parseTokenAmount('1.2.3', 6)).toThrow(/Invalid amount format/);
   });
 });
+
+describe('NO_COLOR', () => {
+  it('drops table colours and turns chalk off', async () => {
+    const { default: Table } = await import('cli-table3');
+    const { default: chalk } = await import('chalk');
+    const { applyNoColor, tableStyle } = await import('../../src/utils/formatting.js');
+    expect(tableStyle({})).toEqual({ head: ['cyan'], border: ['grey'] });
+    expect(tableStyle({ NO_COLOR: '' }).head).toEqual(['cyan']);
+    const t = new Table({ head: ['Symbol'], style: tableStyle({ NO_COLOR: '1' }) });
+    t.push(['cUSDC']);
+    // eslint-disable-next-line no-control-regex
+    expect(t.toString()).not.toMatch(/\x1b\[/);
+    const level = chalk.level;
+    try {
+      chalk.level = 1;
+      applyNoColor({ NO_COLOR: '1' });
+      expect(chalk.level).toBe(0);
+    } finally {
+      chalk.level = level;
+    }
+  });
+});

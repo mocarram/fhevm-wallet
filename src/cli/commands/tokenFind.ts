@@ -19,7 +19,7 @@ import {
 import { addTokenWithInfo } from '../../core/token/TokenRegistry.js';
 import { listWallets } from '../../core/wallet/index.js';
 import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.js';
-import { error, formatAddress, success, warning } from '../../utils/formatting.js';
+import { error, formatAddress, success, warning, tableStyle } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
 import { describeError } from '../utils/userError.js';
 import { failJson, printJson, printJsonError } from '../utils/json.js';
@@ -247,7 +247,7 @@ export function registerTokenFind(token: Command): void {
         } else {
           const table = new Table({
             head: ['Symbol', 'Name', 'Address', 'Source', 'Status'],
-            style: { head: ['cyan'] },
+            style: tableStyle(),
           });
           for (const c of result.candidates) {
             table.push([

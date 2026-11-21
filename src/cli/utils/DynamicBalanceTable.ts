@@ -5,7 +5,7 @@
 import logUpdate from 'log-update';
 import Table from 'cli-table3';
 import chalk from 'chalk';
-import { formatAddress } from '../../utils/formatting.js';
+import { formatAddress, tableStyle } from '../../utils/formatting.js';
 import { TokenEntry } from '../../core/token/TokenRegistry.js';
 
 // Spinner frames for animation
@@ -85,7 +85,7 @@ export class DynamicBalanceTable {
   private render(): void {
     const table = new Table({
       head: ['', 'Token', 'Balance', 'Address'],
-      style: { head: ['cyan'] },
+      style: tableStyle(),
       chars: {
         mid: '─',
         'left-mid': '├',

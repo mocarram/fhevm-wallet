@@ -27,6 +27,7 @@ import {
   error,
   warning,
   bold,
+  tableStyle,
 } from '../../utils/formatting.js';
 import {
   isValidWalletName,
@@ -247,7 +248,7 @@ export function registerWalletCommands(program: Command): void {
 
       const table = new Table({
         head: ['Name', 'Address', 'Created', 'Default'],
-        style: { head: ['cyan'] },
+        style: tableStyle(),
       });
 
       for (const w of wallets) {

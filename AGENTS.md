@@ -266,6 +266,8 @@ Every unit of work goes through this loop until it comes out clean:
 - Never put a token address in `src/core/token/lists/*.json` that was not verified; record
   the source in `docs/token-lists.md`.
 - No emoji in menus (they break column alignment in many terminals).
+- Colour honours `NO_COLOR`: `applyNoColor` runs at startup and cli-table3 tables take
+  `style: tableStyle()` (`src/utils/formatting.ts`).
 
 ## Where the plan lives
 

@@ -12,7 +12,13 @@ import { listTokens, TokenEntry } from '../../core/token/TokenRegistry.js';
 import { syncTransactions } from '../../core/token/historySync.js';
 import { getDefaultNetwork } from '../../storage/ConfigStore.js';
 import { clearProviderForNetwork, clearProviderCache } from '../../core/network/ProviderFactory.js';
-import { formatAddress, formatNetworkName, error, bold } from '../../utils/formatting.js';
+import {
+  formatAddress,
+  formatNetworkName,
+  error,
+  bold,
+  tableStyle,
+} from '../../utils/formatting.js';
 import { isValidNetwork, isValidAddress } from '../../utils/validation.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getNameByAddress } from '../../storage/AddressBook.js';
@@ -256,7 +262,7 @@ function displayTransactionTable(
 
   const table = new Table({
     head: ['', 'Date', 'Token', 'To/From', 'Amount'],
-    style: { head: ['cyan'] },
+    style: tableStyle(),
     chars: {
       mid: '─',
       'left-mid': '├',

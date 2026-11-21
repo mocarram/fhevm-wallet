@@ -16,7 +16,7 @@ import { createBackend } from '../../core/backend/select.js';
 import { describeNonCompliant } from '../../core/token/erc7984Check.js';
 import { NetworkName } from '../../core/network/NetworkConfig.js';
 import { getDefaultNetwork } from '../../storage/ConfigStore.js';
-import { formatAddress, success, error, warning } from '../../utils/formatting.js';
+import { formatAddress, success, error, warning, tableStyle } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
 import { describeError } from '../utils/userError.js';
 import { printJson, printJsonError } from '../utils/json.js';
@@ -154,7 +154,7 @@ export function registerTokenCommands(program: Command): void {
 
       const table = new Table({
         head: ['Symbol', 'Name', 'Address', 'Network', 'Decimals'],
-        style: { head: ['cyan'] },
+        style: tableStyle(),
       });
 
       for (const t of tokens) {

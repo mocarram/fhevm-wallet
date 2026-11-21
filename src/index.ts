@@ -24,6 +24,10 @@ import {
   UntrustedDataDirError,
 } from './storage/paths.js';
 import { takeInvalidRpcSettings } from './core/network/NetworkConfig.js';
+import { applyNoColor } from './utils/formatting.js';
+
+// Tables and messages honour NO_COLOR (chalk itself does not read it).
+applyNoColor();
 
 // A mistyped FHEW_BACKEND (say `mocks`) must stop every command before it starts:
 // otherwise it would quietly run against the real network.

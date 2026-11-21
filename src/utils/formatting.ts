@@ -5,6 +5,28 @@
 import chalk from 'chalk';
 
 /**
+ * NO_COLOR (https://no-color.org): any non-empty value turns colour off. chalk's colour
+ * detection does not read it, so the CLI applies it once at startup (`applyNoColor`)
+ * and tables pass `tableStyle` to cli-table3, which colours borders and headings itself.
+ */
+export function noColorRequested(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.NO_COLOR !== undefined && env.NO_COLOR !== '';
+}
+
+/** Turn chalk off when NO_COLOR is set. */
+export function applyNoColor(env: NodeJS.ProcessEnv = process.env): void {
+  if (noColorRequested(env)) chalk.level = 0;
+}
+
+/** cli-table3 `style`: cyan headings and grey borders, or none with NO_COLOR. */
+export function tableStyle(env: NodeJS.ProcessEnv = process.env): {
+  head: string[];
+  border: string[];
+} {
+  return noColorRequested(env) ? { head: [], border: [] } : { head: ['cyan'], border: ['grey'] };
+}
+
+/**
  * Format network name for display (adds beta tag for mainnet)
  */
 export function formatNetworkName(network: string): string {
