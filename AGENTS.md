@@ -46,9 +46,11 @@ src/
   core/
     network/               RPC config, provider factory (timeouts, fallbacks), chain checks
     fhe/                   relayer SDK instance, encryption, decryption
-    token/                 ERC-7984 calls (TokenService), registry, balance cache
+    token/                 ERC-7984 calls (TokenService), registry, balance cache;
+                           wrapper.ts / wrapMath.ts / unwrapPending.ts: ERC-20 wrappers
     wallet/                keystore encryption and wallet loading
     backend/               Backend interface + RealBackend and offline MockBackend
+                           (wrap/unwrap: wrapTypes.ts, realWrap.ts, mockWrap.ts)
     send/                  friendly amounts, address checks, recipient/token resolution
   storage/                 JSON stores under the data dir (owner-only permissions)
   utils/                   validation, formatting, amount parsing
@@ -68,22 +70,50 @@ tests/e2e/                 end-to-end runs of dist/index.js in a throwaway HOME
   decrypted balance before sending and confirm it moved afterwards.
 - Encrypted inputs are bound to `(contract, sender)`. The sender must be `msg.sender`.
 
+### ERC-20 wrapper rules (Phase 5, OpenZeppelin `ERC7984ERC20Wrapper`)
+
+- A wrapper answers `underlying()` and `rate()`. `wrap(to, amount)` mints `amount / rate`
+  and **never reverts for a small amount: it mints 0**. Do all maths in
+  `src/core/token/wrapMath.ts` (bigint): refuse `wrapped == 0`, show `dust = amount %
+  rate`, send `wrap(self, wrapped × rate)` and approve exactly that, never unlimited.
+- Wrap amounts are typed in the ERC-20's units, unwrap amounts in the confidential
+  token's. An 18-decimal ERC-20 passes 2^64 base units at 18.4 tokens: the euint64 bound
+  applies to `wrapped`, not to the typed amount (`parseFriendlyAmount` `limit: null`).
+- Unwrap is `unwrap(from, to, handle, proof)` (burns *up to* the amount: check the
+  decrypted balance first) then `finalizeUnwrap(requestId, cleartext, proof)` with the
+  relayer's public decryption. Anyone may finalize; a finished request reverts
+  `InvalidUnwrapRequest` and `unwrapRequester(id)` is 0 (OZ 0.4+; 0.3.x has no getter).
+- Every unwrap is recorded in `unwraps.json` (`src/storage/UnwrapStore.ts`) when its
+  request is **signed**, and `reconcileUnwrap` (`src/core/token/unwrapPending.ts`) asks the
+  chain before any step is sent again. Never resend a request from a resume; never send a
+  finalize while ours may still land. The store holds amounts: owner-only, like
+  amount-cache.json, and a damaged file is never overwritten.
+- Re-read the wrapper (`Backend.wrapperInfo`) before signing; `wrappers.json` is a cache
+  for display only.
+- BAD_DATA from ethers is "no contract answer" only for "could not decode result data".
+  "missing response for request" is an RPC that dropped part of a JSON-RPC batch
+  (nodies drops batches above 10): treat it as a transport failure.
+
 ## Offline mock backend
 
 `FHEW_BACKEND=mock` swaps the chain + relayer for an in-memory simulation
 (`src/core/backend/MockBackend.ts`). Use it for e2e tests and demos. It must never be the
 default and must print a visible `MOCK` badge in the status bar. Knobs:
 `FHEW_MOCK_LATENCY_MS`, `FHEW_MOCK_CONFIRM_MS`, `FHEW_MOCK_ETH` and
-`FHEW_MOCK_FAIL=simulate|unconfirmed|reverted|replaced|rpc` (failures go through the real
-error translation). Keystores, contacts, tokens and settings always use the real storage,
+`FHEW_MOCK_FAIL=simulate|unconfirmed|reverted|replaced|rpc|public-pending` (failures go
+through the real error translation; `public-pending` keeps unwrap decryptions pending).
+Mock cUSDC wraps a 6-decimal USDC at rate 1 and mock cDAI an 18-decimal DAI at rate 1e12
+(`src/core/backend/mockWrap.ts`); unwrap requests from an earlier process are found
+through `unwraps.json`. Keystores, contacts, tokens and settings always use the real storage,
 so mock and real data never share a folder (`src/core/backend/mockGuard.ts`):
 `FHEW_BACKEND` and `FHEVM_WALLET_HOME` are taken from the launch environment, never a
 `.env`; the mock runs only in a folder marked `.fhew-mock`, which it creates only in a
 missing or empty folder other than `~/.fhevm-wallet`; every command refuses a marked
 folder without `FHEW_BACKEND=mock`; and under the mock only the commands in
 `MOCK_COMMANDS` run: the TUI, `send`, `wallet`, `token`, `doctor`, `receive`, `history`,
-`operator`, `disclose` and help (the rest, e.g. `balance` and `config`, would reach the
-real network; an unknown command is left to commander's "unknown command"). Use `FHEVM_WALLET_HOME=$(mktemp -d)`. The TUI shows
+`operator`, `disclose`, `wrap`, `unwrap` and help (the rest, e.g. `balance` and `config`,
+would reach the real network; an unknown command is left to commander's "unknown
+command"). Use `FHEVM_WALLET_HOME=$(mktemp -d)`. The TUI shows
 "MOCK · simulated, no real funds" right after the brand in the status bar.
 
 ## Terminal UI (src/tui)
@@ -97,7 +127,7 @@ tui/
   state.ts        AppState, router/back-stack (push, back, goHome), lock helpers
   screen.ts       ScreenDef / ScreenView / menu Item types, stable numbering
   screens/        one module per screen; registry.ts maps ids to modules
-  flows/          logic shared by screens (send, wallet, data, manage); no drawing
+  flows/          logic shared by screens (send, wallet, data, manage, wrap); no drawing
   components/     reusable menu and multi-select list (Space, a, Enter)
   effects.ts      Effect = described I/O, run by the shell with Deps (backend, …)
   errors.ts       describeError: the ONLY way a TUI error reaches the screen; wording
@@ -256,9 +286,12 @@ Every unit of work goes through this loop until it comes out clean:
 - Wrap every relayer SDK call in `quietSdk` (`src/core/fhe/sdkConsole.ts`): the SDK prints
   to the console (a deprecation notice among others), which would corrupt the TUI and
   `--json` output.
-- Transactions other than transfers (operators, disclosure) use `prepareTokenCall` in
-  `TokenService` (chain check, simulation, fee, ETH check, then `signAndBroadcast`) and,
-  in the TUI, `src/tui/flows/tx.ts` (review, confirm, countdown, background broadcast).
+- Transactions other than transfers (operators, disclosure, approve, wrap, unwrap) use
+  `prepareTokenCall` in `TokenService` (chain check, simulation, fee, ETH check, then
+  `signAndBroadcast`; pass `abi` for a contract other than ERC-7984) and, in the TUI,
+  `src/tui/flows/tx.ts` (review, confirm, countdown, background broadcast). A feature
+  with its own steps plugs in through `TxAction.custom` (prepare, send, done) instead of
+  growing `tx.ts` (see `src/tui/flows/wrap.ts`).
 - Disclosure step 1 refuses the wallet's current balance handle and any handle that is
   no transfer amount of the wallet in local history (the holder keeps ACL access to its
   earlier balance handles). Callers pass `{ vouched: true }` only for a handle taken from

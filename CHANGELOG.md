@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### New
+- Wrap / Unwrap for ERC-20 wrapper tokens (OpenZeppelin `ERC7984ERC20Wrapper`, e.g.
+  cZAMA ⇄ ZAMA on Sepolia): `fhew wrap <amount> [token]`, `fhew unwrap <amount> [token]`,
+  `fhew unwrap --list | --resume | --forget`, and in the terminal UI Balances/Tokens ›
+  Wrap or unwrap, Home › Finish unwrap, `:wrap` / `:unwrap`. Wrap amounts are in the
+  public token's units, unwrap amounts in the confidential token's.
+
+### Safety
+- A wrap that would mint 0 (smaller than one confidential unit, e.g. 1e8 base units of an
+  18-decimal token at rate 1e12) is refused before signing; the dust that cannot be
+  wrapped is shown and stays in the wallet.
+- Approvals are for exactly the amount wrapped, never unlimited.
+- Unwraps are recorded when signed and checked against the chain before any step is sent
+  again; a second unwrap of a token waits until an unconfirmed one is checked.
+- A JSON-RPC batch the RPC dropped ("missing response") is never read as "not a
+  wrapper".
+
+### Verified on Sepolia
+- Wrap ZAMA → cZAMA (approve + wrap), unwrap cZAMA → ZAMA end to end (request, public
+  decryption, finish), and `fhew unwrap --resume` after killing the process after step 1
+  and during step 2. See the transaction hashes in `docs/ROADMAP.md` Phase 5.
+
+
 Requires Node.js 24.11 or later.
 
 ### Fixed

@@ -237,37 +237,59 @@ Confidential Contracts 0.5.3 source (`token/ERC7984/extensions/ERC7984ERC20Wrapp
 
 ### Plan
 
-- [ ] Core: wrapper detection (`underlying()` + `rate()` answer) with the underlying's
+- [x] Core: wrapper detection (`underlying()` + `rate()` answer) with the underlying's
       name, symbol and decimals read and sanitised, cached in `wrappers.json`
-- [ ] Core: exact amount maths in bigint (`src/core/token/wrapMath.ts`): wrap input in
+- [x] Core: exact amount maths in bigint (`src/core/token/wrapMath.ts`): wrap input in
       underlying units, `wrapped = amount / rate`, `dust = amount % rate`; refuse
       `wrapped == 0` and `wrapped > 2^64−1`; warn on dust; unwrap input in confidential
       units, receive `amount × rate`
-- [ ] Wrap: ERC-20 balance and allowance check; approve **exactly** `wrapped × rate`
+- [x] Wrap: ERC-20 balance and allowance check; approve **exactly** `wrapped × rate`
       (never unlimited; reset to 0 first only when the token refuses a non-zero change);
       `wrap(self, wrapped × rate)` so the dust never leaves the wallet; both through
       `prepareTokenCall` / `signAndBroadcast`; re-decrypt the confidential balance after
-- [ ] Unwrap: decrypted balance check, encrypt for (wrapper, sender), `unwrap(self, self,
+- [x] Unwrap: decrypted balance check, encrypt for (wrapper, sender), `unwrap(self, self,
       handle, proof)`; read the request id from `UnwrapRequested`; public decryption through
       the relayer; `finalizeUnwrap`; ERC-20 balance re-read
-- [ ] Pending unwraps in `unwraps.json` (owner-only), saved when the request is signed;
+- [x] Pending unwraps in `unwraps.json` (owner-only), saved when the request is signed;
       resume reconciles with the chain first (receipt of our transactions,
       `unwrapRequester`) so no step is sent twice; a new unwrap of a token with an
       unconfirmed request is refused until that one is checked
-- [ ] CLI: `fhew wrap <amount> [token]`, `fhew unwrap <amount> [token]`,
+- [x] CLI: `fhew wrap <amount> [token]`, `fhew unwrap <amount> [token]`,
       `fhew unwrap --list`, `fhew unwrap --resume [id]`; `-n -w --yes --password-stdin
       --mainnet --json`; in `MOCK_COMMANDS`
-- [ ] MockBackend: deterministic wrappers (mock cUSDC wraps USDC at rate 1, mock cDAI wraps
+- [x] MockBackend: deterministic wrappers (mock cUSDC wraps USDC at rate 1, mock cDAI wraps
       an 18-decimal DAI at rate 1e12), approvals, unwrap requests that survive a restart
       through the pending store, `FHEW_MOCK_FAIL=public-pending`
-- [ ] TUI: Wrap / Unwrap from Balances and Tokens (wrapper tokens only), one screen with
+- [x] TUI: Wrap / Unwrap from Balances and Tokens (wrapper tokens only), one screen with
       both balances, the exact result and dust, then the shared Review → Confirm →
       countdown; pending unwraps on Home and Balances with "Finish unwrap"; `:wrap 25
-      cusdc`, `:unwrap 10 cusdc`; `?` help
-- [ ] Tests: maths (rounding, dust, zero, bounds), detection, approve plan, the pending
+      cusdc`, `:unwrap 10 cusdc`; `?` help (mock-tested, not run on Sepolia)
+- [x] Tests: maths (rounding, dust, zero, bounds), detection, approve plan, the pending
       state machine (no double send), MockBackend, TUI harness, pty e2e under the mock
-- [ ] Live on Sepolia (test wallet): wrap a minted ZAMA amount into cZAMA, unwrap cZAMA end
-      to end, the zero/dust refusals before signing; tx hashes in the PR
+- [x] Live on Sepolia (test wallet): wrap a minted ZAMA amount into cZAMA, unwrap cZAMA end
+      to end, the zero/dust refusals before signing (CLI; see below)
+
+
+### Live run on Sepolia (2026-11-21, CLI, test wallet 0x12ac…7a8f)
+
+| Step | Transaction | Gas | Result |
+| --- | --- | --- | --- |
+| mint 3 ZAMA (outside the wallet) | `0x103bd6d10c06b93cb4dafd0a11dd432fe0da32b39a39fe54adc9a5fc1b2d5f44` | 140k | 3 ZAMA |
+| `fhew wrap 0.0000001 czama` | none | – | refused: "That wraps to 0 cZAMA: the smallest amount is 0.000001 ZAMA." |
+| `fhew wrap 5 zama` | none | – | refused: "That's more than the 2 ZAMA in this wallet." |
+| `fhew wrap 1.0000005 czama`: approve exactly 1 ZAMA | `0x51eac7b4065c3ea3aa2c520f213944c7c0b051287b72a0aff17ed65fe08c269a` | 128k | mined; the wallet said SENT_UNCONFIRMED with the hash (default RPC nodies refuses `eth_getBlockByNumber` with full transactions during `wait()`, being fixed separately) |
+| rerun: wrap only (allowance found) | `0x3d42223f456d34ee632543c4d595b2da5d54210aabd823ad200fdb2589038bfd` | 807k | 1 cZAMA minted, 0.0000005 ZAMA stayed, allowance back to 0 |
+| `fhew unwrap 0.5 czama`: request | `0x54930773f32962fe8fd1ddededc9960d7512f731b0a30f58429430b9f1f7319d` | 1.18M | block 12183558 |
+| … finish (relayer public decryption, then `finalizeUnwrap`) | `0xaf4d6704e5f74b5932bfbb39fdb19a2a8124e79fa7c62339b736b5b2d5f86efe` | 385k | block 12183560; 0.5 ZAMA arrived; 59 s for the whole command |
+| `fhew wrap 0.5 zama --json`: approve + wrap | `0x17916ef4baffcc5aeb3aaa6b4cd1f9252355fa109d8d20055968335487777a7b`, `0xbcab30e5d52eadd63635c993a0f65c90dae0b5bbed4fff754d0d9fef0a33c936` | 128k + 807k | `balanceCheck: moved`, 97.5 → 98 cZAMA, 34 s |
+| `fhew unwrap 0.25 czama`, killed after step 1 | `0x89bc84dbcd00ff8c3f8f78ade8c7075fae0b2a8c32988e26b8262c1486156726` | 1.18M | stored as "step 1 done" |
+| `fhew unwrap --resume` | `0x53120d7f2fefc0a8af59c9f5095f46cfb5e1529d69d1053946b1f3b1d1d939c4` | 385k | finished in 25 s; a second resume sent nothing |
+| `fhew unwrap 0.1 czama`, killed while step 2 was waiting | `0x0f729afe300a6f1e40415fea8e05f573e28f84ea780c1dd01a6c76fedf84b8a1`, `0x89271b9639f6e41451eb858baba773ed89498488300a19d194d3253b182f94d5` | 1.18M + 385k | resume found the mined finish and did **not** send it again (no password asked) |
+
+Runs after the first used `SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com`.
+Not verified on-chain: the TUI flows (mock and pty only), Mainnet, the approve-reset path
+for a USDT-style token, the 0.3.x wrapper cUSDC `0xa8Ca…1c01` (no `unwrapRequester`), and
+a finish sent by another account.
 
 Acceptance: a wrap that would mint 0 is refused before anything is signed, with the
 smallest amount that works; dust is shown before confirming; approvals are exact; a

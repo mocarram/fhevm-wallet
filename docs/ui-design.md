@@ -109,7 +109,8 @@ A tracked token is a *wrapper* when it answers `underlying()` and `rate()` (Open
 `ERC7984ERC20Wrapper`). Balances shows a dim line under each wrapper row:
 `↳ wraps ZAMA · 12.5 ZAMA in this wallet (public)`. Balances and Tokens get
 `Wrap or unwrap` (key `w`), which opens the token picker (skipped when only one wrapper is
-tracked); non-wrapper tokens are listed dimmed as "not a wrapper".
+tracked); non-wrapper tokens are listed dimmed as "not a wrapper". The item is
+unnumbered, so the other items keep their numbers.
 
 Wrap screen (`Home › Balances › Wrap`), amounts typed in the **public** token's units:
 
@@ -127,7 +128,8 @@ Wrap screen (`Home › Balances › Wrap`), amounts typed in the **public** toke
   cZAMA: the smallest amount is 0.000001 ZAMA." / "Nothing was signed."
 - More than the public balance, or a result above 2^64−1 confidential units, is refused.
 - `max` and `half` use the public balance; their dust is shown the same way.
-- Unwrap is the same screen with the sides swapped (`u` / `w` switches): amounts in
+- Unwrap is the same screen with the sides swapped (`Tab`, or the "Unwrap … instead"
+  item, switches; letter keys type into the field): amounts in
   confidential units, "You get 10 ZAMA (public)"; it needs the decrypted balance (unlock
   first) because a burn above the balance burns 0.
 
@@ -165,8 +167,9 @@ finished"; step 2 sent but unconfirmed → its hash, "Not sent again"; decryptio
 → "Not decryptable yet, try again in a minute"; otherwise the Review for step 2 alone.
 
 Command bar: `wrap 25 cusdc` and `unwrap 10 cusdc` open the Wrap/Unwrap screen with the
-amount filled in; `wrap` / `unwrap` alone open the picker. `?` on these screens lists `w`,
-`u` and the units rule.
+amount filled in (a token not checked yet opens the picker, which goes on to it once
+checked); `wrap` / `unwrap` alone open the picker, or the only wrapper. `?` on these
+screens lists `Tab`, the units rule and the command; Home and Balances list `u` and `w`.
 
 CLI (same wording): `fhew wrap 25 czama`, `fhew unwrap 10 czama`, `fhew unwrap --list`,
 `fhew unwrap --resume [id]`.

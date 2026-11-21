@@ -15,6 +15,7 @@ A CLI wallet for managing encrypted ERC-7984 tokens using Zama's Fully Homomorph
 - **Decrypted History** - Transfer amounts you sent or received are decrypted once and cached
 - **Operators** - See, grant (with an expiry) and revoke ERC-7984 operators
 - **Disclosure** - Publish one transfer amount on-chain with its decryption proof
+- **Wrap / Unwrap** - Move value between a public ERC-20 and its confidential ERC-7984 wrapper (cZAMA ⇄ ZAMA), with the exact result and dust shown first
 - **Confidential Transfers** - Send tokens with end-to-end encryption
 - **Address Book** - Save frequently used addresses with friendly names
 - **Multi-Network Support** - Works on Ethereum Sepolia testnet and Mainnet
@@ -248,6 +249,37 @@ remembers where it stopped (per wallet and network) and can be stopped with Ctrl
 the terminal UI). The lists shipped with the wallet are empty for now: no official list of
 ERC-7984 token addresses could be verified (see [docs/token-lists.md](docs/token-lists.md)).
 
+### Wrap and Unwrap
+
+Most Sepolia confidential tokens (cZAMA, cUSDT, cUSDC, cWETH, …) are OpenZeppelin
+`ERC7984ERC20Wrapper` contracts backed by a public ERC-20. Wrapping turns ERC-20 into
+the confidential token; unwrapping turns it back.
+
+```bash
+fhew wrap 25 czama        # amount in the PUBLIC token (25 ZAMA); `zama` works too
+fhew wrap max czama       # your whole ZAMA balance; any dust stays in your wallet
+fhew unwrap 10 czama      # amount in the CONFIDENTIAL token (10 cZAMA)
+fhew unwrap --list        # unwraps that are not finished (--all: also finished ones)
+fhew unwrap --resume      # finish them (checks the chain first, never sends a step twice)
+fhew unwrap --forget <id> # drop a failed or dropped one from the list
+```
+
+The wrapper converts at a fixed rate (`10^(ERC-20 decimals − 6)`: 1e12 for 18-decimal
+ZAMA) and rounds down without failing, so a wrap smaller than one confidential unit would
+mint **0**. The wallet refuses that before anything is signed and names the smallest
+amount that works; any remainder below one unit is shown as "stays in your wallet" and is
+never sent. A wrap approves **exactly** the amount (never unlimited; a token that refuses
+changing a non-zero allowance is reset to 0 first), then wraps. The wrapped and unwrapped
+amounts are public on-chain; balances and transfers afterwards are private.
+
+An unwrap is two transactions: a request (burns the amount and makes it publicly
+decryptable) and, once Zama has decrypted it (usually within a minute), a finish that
+publishes the amount with its proof and sends the ERC-20. One confirmation covers both.
+If the finish cannot be sent right away, the unwrap is kept in `unwraps.json` and
+`fhew unwrap --resume` (or Home › Finish unwrap in the terminal UI) completes it later. In
+the terminal UI: Balances or Tokens › Wrap or unwrap (`w`), `Tab` switches direction,
+`:wrap 25 czama` and `:unwrap 10 czama` work from anywhere.
+
 ### Doctor, Receive
 
 ```bash
@@ -258,8 +290,8 @@ fhew receive           # address and QR code; --eip681 puts the network in the Q
 ### JSON output
 
 `fhew wallet list`, `token list`, `token find`, `balance`, `history` (also with
-`--decrypt`), `config --show`, `doctor`, `receive`, `send`, `operator list|set|revoke` and
-`disclose` accept `--json`: one JSON document on stdout, stable
+`--decrypt`), `config --show`, `doctor`, `receive`, `send`, `operator list|set|revoke`,
+`disclose`, `wrap` and `unwrap` accept `--json`: one JSON document on stdout, stable
 camelCase keys, amounts in base units as strings, no colours. Errors are
 `{"error": {"code": "...", "message": "..."}}` with exit code 1 (send errors after a
 broadcast also carry `txHash` and `explorerUrl`: check those before sending again). RPC URLs
@@ -268,7 +300,10 @@ needs `--password-stdin`, and `send` needs `--password-stdin`, `--yes`, a recipi
 amount. The same goes for `history --decrypt` (`--password-stdin`) and `operator set|revoke`
 and `disclose` (`--password-stdin` and `--yes`; their errors after a broadcast carry
 `txHash`, and a failed second disclosure step also `requestTxHash`). `disclose` reports
-`status` `disclosed`, `alreadyDisclosed` or `pending`.
+`status` `disclosed`, `alreadyDisclosed` or `pending`. `wrap` reports `status: wrapped`
+with `amount`, `wrapped`, `dust`, `approveTxHash` and `txHash`; `unwrap` reports `status`
+`finished` or `pending` (and `unwrap --resume` a `results` list), each with the
+request and finish hashes.
 
 Every result names its wallet the same way, `"wallet": {"name": "alice", "address":
 "0x…"}` (`name` is `null` for a plain `history --address`), and says `"mock": true` under
@@ -331,6 +366,8 @@ All data is stored in `~/.fhevm-wallet/` (set `FHEVM_WALLET_HOME` to use another
 ├── ui-prefs.json      # Terminal UI settings, last token/recipient/send, operator expiries
 ├── token-lists.json   # Downloaded token lists for "token find" (cache)
 ├── scan-state.json    # How far "token find" has scanned your history
+├── wrappers.json      # Which tracked tokens are ERC-20 wrappers (rate, underlying)
+├── unwraps.json       # Unwraps in progress, so they can be finished after a restart
 └── .fhew-mock         # Only in a folder used with FHEW_BACKEND=mock
 ```
 
