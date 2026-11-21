@@ -31,7 +31,7 @@ const PRUNED_RE =
 
 /** "This endpoint (or its free plan) will not serve this kind of request." */
 const RESTRICTED_RE =
-  /specify an address|dedicated (?:full )?node|not available on (?:the |your )?(?:free|current|public)|(?:free|current|paid) plan|upgrade (?:to|your)|method not (?:found|allowed|supported|available)|unsupported method|not whitelisted|unauthori[sz]ed|forbidden|invalid api key/i;
+  /batch (?:too large|size|limit)|specify an address|dedicated (?:full )?node|not available on (?:the |your )?(?:free|current|public)|(?:free|current|paid) plan|upgrade (?:to|your)|method not (?:found|allowed|supported|available)|unsupported method|not whitelisted|unauthori[sz]ed|forbidden|invalid api key/i;
 
 /** Why an endpoint refused a request without that being the final answer. */
 export type RpcLimitKind = 'range' | 'rate' | 'pruned' | 'restricted';

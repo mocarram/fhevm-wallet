@@ -13,12 +13,16 @@
  *    confidentialBalanceOf(address) returns exactly 32 bytes (an encrypted balance
  *    handle). An ERC-20, an account or another kind of contract fails this.
  *
- * A token is accepted when check 2 passes. A transport failure (RPC down, timeout, rate
- * limit) is never read as "not ERC-7984": it is thrown for the caller to translate.
+ * A token is accepted when it reports the ERC-7984 interface id and answers like a token
+ * (name, symbol, decimals), or when check 2 passes. The id is authoritative: it was
+ * confirmed on about 35 deployed Sepolia tokens (Nov 2026, see docs/token-lists.md).
+ * The behaviour probe stays as the fallback for tokens without ERC-165. A transport
+ * failure (RPC down, timeout, rate limit, a reply missing from a batch) is never read as
+ * "not ERC-7984": it is thrown for the caller to translate.
  */
 
 import { getAddress, id, Interface } from 'ethers';
-import { rpcErrorOf } from './txErrors.js';
+import { isNoContractAnswer, rpcErrorOf } from './txErrors.js';
 import { sanitizeTokenName, sanitizeTokenSymbol } from './tokenText.js';
 import type { TokenInfo } from './TokenService.js';
 
@@ -97,7 +101,7 @@ export interface TokenCheck {
 /** True for an error that means "the contract did not answer", not "the RPC failed". */
 function isContractNoAnswer(err: unknown): boolean {
   const code = (err as { code?: unknown })?.code;
-  if (code === 'BAD_DATA') return true;
+  if (code === 'BAD_DATA') return isNoContractAnswer(err);
   return code === 'CALL_EXCEPTION' && rpcErrorOf(err) === null;
 }
 
@@ -177,13 +181,26 @@ export async function checkErc7984(call: EthCall, address: string): Promise<Toke
       'It supports interface detection (ERC-165) but does not report the ERC-7984 interface. It may follow another version of the standard.',
     );
   }
+  // The interface id is authoritative: an odd confidentialBalanceOf answer is then only
+  // worth a warning.
+  const byInterface = erc165 === 'yes' && info !== null;
+  if (byInterface && !balanceHandle) {
+    problems.splice(
+      0,
+      problems.length,
+      ...problems.filter((p) => !/confidentialBalanceOf/.test(p)),
+    );
+    warnings.push(
+      'It reports the ERC-7984 interface, but its confidentialBalanceOf() answer looked unusual.',
+    );
+  }
 
   return {
     address: to,
     info,
     erc165,
     balanceHandle,
-    compliant: info !== null && balanceHandle,
+    compliant: byInterface || (info !== null && balanceHandle),
     problems,
     warnings,
   };

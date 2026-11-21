@@ -419,6 +419,12 @@ describe('FailoverJsonRpcProvider', () => {
       provider.destroy();
     });
 
+    it('keeps JSON-RPC batches to 10 requests (nodies refuses larger ones)', () => {
+      const provider = new FailoverJsonRpcProvider(['http://127.0.0.1:1'], sepolia, 2_000);
+      expect(provider._getOption('batchMaxCount')).toBe(10);
+      provider.destroy();
+    });
+
     it('says the endpoint did not report its chain when eth_chainId is not hex', async () => {
       const odd = await startNode('odd', { chainIdHex: 'sepolia' });
       const provider = new FailoverJsonRpcProvider([odd], sepolia, 2_000);

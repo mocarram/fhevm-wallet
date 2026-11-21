@@ -119,7 +119,10 @@ describe('checkErc7984', () => {
   });
 
   it('refuses a balance that is not exactly one 32-byte word', async () => {
-    const r = await checkErc7984(fakeCall({ ...good, balance: HANDLE + '00' }), TOKEN);
+    const r = await checkErc7984(
+      fakeCall({ ...good, balance: HANDLE + '00', supports: undefined }),
+      TOKEN,
+    );
     expect(r.compliant).toBe(false);
   });
 
@@ -137,6 +140,24 @@ describe('checkErc7984', () => {
     );
     expect(r.info?.name).not.toMatch(/[\u001b‮]/);
     expect(r.info?.symbol).not.toContain('\u200b');
+  });
+
+  it('trusts the ERC-7984 interface id when the balance probe answers oddly', async () => {
+    const r = await checkErc7984(fakeCall({ ...good, balance: HANDLE + '00' }), TOKEN);
+    expect(r.erc165).toBe('yes');
+    expect(r.compliant).toBe(true);
+    expect(r.warnings.join(' ')).toMatch(/unusual/);
+  });
+
+  it('a reply missing from a JSON-RPC batch is a transport failure, not "not ERC-7984"', async () => {
+    // nodies answers batches of more than 10 with one error; ethers reports BAD_DATA.
+    const missing: EthCall = async () => {
+      throw Object.assign(new Error('missing response for request (value=[...])'), {
+        code: 'BAD_DATA',
+        shortMessage: 'missing response for request',
+      });
+    };
+    await expect(checkErc7984(missing, TOKEN)).rejects.toThrow(/missing response/);
   });
 
   it('rethrows transport failures instead of calling the token non-compliant', async () => {

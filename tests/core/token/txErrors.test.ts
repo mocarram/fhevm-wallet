@@ -367,3 +367,56 @@ describe('JSON-RPC errors from the endpoint itself', () => {
     );
   });
 });
+
+describe('endpoint answers inside other errors (live Sepolia findings)', () => {
+  it('shows the JSON-RPC message of an HTTP 400 reply instead of "could not reach"', () => {
+    // drpc on its free plan: HTTP 400 with a JSON-RPC error body.
+    const err = Object.assign(new Error('server response 400 Bad Request'), {
+      code: 'SERVER_ERROR',
+      response: { statusCode: 400 },
+      info: {
+        responseBody:
+          '{"id":1,"jsonrpc":"2.0","error":{"message":"chain is not available on free plan, please upgrade to paid plan","code":35}}',
+      },
+    });
+    const t = translateTxError(err);
+    expect(t.code).toBe('RPC_ERROR');
+    expect(t.message).toMatch(/chain is not available on free plan/);
+  });
+
+  it('a reply missing from a batch is not "no contract"', () => {
+    const missing = Object.assign(new Error('missing response for request'), {
+      code: 'BAD_DATA',
+      shortMessage: 'missing response for request',
+    });
+    expect(isNoContractAnswer(missing)).toBe(false);
+    expect(isNoContractAnswer({ code: 'BAD_DATA', message: 'could not decode result data' })).toBe(
+      true,
+    );
+  });
+
+  it('puts the unauthorized user-decrypt text in plain words', () => {
+    const sdk = new Error(
+      'User address 0x52908400098527886E0F7030069857D2E4169EE7 is not authorized to user decrypt handle 0xabc!',
+    );
+    for (const err of [sdk, new DecryptionFailedError(sdk)]) {
+      const t = translateTxError(err);
+      expect(t.code).toBe('DECRYPT_NOT_ALLOWED');
+      expect(t.message).toBe('This wallet is not allowed to decrypt that value.');
+      expect(t.message).not.toMatch(/0x/);
+    }
+  });
+
+  it('names a pruned-history refusal and a range cap', () => {
+    const wrap = (error: object) =>
+      Object.assign(new Error('could not coalesce error'), { code: 'UNKNOWN_ERROR', error });
+    expect(
+      translateTxError(wrap({ code: 4444, message: 'pruned history unavailable' })).message,
+    ).toMatch(/does not keep blocks that old/);
+    expect(
+      translateTxError(
+        wrap({ code: -32001, message: 'Block range too large: maximum allowed is 50 blocks' }),
+      ).message,
+    ).toMatch(/log query of that size/);
+  });
+});

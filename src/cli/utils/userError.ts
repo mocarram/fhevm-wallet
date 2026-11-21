@@ -30,6 +30,7 @@ const GENERIC_CODES = new Set([
   'WRONG_CHAIN',
   'RELAYER_TIMEOUT',
   'RELAYER_UNAVAILABLE',
+  'DECRYPT_NOT_ALLOWED',
 ]);
 
 /** Strip anything that could carry a secret or terminal escapes from a message. */

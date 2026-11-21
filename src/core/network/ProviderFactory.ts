@@ -25,6 +25,9 @@ export const RPC_PROBE_TIMEOUT_MS = 8_000;
 // transport, so no code path falls back to the one that leaves sockets open.
 FetchRequest.registerGetUrl(abortableGetUrl);
 
+/** Most requests in one JSON-RPC batch (nodies' public limit). */
+export const RPC_BATCH_MAX = 10;
+
 /** Attempts on HTTP 429 (rate limited) before a request fails. */
 export const RPC_THROTTLE_ATTEMPTS = 3;
 
@@ -133,7 +136,12 @@ export class FailoverJsonRpcProvider extends JsonRpcProvider {
 
   constructor(urls: string[], network: Network, timeoutMs = RPC_TIMEOUT_MS) {
     if (urls.length === 0) throw new Error('At least one RPC URL is required');
-    super(rpcRequest(urls[0], timeoutMs), network, { staticNetwork: network });
+    // nodies (a default Sepolia endpoint) refuses JSON-RPC batches of more than 10
+    // requests ("Batch too large: maximum allowed is 10"); ethers batches up to 100.
+    super(rpcRequest(urls[0], timeoutMs), network, {
+      staticNetwork: network,
+      batchMaxCount: RPC_BATCH_MAX,
+    });
     this.urls = urls;
     this.#timeoutMs = timeoutMs;
     this.#expectedChainId = network.chainId;

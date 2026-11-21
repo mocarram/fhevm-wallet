@@ -41,6 +41,7 @@ export type TxErrorCode =
   | 'PUBLIC_DECRYPT_PENDING'
   | 'DISCLOSE_IS_BALANCE'
   | 'DISCLOSE_UNKNOWN_HANDLE'
+  | 'DECRYPT_NOT_ALLOWED'
   | 'UNKNOWN';
 
 /** A user-facing transaction error. `raw` is only shown when the user asks for details. */
@@ -117,7 +118,23 @@ export function isRelayerError(err: unknown): boolean {
  * confirm "no contract" with eth_getCode (see TokenService).
  */
 export function isNoContractAnswer(err: unknown): boolean {
-  return ((err ?? {}) as EthersLikeError).code === 'BAD_DATA';
+  const e = (err ?? {}) as EthersLikeError;
+  return e.code === 'BAD_DATA' && !isMissingRpcResponse(err);
+}
+
+/**
+ * ethers' BAD_DATA "missing response for request": the endpoint's reply had no entry for
+ * this request, e.g. nodies answers a JSON-RPC batch of more than 10 with one error
+ * ("Batch too large"). That is the endpoint failing, never the contract answering `0x`.
+ */
+export function isMissingRpcResponse(err: unknown): boolean {
+  const e = (err ?? {}) as EthersLikeError;
+  return (
+    e.code === 'BAD_DATA' &&
+    /missing response|response for request|batch/i.test(
+      `${e.shortMessage ?? ''} ${e.message ?? ''}`,
+    )
+  );
 }
 
 /** A revert with no data and no JSON-RPC error behind it: maybe no contract at all. */
@@ -157,6 +174,39 @@ export function rpcErrorOf(err: unknown): RpcErrorReply | null {
   return { code: typeof rpc.code === 'number' ? rpc.code : null, message };
 }
 
+/**
+ * The JSON-RPC error in the body of an HTTP error reply, e.g. drpc's HTTP 400
+ * `{"error":{"code":35,"message":"chain is not available on free plan…"}}`. Without
+ * this the user only saw "Could not reach the network", which hides the real reason.
+ */
+export function httpRpcErrorOf(err: unknown): RpcErrorReply | null {
+  const e = (err ?? {}) as {
+    code?: unknown;
+    info?: { responseBody?: unknown };
+    response?: { statusCode?: unknown; bodyText?: unknown };
+  };
+  if (e.code !== 'SERVER_ERROR') return null;
+  const status = e.response?.statusCode;
+  if (typeof status !== 'number' || status < 400 || status >= 500 || status === 408) return null;
+  let body: unknown = e.info?.responseBody;
+  if (typeof body !== 'string') {
+    try {
+      body = e.response?.bodyText;
+    } catch {
+      body = undefined;
+    }
+  }
+  if (typeof body !== 'string') return null;
+  try {
+    const parsed = JSON.parse(body) as { error?: { code?: unknown; message?: unknown } };
+    const rpc = Array.isArray(parsed) ? parsed[0]?.error : parsed?.error;
+    if (!rpc || typeof rpc.message !== 'string' || !rpc.message) return null;
+    return { code: typeof rpc.code === 'number' ? rpc.code : null, message: rpc.message };
+  } catch {
+    return null;
+  }
+}
+
 /** ...and for a missing, wrong or expired key. */
 const AUTH_RE =
   /unauthori[sz]ed|forbidden|invalid (?:api )?key|api key|not allowed|authenticat|permission denied/i;
@@ -189,7 +239,7 @@ function rpcReplyError(reply: RpcErrorReply, raw: string): WalletTxError {
       'RPC_RATE_LIMITED',
       'Your RPC endpoint is limiting requests.',
       'It answered that the rate limit or daily quota of this endpoint is used up.',
-      'Wait a while, or set an RPC URL with a higher limit (fhevm-wallet config --rpc-sepolia -).',
+      'Wait a while, or set an RPC URL with a higher limit (fhevm-wallet config --rpc-sepolia - or --rpc-mainnet -).',
       raw,
     );
   }
@@ -198,7 +248,7 @@ function rpcReplyError(reply: RpcErrorReply, raw: string): WalletTxError {
       'RPC_AUTH',
       'Your RPC endpoint refused the request.',
       'The API key in the RPC URL may be missing, wrong or expired.',
-      'Check the key with your provider, then set the URL again (fhevm-wallet config --rpc-sepolia -).',
+      'Check the key with your provider, then set the URL again (fhevm-wallet config --rpc-sepolia - or --rpc-mainnet -).',
       raw,
     );
   }
@@ -407,10 +457,30 @@ export function translateTxError(err: unknown, opts: TranslateOptions = {}): Wal
   const raw = rawText(err);
   const lower = raw.toLowerCase();
 
+  // The relayer refused to decrypt for this wallet: the ACL does not allow it (the value
+  // was never shared with this address, or the token has not granted access yet). The
+  // SDK's own text ("User address 0x… is not authorized to user decrypt handle 0x…!")
+  // is kept for technical details only.
+  if (/not authori[sz]ed to (?:user )?decrypt/i.test(raw)) {
+    return new WalletTxError(
+      'DECRYPT_NOT_ALLOWED',
+      'This wallet is not allowed to decrypt that value.',
+      'The token contract has not given this address access to it (only the sender, the recipient and contracts the token chooses can read an encrypted amount).',
+      "Check that it is this wallet's own balance or a transfer to or from it. Someone else's amount can only be read once they disclose it.",
+      raw,
+    );
+  }
+
   // The decrypt step failed: judge it by what the relayer SDK threw.
   if (err instanceof DecryptionFailedError) {
     const inner = translateTxError(err.cause, opts);
-    if (inner.code === 'RELAYER_TIMEOUT' || inner.code === 'RELAYER_UNAVAILABLE') return inner;
+    if (
+      inner.code === 'RELAYER_TIMEOUT' ||
+      inner.code === 'RELAYER_UNAVAILABLE' ||
+      inner.code === 'DECRYPT_NOT_ALLOWED'
+    ) {
+      return inner;
+    }
     return relayerUnavailable(raw);
   }
 
@@ -443,7 +513,7 @@ export function translateTxError(err: unknown, opts: TranslateOptions = {}): Wal
   // The endpoint itself answered with a JSON-RPC error (rate limit, bad key, an internal
   // error). ethers wraps those as CALL_EXCEPTION or UNKNOWN_ERROR "could not coalesce
   // error"; neither means the contract said anything.
-  const reply = rpcErrorOf(err);
+  const reply = rpcErrorOf(err) ?? httpRpcErrorOf(err);
   if (reply) return rpcReplyError(reply, raw);
 
   // An answer the wallet could not read at all (malformed JSON-RPC result). Callers
