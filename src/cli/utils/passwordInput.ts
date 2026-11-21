@@ -58,3 +58,36 @@ export function passwordStdinNeeded(
   if (passwordStdin || stdin.isTTY) return null;
   return `No terminal to ask for the wallet password. Pipe it in and add --password-stdin, e.g. \`pass show my-wallet | fhew ${command ? `${command} ` : ''}… --password-stdin\`.`;
 }
+
+/** Read all of stdin (a pipe) as text. */
+async function readStdin(stdin: NodeJS.ReadableStream & { isTTY?: boolean }): Promise<string> {
+  if (stdin.isTTY) {
+    throw new Error('--password-stdin reads from a pipe, e.g. `pass show w | fhew …`.');
+  }
+  let text = '';
+  for await (const chunk of stdin) text += chunk.toString();
+  return text;
+}
+
+/**
+ * For `wallet import --password-stdin`: the recovery phrase or private key on the first
+ * line of stdin and the new password on the second (spaces in the password are kept).
+ */
+export async function readSecretAndPasswordFromStdin(
+  stdin: NodeJS.ReadableStream & { isTTY?: boolean } = process.stdin,
+): Promise<{ secret: string; password: string }> {
+  const lines = (await readStdin(stdin)).split(/\r?\n/);
+  const secret = (lines[0] ?? '').trim();
+  const password = lines[1] ?? '';
+  if (!secret || !password) {
+    throw new Error(
+      'Pipe in two lines: the recovery phrase (or private key) first, then the password.',
+    );
+  }
+  return { secret, password };
+}
+
+/** Rule for a new wallet password (the prompt and --password-stdin share it). */
+export function newPasswordProblem(password: string): string | null {
+  return password.length >= 8 ? null : 'Password must be at least 8 characters';
+}

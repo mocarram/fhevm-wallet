@@ -125,7 +125,7 @@ describe('token command', () => {
     exitSpy.mockRestore();
   });
 
-  it('rejects token remove with an invalid address', async () => {
+  it('rejects token remove of an unknown symbol or an invalid address', async () => {
     const out = await runProgram(
       'token',
       'remove',
@@ -134,7 +134,9 @@ describe('token command', () => {
       'sepolia',
       '--force',
     );
-    expect(out).toMatch(/Invalid Ethereum address/);
+    expect(out).toMatch(/No tracked token called "not-an-address"/);
+    const bad = await runProgram('token', 'remove', '0x1234', '--network', 'sepolia', '--yes');
+    expect(bad).toMatch(/Invalid Ethereum address/);
   });
 
   it('reports "not found" when removing an unknown token (force)', async () => {

@@ -89,11 +89,20 @@ fhew wallet import my-wallet --mnemonic
 # Import wallet from private key
 fhew wallet import my-wallet --key
 
+# In a script (no terminal): the password from stdin; for import, the phrase (or key)
+# on the first line and the password on the second. Without a terminal the new
+# recovery phrase is printed, so clear the output afterwards.
+pass show new-wallet | fhew wallet create bot --password-stdin
+printf '%s\n%s\n' "$PHRASE" "$PASSWORD" | fhew wallet import bot --mnemonic --password-stdin
+
 # List all wallets
 fhew wallet list
 
 # Set default wallet
 fhew wallet set-default my-wallet
+
+# Remove a wallet (asks first; --yes skips the question, e.g. in scripts)
+fhew wallet remove my-wallet
 ```
 
 ### Token Commands
@@ -112,8 +121,8 @@ fhew config --token-list-url https://example.org/tokens.json   # your own list (
 # List tracked tokens
 fhew token list
 
-# Remove a tracked token
-fhew token remove 0x...
+# Remove a tracked token (by symbol or address; --yes skips the question)
+fhew token remove cusdc
 ```
 
 ### Balance & Transfers
@@ -278,7 +287,8 @@ is tightened automatically the next time the wallet starts.
 - Wallets are encrypted locally using standard Ethereum keystore format with scrypt
 - Your password never leaves your machine
 - Recovery phrases and private keys are shown on a separate screen that is wiped when you
-  press a key, so they do not stay in your terminal scrollback
+  press Enter, so they do not stay in your terminal scrollback (Wallets › Back up shows
+  the recovery phrase again, after your password)
 - Prefer `fhew wallet export <name> --keystore <file>` for backups: the file stays
   encrypted with your password
 - Before sending, the wallet checks the RPC serves the right chain and that your decrypted

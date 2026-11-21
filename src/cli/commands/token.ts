@@ -2,7 +2,8 @@
  * Token CLI commands
  */
 
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
+import { resolveToken } from '../../core/send/index.js';
 import { prompts } from '../utils/prompts.js';
 import { spinner as ora } from '../utils/spinner.js';
 import Table from 'cli-table3';
@@ -178,46 +179,67 @@ export function registerTokenCommands(program: Command): void {
     .command('remove')
     .alias('rm')
     .description('Remove a tracked token')
-    .argument('<address>', 'Token contract address')
+    .argument('<token>', 'Token symbol or contract address')
     .option('-n, --network <network>', 'Network (sepolia or mainnet)')
-    .option('-f, --force', 'Skip confirmation')
-    .action(async (address: string, options: { network?: string; force?: boolean }) => {
-      // Determine network
-      let network: NetworkName = getDefaultNetwork();
-      if (options?.network) {
-        if (!isValidNetwork(options.network)) {
+    .option('-y, --yes', 'Remove without asking')
+    .addOption(new Option('-f, --force', 'Same as --yes (older name)').hideHelp())
+    .action(
+      async (tokenText: string, options: { network?: string; yes?: boolean; force?: boolean }) => {
+        // Determine network
+        let network: NetworkName = getDefaultNetwork();
+        if (options?.network) {
+          if (!isValidNetwork(options.network)) {
+            process.exitCode = 1;
+            console.log(error('Invalid network. Use "sepolia" or "mainnet"'));
+            return;
+          }
+          network = options.network;
+        }
+
+        // A symbol (cusdc) or an address, like `fhew send`.
+        let address = tokenText;
+        if (!isValidAddress(tokenText)) {
+          const r = resolveToken(tokenText, listTokens(network));
+          if (!r.ok) {
+            process.exitCode = 1;
+            console.log(
+              error(
+                tokenText.toLowerCase().startsWith('0x') ? 'Invalid Ethereum address' : r.error,
+              ),
+            );
+            return;
+          }
+          address = r.token.address;
+        }
+
+        const skipConfirm = options.yes || options.force;
+        if (!skipConfirm && !process.stdin.isTTY) {
           process.exitCode = 1;
-          console.log(error('Invalid network. Use "sepolia" or "mainnet"'));
+          console.log(
+            error('No terminal to confirm. Add --yes to remove the token without asking.'),
+          );
           return;
         }
-        network = options.network;
-      }
+        if (!skipConfirm) {
+          const confirm = await prompts.confirm({
+            message: `Remove token ${formatAddress(address)} from ${network}?`,
+            default: false,
+          });
 
-      if (!isValidAddress(address)) {
-        process.exitCode = 1;
-        console.log(error('Invalid Ethereum address'));
-        return;
-      }
-
-      if (!options.force) {
-        const confirm = await prompts.confirm({
-          message: `Remove token ${formatAddress(address)} from ${network}?`,
-          default: false,
-        });
-
-        if (!confirm) {
-          console.log('Cancelled');
-          return;
+          if (!confirm) {
+            console.log('Cancelled');
+            return;
+          }
         }
-      }
 
-      const removed = removeToken(address, network);
+        const removed = removeToken(address, network);
 
-      if (removed) {
-        console.log(success('Token removed'));
-      } else {
-        process.exitCode = 1;
-        console.log(error('Token not found'));
-      }
-    });
+        if (removed) {
+          console.log(success('Token removed'));
+        } else {
+          process.exitCode = 1;
+          console.log(error('Token not found'));
+        }
+      },
+    );
 }
