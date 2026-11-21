@@ -464,11 +464,18 @@ export const sendErrorScreen: ScreenDef = {
     }
     const e = v.error;
     const body: Line[] = [];
-    if (top(s).params.from !== 'home') body.push(stepper(3, SEND_STEPS), BLANK);
+    const from = top(s).params.from;
+    if (from !== 'home' && from !== 'action') body.push(stepper(3, SEND_STEPS), BLANK);
     body.push(
       v.afterBroadcast
         ? line('  ', seg('! The transaction was handed to the network.', 'yellow bold'))
-        : line('  ', seg('✗ Send stopped. Nothing was signed or sent.', 'red bold')),
+        : line(
+            '  ',
+            seg(
+              `✗ ${from === 'action' ? 'Stopped' : 'Send stopped'}. Nothing was signed or sent.`,
+              'red bold',
+            ),
+          ),
       BLANK,
       line(`  ${e.title}`),
       BLANK,
@@ -516,7 +523,7 @@ export const sendErrorScreen: ScreenDef = {
       : [
           { label: 'Run Doctor', act: (st) => openFromRoot(st, 'doctor') },
           toggle,
-          ...(top(s).params.from === 'home' ? [] : [backItem('Back to review')]),
+          ...(from === 'home' ? [] : [backItem('Back to review')]),
           cancelItem,
         ];
     return {

@@ -16,6 +16,7 @@ import { parseCommand, COMMAND_EXAMPLES } from './commandParser.js';
 import { moveCursor, renderMenu, validCursor } from './components/list.js';
 import { QUIT, type Effect } from './effects.js';
 import { broadcast, commandSend } from './flows/send.js';
+import { broadcastTx } from './flows/tx.js';
 import { lockNow } from './flows/data.js';
 import { findBusy } from './flows/find.js';
 import { spinner } from './format.js';
@@ -298,7 +299,7 @@ function handleKeyInner(s: AppState, key: Key): Effect[] {
 export function tick(s: AppState, now: number): Effect[] {
   s.now = now;
   if (s.countdown && now >= s.countdown.endsAt) {
-    return broadcast(s);
+    return s.countdown.for === 'tx' ? broadcastTx(s) : broadcast(s);
   }
   // Auto-lock, except while a countdown holds an already-checked send.
   if (s.signer && s.unlockedUntil !== null && s.unlockedUntil <= now && !s.countdown) {
@@ -316,6 +317,10 @@ export function isAnimating(s: AppState): boolean {
     s.countdown ||
     s.send.checking ||
     s.history?.loading ||
+    s.history?.decrypting ||
+    s.txAction?.checking ||
+    s.operators?.loading ||
+    s.disclose?.loading ||
     (top(s).id === 'doctor' && !s.doctor) ||
     findBusy(s) ||
     (top(s).id === 'setup-gas' && (!s.doctor || !s.eth)),

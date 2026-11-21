@@ -68,6 +68,11 @@ export const tokensScreen: ScreenDef = {
           note: 'known lists and your history',
           act: (st) => open(st, 'token-find'),
         },
+        {
+          label: 'Operators',
+          note: 'who may move your tokens',
+          act: (st) => open(st, 'operators'),
+        },
         backItem(),
       ],
       hint: '↑↓ move · enter select · esc back',

@@ -46,6 +46,17 @@ import {
   tokenRemoveScreen,
   tokensScreen,
 } from './tokens.js';
+import { txCountScreen, txReviewScreen, txSignScreen } from './tx.js';
+import {
+  operatorAddrScreen,
+  operatorExpiryCustomScreen,
+  operatorExpiryScreen,
+  operatorForeverScreen,
+  operatorRevokeScreen,
+  operatorsScreen,
+  operatorTokenScreen,
+} from './operators.js';
+import { discloseScreen, disclosePickScreen } from './disclose.js';
 import {
   exportConfirmScreen,
   exportKeystoreScreen,
@@ -97,6 +108,19 @@ export const SCREENS: Record<string, ScreenDef> = {
   'token-add-confirm': tokenAddConfirmScreen,
   'token-find': tokenFindScreen,
   'token-remove': tokenRemoveScreen,
+
+  operators: operatorsScreen,
+  'operator-token': operatorTokenScreen,
+  'operator-addr': operatorAddrScreen,
+  'operator-expiry': operatorExpiryScreen,
+  'operator-expiry-custom': operatorExpiryCustomScreen,
+  'operator-forever': operatorForeverScreen,
+  'operator-revoke': operatorRevokeScreen,
+  'tx-review': txReviewScreen,
+  'tx-sign': txSignScreen,
+  'tx-count': txCountScreen,
+  'disclose-pick': disclosePickScreen,
+  disclose: discloseScreen,
 
   contacts: contactsScreen,
   'contact-name': contactNameScreen,
