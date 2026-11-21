@@ -242,7 +242,12 @@ describe.skipIf(process.platform === 'win32')('wallet data storage', () => {
     mkdirSync(dataDir, { mode: 0o755 });
     const asRoot = typeof process.getuid === 'function' && process.getuid() === 0;
     if (asRoot) chmodSync(t.home, 0o755);
-    else chmodSync(dataDir, 0o500);
+    else {
+      // A file the wallet did not create means the folder is not the wallet's own, so it
+      // is never chmodded back to 0700 (an empty own folder would be, see the next test).
+      writeFileSync(join(dataDir, 'notes.txt'), 'not wallet data');
+      chmodSync(dataDir, 0o500);
+    }
     const res = spawnSync(process.execPath, [CLI, '--version'], {
       env: {
         PATH: process.env.PATH ?? '',
@@ -265,6 +270,20 @@ describe.skipIf(process.platform === 'win32')('wallet data storage', () => {
     );
     expect(res.stderr).not.toMatch(/EACCES/);
   });
+
+  it.skipIf(typeof process.getuid === 'function' && process.getuid() === 0)(
+    'an empty read-only data folder of your own is repaired to 0700',
+    () => {
+      // Non-root only: root can write anywhere, so the case does not exist for it.
+      const t = tempHome();
+      cleanup = t.cleanup;
+      const dataDir = join(t.home, 'own-readonly');
+      mkdirSync(dataDir, { mode: 0o500 });
+      const res = runCli(['--version'], t.home, { FHEVM_WALLET_HOME: dataDir });
+      expect(res.code).toBe(0);
+      expect(statSync(dataDir).mode & 0o777).toBe(0o700);
+    },
+  );
 
   it('refuses a key that would inject another setting', () => {
     const t = tempHome();

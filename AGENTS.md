@@ -249,6 +249,9 @@ Every unit of work goes through this loop until it comes out clean:
   address whose `eth_getCode` is `0x`.
 - Prompts for an RPC URL use `transformer: maskUrlWhenAnswered`; `--rpc-*` and
   `--*-key` options accept `-` for hidden or piped input (one piped value per run).
+- CI runs as an ordinary user, while the cloud sandbox runs as root (root ignores file
+  modes). Any test about permissions must pass both ways: run it as a non-root user too
+  (e.g. `setpriv --reuid=65534 --regid=65534 --clear-groups` on a copy owned by that uid).
 - e2e tests that need a terminal (password prompts) use `tests/e2e/pty-run.py`
   (python3); they are skipped where python3 is missing.
 - `-n/--network` is a program-level option: commander gives it the flag wherever it is
