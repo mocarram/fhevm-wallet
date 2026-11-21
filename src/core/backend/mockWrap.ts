@@ -342,14 +342,21 @@ export class MockWrapOps implements Omit<WrapBackend, 'minedNonce'> {
                 ? await this.approveCall(signer, info, pull, network)
                 : await this.wrapCall(signer, info, pull, network);
           } catch (err) {
-            const done = out.approveTxHash ?? out.resetTxHash ?? '';
             const e = err as WalletTxError;
-            throw new WalletTxError(
-              'WRAP_APPROVED_ONLY',
-              'The approval went through, but the wrap was not sent.',
-              `${e.message} (approval: ${done})`,
-              'Wrap again: the approval is in place, so only the wrap is sent.',
-            );
+            // Like realWrap.ts: after a reset only, the allowance is 0 (nothing in place).
+            throw out.approveTxHash
+              ? new WalletTxError(
+                  'WRAP_APPROVED_ONLY',
+                  'The approval went through, but the wrap was not sent.',
+                  `${e.message} (approval: ${out.approveTxHash})`,
+                  'Wrap again: the approval is in place, so only the wrap is sent.',
+                )
+              : new WalletTxError(
+                  'WRAP_APPROVED_ONLY',
+                  'The old approval was reset to 0, but the wrap was not sent.',
+                  `${e.message} (reset: ${out.resetTxHash ?? ''})`,
+                  'Wrap again: it approves exactly the amount, then wraps. Nothing else was sent.',
+                );
           }
         }
         const r = await next.send(hooks);

@@ -12,6 +12,7 @@
  * in between is kept by the caller (`unwrapPending.ts`), not here.
  */
 
+import { formatEther } from 'ethers';
 import type { NetworkName } from '../network/NetworkConfig.js';
 import { RELAYER_NETWORKS } from '../fhe/relayerConfig.js';
 import { normaliseHandle, type DecryptSession } from '../fhe/DecryptSession.js';
@@ -85,15 +86,37 @@ function notEnoughEthForAll(what: string): WalletTxError {
 }
 
 /** The approval is mined, the wrap could not be sent. Wrapping again only sends the wrap. */
-function approvedOnly(err: unknown, approveTxHash: string, what = 'approval'): WalletTxError {
+function approvedOnly(err: unknown, approveTxHash: string): WalletTxError {
   const e = translateTxError(err, { action: 'wrap' });
   return new WalletTxError(
     'WRAP_APPROVED_ONLY',
-    `The ${what} went through, but the wrap was not sent.`,
-    `${e.message} ${e.likelyCause} (${what}: ${approveTxHash})`,
+    'The approval went through, but the wrap was not sent.',
+    `${e.message} ${e.likelyCause} (approval: ${approveTxHash})`,
     'Wrap again: the approval is in place, so only the wrap is sent.',
     e.raw,
   );
+}
+
+/**
+ * Only the reset to 0 is mined: the allowance is 0 now, so there is no approval in place.
+ * Same code (earlier steps mined, nothing more sent), its own wording.
+ */
+function resetOnly(why: string, resetTxHash: string, raw = ''): WalletTxError {
+  return new WalletTxError(
+    'WRAP_APPROVED_ONLY',
+    'The old approval was reset to 0, but the wrap was not sent.',
+    `${why} (reset: ${resetTxHash})`,
+    'Wrap again: it approves exactly the amount, then wraps. Nothing else was sent.',
+    raw,
+  );
+}
+
+/**
+ * A step priced after the review costs more than what is left of the fee the user saw
+ * ("up to …"): stop instead of signing a higher maximum than was confirmed.
+ */
+function feeRose(step: 'approve' | 'wrap', costWei: bigint, leftWei: bigint): string {
+  return `The network fee rose: the ${step === 'wrap' ? 'wrap' : 'approval'} now costs up to ${formatEther(costWei)} ETH, more than the ${formatEther(leftWei > 0n ? leftWei : 0n)} ETH left of the fee you reviewed.`;
 }
 
 /** Real-network implementation of the wrap/unwrap backend methods. */
@@ -173,24 +196,43 @@ export class RealWrapOps implements WrapBackend {
       }).catch(() => undefined);
       let resetTxHash: string | undefined;
       let approveTxHash: string | undefined;
+      // What is left of the reviewed total ("up to feeWei") for the steps not sent yet.
+      // Each sent step uses up its own signed maximum.
+      let left = feeWei;
       if (reset) {
         safe(() => hooks.onStep?.('reset'));
         resetTxHash = (await reset.send(hooks)).txHash;
+        left -= reset.feeWei;
         safe(() => hooks.onStepConfirmed?.('reset', resetTxHash!));
         try {
           approve = await prepareApprove(signer, info, pull, network);
         } catch (err) {
-          throw approvedOnly(err, resetTxHash, 'reset of the old approval');
+          const e = translateTxError(err, { action: 'approval' });
+          throw resetOnly(`${e.message} ${e.likelyCause}`.trim(), resetTxHash, e.raw);
+        }
+        // The wrap still has to fit after it: keep its estimated share in reserve.
+        const wrapReserve = (WRAP_GAS_ESTIMATE * priceOf(approve) * 12n) / 10n;
+        if (approve.feeWei + wrapReserve > left) {
+          throw resetOnly(feeRose('approve', approve.feeWei, left - wrapReserve), resetTxHash);
         }
       }
       if (approve) {
         safe(() => hooks.onStep?.('approve'));
         approveTxHash = (await approve.send(hooks)).txHash;
+        left -= approve.feeWei;
         safe(() => hooks.onStepConfirmed?.('approve', approveTxHash!));
         try {
           wrap = await prepareWrapCall(signer, info, pull, network);
         } catch (err) {
           throw approvedOnly(err, approveTxHash);
+        }
+        if (wrap.feeWei > left) {
+          throw new WalletTxError(
+            'WRAP_APPROVED_ONLY',
+            'The approval went through, but the wrap was not sent.',
+            `${feeRose('wrap', wrap.feeWei, left)} (approval: ${approveTxHash})`,
+            'Wrap again to see the new fee: the approval is in place, so only the wrap is sent.',
+          );
         }
       }
       safe(() => hooks.onStep?.('wrap'));

@@ -434,12 +434,8 @@ export function startWrap(s: AppState, info: WrapperInfo, plan: WrapPlan): Effec
           ? [
               line('  ', seg(`! ${error.title}`, 'yellow bold')),
               dimLine(`    ${error.cause ?? ''}`),
-              line(
-                seg(
-                  '    Wrap again: the approval is in place, so only the wrap is sent.',
-                  'yellow',
-                ),
-              ),
+              // The hint differs: after a reset only, no approval is in place (allowance 0).
+              line(seg(`    ${error.hint}`, 'yellow')),
             ]
           : null,
     },

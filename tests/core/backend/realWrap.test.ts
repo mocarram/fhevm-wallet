@@ -12,6 +12,7 @@ const calls: string[] = [];
 const state = { balance: 10n ** 20n, allowance: 0n };
 let approveFails: (v: bigint) => boolean = () => false;
 let wrapFails = false;
+let wrapGas = 300_000n;
 
 function prepared(label: string, gas = 100_000n): PreparedCall {
   return {
@@ -54,7 +55,7 @@ vi.mock('../../../src/core/token/wrapper.js', async (orig) => {
           'x',
           '',
         );
-      return prepared(`wrap ${pull}`, 300_000n);
+      return prepared(`wrap ${pull}`, wrapGas);
     },
   };
 });
@@ -85,6 +86,7 @@ beforeEach(() => {
   state.allowance = 0n;
   approveFails = () => false;
   wrapFails = false;
+  wrapGas = 300_000n;
 });
 
 describe('RealWrapOps.prepareWrap', () => {
@@ -153,5 +155,39 @@ describe('RealWrapOps.prepareWrap', () => {
     ).rejects.toMatchObject({
       code: 'INSUFFICIENT_TOKEN_BALANCE',
     });
+  });
+
+  it('after a reset only, never says the approval is in place (N2)', async () => {
+    state.allowance = 1n;
+    // The change is refused before and after the reset (the token wants something else).
+    approveFails = (v) => v !== 0n;
+    const p = await new RealWrapOps()
+      .prepareWrap(signer, info, 10n ** 18n, 'sepolia')
+      .catch(() => null);
+    // The first refusal leads to the reset plan; the re-prepare after it fails too.
+    expect(p?.steps).toEqual(['reset', 'approve', 'wrap']);
+    const err = (await p!.send().catch((e: WalletTxError) => e)) as WalletTxError;
+    expect(err.code).toBe('WRAP_APPROVED_ONLY');
+    expect(err.message).toMatch(/reset to 0, but the wrap was not sent/);
+    expect(err.hint).not.toMatch(/approval is in place/);
+    expect(err.hint).toMatch(/approves exactly the amount, then wraps/);
+    expect(calls.filter((c) => c.startsWith('send'))).toEqual(['send approve 0']);
+  });
+
+  it('stops after the approval when the wrap now costs more than reviewed (N3)', async () => {
+    wrapGas = 2_000_000n; // 20e6 wei, the review reserved 10.8e6 for it
+    const p = await new RealWrapOps().prepareWrap(signer, info, 10n ** 18n, 'sepolia');
+    const err = (await p.send().catch((e: WalletTxError) => e)) as WalletTxError;
+    expect(err.code).toBe('WRAP_APPROVED_ONLY');
+    expect(err.likelyCause).toMatch(/fee rose: the wrap now costs up to [\d.]+ ETH, more than/);
+    expect(err.hint).toMatch(/Wrap again to see the new fee: the approval is in place/);
+    expect(calls.filter((c) => c.startsWith('send'))).toEqual(['send approve 1000000000000000000']);
+  });
+
+  it('sends the wrap when its new price fits what was reviewed', async () => {
+    wrapGas = 1_000_000n; // 10e6 wei: within the 10.8e6 reserved
+    const p = await new RealWrapOps().prepareWrap(signer, info, 10n ** 18n, 'sepolia');
+    await p.send();
+    expect(calls.filter((c) => c.startsWith('send'))).toHaveLength(2);
   });
 });

@@ -388,7 +388,11 @@ async function wrapCommand(
     } catch (err) {
       const e = translateTxError(err);
       if (e.code === 'SENT_UNCONFIRMED') spin.warn('Sent, not confirmed yet');
-      else spin.fail(e.code === 'WRAP_APPROVED_ONLY' ? 'Approved, not wrapped' : 'Wrap failed');
+      else if (e.code === 'WRAP_APPROVED_ONLY')
+        spin.fail(
+          hashes.approve ? 'Approved, not wrapped' : 'Old approval reset to 0, not wrapped',
+        );
+      else spin.fail('Wrap failed');
       return failSend(backend, network, e, {
         ...(hashes.reset ? { resetTxHash: hashes.reset } : {}),
         ...(hashes.approve ? { approveTxHash: hashes.approve } : {}),
