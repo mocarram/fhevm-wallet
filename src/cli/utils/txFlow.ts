@@ -16,7 +16,7 @@ import type { NetworkName } from '../../core/network/NetworkConfig.js';
 import { resolveToken } from '../../core/send/resolve.js';
 import { listTokens, type TokenEntry } from '../../core/token/TokenRegistry.js';
 import { formatTxError, translateTxError } from '../../core/token/txErrors.js';
-import { getWalletAddress, hasWallet, loadWallet } from '../../core/wallet/index.js';
+import { getWalletAddress, hasWallet, listWallets, loadWallet } from '../../core/wallet/index.js';
 import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.js';
 import { error, formatNetworkName, warning } from '../../utils/formatting.js';
 import { isValidNetwork } from '../../utils/validation.js';
@@ -144,14 +144,28 @@ export function pickToken(network: NetworkName, text?: string): TokenEntry | nul
   return r.token;
 }
 
-/** Wallet name and address from `-w` or the default (no password needed). */
+/**
+ * Wallet name and address from `-w`, the default, or the only wallet there is (no
+ * password needed). Several wallets and no default: says how to pick one.
+ */
 export function pickWallet(name?: string): { name: string; address: string } | null {
-  const walletName = name || getDefaultWallet();
+  let walletName = name || getDefaultWallet();
+  if (!name && (!walletName || !hasWallet(walletName))) {
+    const all = listWallets();
+    if (all.length === 1) walletName = all[0].name;
+    else if (all.length > 1) {
+      fail(
+        `No default wallet. Pass -w <name> or set one with: fhevm-wallet wallet set-default <name> (wallets: ${all.map((w) => w.name).join(', ')})`,
+        'NO_WALLET',
+      );
+      return null;
+    }
+  }
   if (!walletName || !hasWallet(walletName)) {
     fail(
       walletName
         ? `Wallet "${walletName}" not found`
-        : 'No default wallet. Pass -w <name> or create one with: fhevm-wallet wallet create',
+        : 'No wallet yet. Create one with: fhevm-wallet wallet create (or wallet import)',
       walletName ? 'WALLET_NOT_FOUND' : 'NO_WALLET',
     );
     return null;

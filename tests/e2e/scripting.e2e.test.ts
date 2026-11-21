@@ -59,6 +59,23 @@ describe('scripted wallet commands', () => {
     expect(noKind.out).toMatch(/--mnemonic or --key/);
   });
 
+  it('the first wallet created becomes the default (V4)', () => {
+    const t = tempHome();
+    cleanup = t.cleanup;
+    const pw = 'long enough pw\n';
+    expect(run(t.home, ['wallet', 'create', 'first', '--password-stdin'], pw).code).toBe(0);
+    expect(run(t.home, ['wallet', 'create', 'second', '--password-stdin'], pw).code).toBe(0);
+    const list = JSON.parse(run(t.home, ['wallet', 'list', '--json']).out);
+    expect(
+      list.wallets.map((w: { name: string; isDefault: boolean }) => [w.name, w.isDefault]),
+    ).toEqual(
+      expect.arrayContaining([
+        ['first', true],
+        ['second', false],
+      ]),
+    );
+  });
+
   it('removals without a terminal name --yes; tokens can be removed by symbol', () => {
     const t = tempHome();
     cleanup = t.cleanup;

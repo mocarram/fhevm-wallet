@@ -88,6 +88,15 @@ async function askNewPassword(): Promise<{ password: string; confirmPassword: st
   return { password, confirmPassword };
 }
 
+/**
+ * True when there is no usable default wallet (none set, or it was removed): a new
+ * wallet then becomes the default, as in the TUI, so `fhew send` and friends find it.
+ */
+function needsDefault(): boolean {
+  const current = getDefaultWallet();
+  return !current || !hasWallet(current);
+}
+
 export function registerWalletCommands(program: Command): void {
   const wallet = program.command('wallet').description('Manage wallets');
 
@@ -151,7 +160,7 @@ export function registerWalletCommands(program: Command): void {
         );
         if (wiped) console.log(success('Recovery phrase screen wiped.'));
 
-        if (options?.setDefault) {
+        if (options?.setDefault || needsDefault()) {
           setDefaultWallet(name!);
           console.log(success(`Set "${name}" as default wallet`));
         }
@@ -281,7 +290,7 @@ export function registerWalletCommands(program: Command): void {
           console.log(`  Address: ${address}`);
           console.log();
 
-          if (options?.setDefault) {
+          if (options?.setDefault || needsDefault()) {
             setDefaultWallet(name!);
             console.log(success(`Set "${name}" as default wallet`));
           }
