@@ -49,6 +49,9 @@ This file is the text reference agents build against.
 ## Home
 
 Low-gas nudge (when ETH covers < 5 sends), cached balances with age, then:
+(after unlock and after each confirmed send the balances re-decrypt in the background:
+each value stays on screen with a spinner beside it and the line ends `2m ago ·
+updating…`; one EIP-712 signature covers every tracked token for the unlocked session)
 `↻ repeat last send` (unnumbered, key `.`), Balances, Send, Receive, History,
 Wallets, Tokens, Address book, Settings, Doctor, `0` Quit.
 
@@ -90,6 +93,30 @@ Receive shows the address and a terminal QR code (half blocks, quiet zone) of th
 or of an EIP-681 link `ethereum:<address>@<chainId>` after "QR with network (EIP-681)".
 Doctor lists one row per check (Node, data folder, each RPC URL masked, relayer, ETH for
 gas, each tracked token's ERC-7984 check) with ✔ ! ✗ marks, the same as `fhew doctor`.
+
+## History
+
+Rows show decrypted amounts once the wallet is unlocked (`Decrypt amounts` unlocks first).
+Amounts this wallet may not decrypt stay `encrypted`, without an error. Decrypted amounts
+are cached by handle, so they show on later visits while locked. `Disclose an amount`
+lists confidential transfers; the Disclose screen shows the stage (private → step 1 done,
+pending public decryption → public) and offers the next step.
+
+## Operators (Tokens › Operators)
+
+Lists contacts and recent counterparties with `operator` / `not an operator` for the
+selected token (`Switch token` when several are tracked). Grant: address or contact →
+expiry (1 hour, 1 day, 7 days, custom date or duration, `No expiry…` which asks to type
+`forever`) → Review. Revoke: pick an operator or paste an address → Review.
+
+## Review for operator changes and disclosures
+
+One title line ("Let bob move your cUSDC until Nov 22 2026 14:05"), a yellow warning
+(operators: "can move ALL of your cUSDC … until …"; disclosure: "cannot be made private
+again"), token, network, operator, fee and "Simulation passed". Locked: `Unlock and
+check` asks for the password and returns here. `Confirm` starts the send countdown (Esc
+stops it), then broadcasts in the background with `1 pending` and a notice on Home. Errors
+use the send error screen; after the broadcast it keeps the hash and never offers a retry.
 
 ## Errors
 

@@ -141,16 +141,16 @@ pseudo-terminal against the mock backend.
 - [x] `fhew doctor` (Node, RPC + chain, relayer, ETH, ERC-7984 support per token, data perms) (Phase 4a)
 - [x] ERC-7984 interface check when adding a token (Phase 4a)
 - [x] Find tokens: scan ConfidentialTransfer events where the wallet is the recipient and a curated known-token list per network; one checkbox list (Space toggle, a all, Enter bulk-add); unverified tokens unselected and labelled (Phase 4a)
-- [ ] One signature decrypts all tracked balances (session-scoped keypair + signature)
-- [ ] Decrypted amounts in history where the user is allowed to decrypt
-- [ ] Operators screen (view, grant with expiry, revoke)
-- [ ] Disclose a transfer amount
+- [x] One signature decrypts all tracked balances (session-scoped keypair + signature) (Phase 4b; mock-tested, not verified on-chain)
+- [x] Decrypted amounts in history where the user is allowed to decrypt (Phase 4b; mock-tested, not verified on-chain)
+- [x] Operators screen (view, grant with expiry, revoke) (Phase 4b; mock-tested, not verified on-chain)
+- [x] Disclose a transfer amount (Phase 4b; mock-tested, not verified on-chain)
 - [x] `--json` output on non-interactive commands (Phase 4a)
 - [x] Receive screen with terminal QR code (Phase 4a)
 - [x] First-run setup (wallet → network → token → gas) (done with the Phase 3 TUI)
 - [x] Repeat last send (`.`), friendlier amounts (`max`, `half`, `1k`, `1,250.50`) (done with the Phase 3 TUI)
 - [x] "Next time: fhew send …" hint after interactive sends (done with the Phase 3 TUI)
-- [ ] Cached balances on Home with age; background re-decrypt
+- [x] Cached balances on Home with age; background re-decrypt (Phase 4b; mock-tested, not verified on-chain)
 - [x] Non-blocking sends with pending indicator (done with the Phase 3 TUI)
 - [x] Recipient checks: first-time note, look-alike stop, save-contact offer (done with the Phase 3 TUI)
 - [x] Cancellable send countdown (configurable; always on for mainnet) (done with the Phase 3 TUI)
@@ -166,6 +166,28 @@ warning, lock/unlock, doctor output and `--json`.
 - [ ] `staging` merged into `main`
 - [ ] README and docs updated; version bumped to 2.0.0
 
+### Relayer SDK: stay on `@zama-fhe/relayer-sdk` 0.4.5 for 2.0 (decided in Phase 4b)
+
+`createInstance` in `@zama-fhe/relayer-sdk` 0.4.5 prints "`createInstance` is deprecated.
+Use the `@zama-fhe/sdk` package instead." (lib/node.js, once per process). The wallet
+captures that and the SDK's other console notes (`src/core/fhe/sdkConsole.ts`), so they
+never reach the TUI or stdout; `FHEW_DEBUG=1` shows them on stderr outside the TUI.
+
+Not migrating now, because (from `npm view @zama-fhe/sdk` and its 3.8.0 README, read
+2026-11-21):
+- `@zama-fhe/sdk` 3.8.0 is a higher-level framework (`ZamaSDK`, `Token`, sessions,
+  storage layers) that depends on `viem >=2` and `@fhevm/sdk` 0.13.2; ethers is only an
+  adapter (`@zama-fhe/sdk/ethers`). Adopting it replaces `src/core/fhe` and part of
+  `TokenService`, including the sign-locally / SENT_UNCONFIRMED path, which must then be
+  re-proven.
+- Its 4.0 line is already in alpha (`4.0.0-alpha.6`), so the API is still moving.
+- 0.4.5 still works and is the `latest` tag of `@zama-fhe/relayer-sdk` (0.5.0-rc.1 is a
+  prerelease). Nothing in this release needs the new package.
+
+Plan: a separate post-2.0 phase that migrates `src/core/fhe` behind the existing
+`DecryptAuthority` / encryption seams, with on-chain verification on Sepolia. Sources:
+https://www.npmjs.com/package/@zama-fhe/sdk , https://github.com/zama-ai/sdk
+
 ## Not yet done (needs the user)
 
 - On-chain verification on Sepolia with a real ERC-7984 token and funded wallet.
@@ -176,3 +198,8 @@ warning, lock/unlock, doctor output and `--json`.
   against the default public RPCs (chunking and range errors are only tested locally).
 - Fill the shipped known-token lists (`src/core/token/lists/`) with verified addresses,
   see docs/token-lists.md; check whether Etherscan's logs API accepts topic-only queries.
+- Phase 4b on Sepolia: one-signature batch decrypt and `fhew history --decrypt` against the
+  real relayer; `fhew operator set/revoke` on a real token; `fhew disclose` end to end (it
+  assumes OpenZeppelin ERC7984's `requestDiscloseEncryptedAmount(bytes32)` and
+  `discloseEncryptedAmount(bytes32,uint64,bytes)` with the relayer's `publicDecrypt`
+  `decryptionProof`; a token without them fails at simulation, before signing).

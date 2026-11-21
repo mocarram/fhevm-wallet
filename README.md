@@ -11,7 +11,10 @@ A CLI wallet for managing encrypted ERC-7984 tokens using Zama's Fully Homomorph
 - **Doctor** - One command checks Node, the data folder, RPC, the Zama relayer, gas and every token
 - **Receive with a QR code** - Your address (or an EIP-681 link) as a terminal QR code
 - **Scriptable** - `--json` on non-interactive commands
-- **Encrypted Balance Viewing** - Decrypt and view your confidential token balances
+- **Encrypted Balance Viewing** - One signature decrypts every tracked balance; balances refresh in the background after unlock and after each send
+- **Decrypted History** - Transfer amounts you sent or received are decrypted once and cached
+- **Operators** - See, grant (with an expiry) and revoke ERC-7984 operators
+- **Disclosure** - Publish one transfer amount on-chain with its decryption proof
 - **Confidential Transfers** - Send tokens with end-to-end encryption
 - **Address Book** - Save frequently used addresses with friendly names
 - **Multi-Network Support** - Works on Ethereum Sepolia testnet and Mainnet
@@ -138,6 +141,28 @@ pass show my-wallet | fhew balance --password-stdin
 pass show my-wallet | fhew send bob 25 cusdc -n mainnet --mainnet --password-stdin --yes
 ```
 
+### History, Operators and Disclosure
+
+```bash
+# Decrypt confidential amounts in history (one signature for all tracked tokens)
+fhew history --decrypt
+pass show my-wallet | fhew history --decrypt --password-stdin
+
+# Operators: an operator can move ALL of your tokens until it expires
+fhew operator list                       # contacts and recent addresses
+fhew operator set 0xExchange… --for 1d   # 1h, 1d, 7d, 2w, a date, or forever (typed confirmation)
+fhew operator revoke 0xExchange…
+
+# Make one transfer amount public on-chain (request, then publish with the KMS proof)
+fhew disclose <txHash>
+```
+
+The decrypt signature (an EIP-712 user-decrypt authorisation, valid 1 day by default;
+`FHEW_DECRYPT_DAYS` sets 1-365) is kept in memory only and dropped on lock, auto-lock,
+wallet switch and exit. Operator changes and disclosures go through the same checks as a
+send: simulation, fee, an explicit confirmation and, after the broadcast, the transaction
+hash even when the confirmation is lost.
+
 A pasted address that looks like one of your contacts stops the send. Without a
 terminal, prompts are never shown: pass the values as arguments, `--password-stdin` and
 `--yes`. On Mainnet, a send that would skip the confirmation (`--yes`, or no terminal) is
@@ -216,7 +241,8 @@ All data is stored in `~/.fhevm-wallet/` (set `FHEVM_WALLET_HOME` to use another
 ├── addressbook.json   # Saved contacts
 ├── transactions.json  # Local transaction history
 ├── audit.log          # Wallet events (never amounts, keys or phrases)
-└── balance-cache.json # Cached balances
+├── balance-cache.json # Cached balances
+└── amount-cache.json  # Decrypted transfer amounts, by ciphertext handle
 ```
 
 The folder is readable only by you (`0700`, files `0600`), and files are replaced

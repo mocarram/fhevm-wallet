@@ -213,7 +213,20 @@ Every unit of work goes through this loop until it comes out clean:
   ours was already accepted. Mined reverts stay `TX_REVERTED`; a nonce taken by another
   transaction is `TX_REPLACED`. Both keep the hash. The wait for a receipt is bounded
   (`CONFIRMATION_TIMEOUT_MS`) and also ends in `SENT_UNCONFIRMED`.
-- Never write plaintext token amounts to the audit log.
+- Never write plaintext token amounts to the audit log. Decrypted transfer amounts live
+  only in `amount-cache.json` (`src/storage/AmountCache.ts`, owner-only, keyed by handle).
+- User decryption goes through a `DecryptSession` (`src/core/fhe/DecryptSession.ts`): one
+  EIP-712 signature per 10 contracts for all tracked tokens, requests of at most 2048
+  encrypted bits (the relayer SDK limits). It is memory-only and must be `clear()`ed with
+  the key (the TUI's `lockWallet` does; one-shot CLI commands clear it when done).
+- Wrap every relayer SDK call in `quietSdk` (`src/core/fhe/sdkConsole.ts`): the SDK prints
+  to the console (a deprecation notice among others), which would corrupt the TUI and
+  `--json` output.
+- Transactions other than transfers (operators, disclosure) use `prepareTokenCall` in
+  `TokenService` (chain check, simulation, fee, ETH check, then `signAndBroadcast`) and,
+  in the TUI, `src/tui/flows/tx.ts` (review, confirm, countdown, background broadcast).
+- With `FHEW_BACKEND=mock` only commands that route every network call through the
+  Backend may run (`MOCK_COMMANDS` in `src/core/backend/mockGuard.ts`).
 - Set `FHEW_DEBUG=1` to print redacted technical details under error messages
   (`describeError` adds them; `describeErrorShort` is for table cells and never does).
 - A `.env` in the current directory is only trusted for `CWD_ENV_ALLOWED_KEYS`
