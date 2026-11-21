@@ -52,6 +52,25 @@ describe('"every action" unlock mode', () => {
     expect(h.screen).toBe('home');
     expect(h.s.signer).toBeNull();
   });
+
+  it('backing out of Review with Esc locks at once', async () => {
+    const h = new Harness({ unlocked: true });
+    h.s.data.prefs.unlockMinutes = 0;
+    await toReview(h);
+    expect(h.s.send.prepared).toBeDefined();
+    await h.keys('{escape}');
+    expect(h.screen).not.toBe('send-review');
+    expect(h.s.signer).toBeNull();
+    expect(h.s.send.prepared).toBeUndefined();
+  });
+
+  it('a timed unlock survives backing out of Review', async () => {
+    const h = new Harness({ unlocked: true });
+    h.s.data.prefs.unlockMinutes = 15;
+    await toReview(h);
+    await h.keys('{escape}');
+    expect(h.s.signer).not.toBeNull();
+  });
 });
 
 describe('prepared sends never outlive the unlock', () => {

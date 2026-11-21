@@ -242,6 +242,9 @@ export function back(s: AppState): void {
   if (s.stack.length > 1) {
     s.flash = null;
     s.stack.pop();
+    // "Every action" mode: backing out of Review ends the send, so lock at once (as
+    // goHome does) instead of leaving the key and the prepared send for the grace period.
+    if (s.data.prefs.unlockMinutes === 0 && !sendInProgress(s)) lockWallet(s);
   } else if (inSetup(s)) {
     s.flash = [[{ t: '  This is the start of setup. Press 0 or q to quit.', s: ['dim'] }]];
   } else {
