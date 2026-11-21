@@ -110,17 +110,21 @@ export function chooseToken(s: AppState, address: string): Effect[] {
 
 /** Recipient step: a saved contact. */
 export function chooseContact(s: AppState, contact: { name: string; address: string }): Effect[] {
-  s.send.to = { address: contact.address, name: contact.name, isNew: false };
+  s.send.to = {
+    address: contact.address,
+    name: contact.name,
+    isNew: isNewAddress(s, contact.address),
+  };
   return open(s, 'send-amount');
 }
 
-/** Whether this wallet has never sent to `address` and it is not a contact. */
+/**
+ * True when this wallet never sent to `address` on this network: the first-time note.
+ * Saved contacts get it too (a contact can be saved with a wrong address), like `fhew
+ * send`.
+ */
 function isNewAddress(s: AppState, address: string): boolean {
-  const a = address.toLowerCase();
-  return (
-    !s.data.contacts.some((c) => c.address.toLowerCase() === a) &&
-    !s.data.knownRecipients.includes(a)
-  );
+  return !s.data.knownRecipients.includes(address.toLowerCase());
 }
 
 /**
@@ -140,7 +144,11 @@ function useAddress(s: AppState, address: string, how: 'push' | 'replace'): Effe
   const go = how === 'push' ? open : openInstead;
   const contact = s.data.contacts.find((c) => c.address.toLowerCase() === address.toLowerCase());
   if (contact) {
-    s.send.to = { address: contact.address, name: contact.name, isNew: false };
+    s.send.to = {
+      address: contact.address,
+      name: contact.name,
+      isNew: isNewAddress(s, contact.address),
+    };
     return go(s, 'send-amount');
   }
   const lookalike = findLookAlike(address, s.data.contacts);
@@ -153,7 +161,7 @@ function useAddress(s: AppState, address: string, how: 'push' | 'replace'): Effe
 export function useContactInstead(s: AppState, contactName: string): Effect[] {
   const c = s.data.contacts.find((x) => x.name === contactName);
   if (!c) return [];
-  s.send.to = { address: c.address, name: c.name, isNew: false };
+  s.send.to = { address: c.address, name: c.name, isNew: isNewAddress(s, c.address) };
   return openInstead(s, 'send-amount');
 }
 
@@ -537,7 +545,7 @@ export function repeatLastSend(s: AppState): Effect[] {
   return prefilledReview(
     s,
     t,
-    { address: contact.address, name: contact.name, isNew: false },
+    { address: contact.address, name: contact.name, isNew: isNewAddress(s, contact.address) },
     value,
     amountText,
     'repeat',
@@ -614,7 +622,7 @@ export function commandSend(
   return prefilledReview(
     s,
     t,
-    { address: rr.address, name: rr.contact.name, isNew: false },
+    { address: rr.address, name: rr.contact.name, isNew: isNewAddress(s, rr.address) },
     ar.value,
     args.amount,
     'command',

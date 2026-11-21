@@ -322,3 +322,15 @@ describe('Review while the checks run', () => {
     expect(h.s.countdown).toBeNull();
   });
 });
+
+describe('first-time note', () => {
+  it('also shows for a saved contact this wallet never sent to (as fhew send does)', async () => {
+    const h = new Harness({ unlocked: true });
+    await toReview(h);
+    expect(h.text()).toMatch(/First time sending to bob\. Check the address with them/);
+    h.s.data.knownRecipients = [BOB.toLowerCase()];
+    await h.keys('{escape}', '{escape}', '{enter}', '{enter}');
+    expect(h.screen).toBe('send-review');
+    expect(h.text()).not.toMatch(/First time/);
+  });
+});

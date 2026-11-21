@@ -353,7 +353,14 @@ export const sendReviewScreen: ScreenDef = {
     } else if (to.isNew) {
       body.push(
         BLANK,
-        line(seg('  ! First time sending to this address. Check it with the recipient.', 'yellow')),
+        line(
+          seg(
+            to.name
+              ? `  ! First time sending to ${to.name}. Check the address with them.`
+              : '  ! First time sending to this address. Check it with the recipient.',
+            'yellow',
+          ),
+        ),
       );
     }
     if (s.network === 'mainnet') {

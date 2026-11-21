@@ -352,8 +352,15 @@ async function send(
   }
   const self = selfSendWarning(recipient, wallet.address);
   if (self) console.log(warning(`  ${self}`));
-  else if (!rr.contact && isFirstTime(wallet.address, recipient, network)) {
-    console.log(warning('  First time sending to this address. Check it with the recipient.'));
+  // Contacts too: one may have been saved with a wrong address (same rule as the TUI).
+  else if (isFirstTime(wallet.address, recipient, network)) {
+    console.log(
+      warning(
+        contactName
+          ? `  First time sending to ${contactName}. Check the address with them.`
+          : '  First time sending to this address. Check it with the recipient.',
+      ),
+    );
   }
   console.log();
 
