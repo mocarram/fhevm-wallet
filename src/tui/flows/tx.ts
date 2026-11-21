@@ -17,7 +17,7 @@ import { effect, type Effect } from '../effects.js';
 import { formatAmount, formatEth, shortHash } from '../format.js';
 import { open, popTo } from '../nav.js';
 import { goHome, isUnlocked, lockWallet, type AppState, type TxAction } from '../state.js';
-import { dimLine, line, seg, type Line } from '../text.js';
+import { dimLine, line, seg, type Line, link } from '../text.js';
 import { decryptAll, refreshEth } from './data.js';
 import { historyRows } from './history.js';
 import { AFTER_BROADCAST, countdownSeconds } from './send.js';
@@ -287,7 +287,7 @@ export function broadcastTx(s: AppState): Effect[] {
               ),
             ),
             ...(error.txHash ? [dimLine(`    tx ${error.txHash}`)] : []),
-            ...(explorerUrl ? [dimLine(`    ${explorerUrl}`)] : []),
+            ...(explorerUrl ? [line('    ', link(explorerUrl, 'dim'))] : []),
             afterBroadcast
               ? line(
                   seg(

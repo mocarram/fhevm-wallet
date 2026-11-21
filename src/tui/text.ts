@@ -29,6 +29,11 @@ export type Style =
 export interface Seg {
   t: string;
   s?: Style[];
+  /**
+   * A link: drawn as an OSC 8 hyperlink to this URL (the text may be shortened to fit
+   * the row; clicking it opens the full URL in terminals that support links).
+   */
+  href?: string;
 }
 
 /** One terminal row. */
@@ -42,6 +47,20 @@ export function seg(t: string, styles?: string): Seg {
 /** Build a line from strings (unstyled) and segments. */
 export function line(...parts: Array<string | Seg>): Line {
   return parts.map((p) => (typeof p === 'string' ? { t: p } : p));
+}
+
+/** A link segment showing `url` (see `Seg.href`). */
+export function link(url: string, styles?: string): Seg {
+  return { ...seg(url, styles), href: url };
+}
+
+/** `text` cut in the middle to `n` columns ("https://sepolia.ether…/tx/0x12…cd34"). */
+function shortenMiddle(text: string, n: number): string {
+  const chars = Array.from(text);
+  if (chars.length <= n) return text;
+  if (n <= 1) return '…';
+  const tail = Math.floor((n - 1) / 3);
+  return chars.slice(0, n - 1 - tail).join('') + '…' + chars.slice(chars.length - tail).join('');
 }
 
 /** A line of dim text, the most common "explanation" style. */
@@ -131,7 +150,16 @@ export function toAnsi(l: Line, color: boolean): string {
         : styles
             .filter((st) => st === 'sel' || st === 'cursor' || st === 'mock')
             .map((st) => (st === 'mock' ? '7;1' : CODES[st]));
-      return codes.length ? `${ESC}${codes.join(';')}m${s.t}${ESC}0m` : s.t;
+      const text = codes.length ? `${ESC}${codes.join(';')}m${s.t}${ESC}0m` : s.t;
+      // OSC 8 hyperlink (BEL-terminated). The URL is printable ASCII only, so it cannot
+      // end the sequence early or carry other escapes.
+      if (raw.href && color) {
+        const href = Array.from(raw.href)
+          .filter((c) => c >= '!' && c <= '~')
+          .join('');
+        return `\x1b]8;;${href}\x07${text}\x1b]8;;\x07`;
+      }
+      return text;
     })
     .join('');
 }
@@ -144,6 +172,18 @@ export function toAnsi(l: Line, color: boolean): string {
  */
 export function wrapLine(l: Line, cols: number): Line[] {
   if (cols <= 4 || lineWidth(l) <= cols) return [l];
+  // A link is never broken across rows (an explorer URL in two pieces cannot be copied
+  // or clicked): it is shortened in the middle instead and stays clickable (OSC 8).
+  const links = l.filter((sg) => sg.href);
+  if (links.length) {
+    const over = lineWidth(l) - cols;
+    const room = links.reduce((n, sg) => n + width(sg.t), 0) - over;
+    if (room >= 12 * links.length) {
+      const each = Math.floor(room / links.length);
+      const fitted = l.map((sg) => (sg.href ? { ...sg, t: shortenMiddle(sg.t, each) } : sg));
+      if (lineWidth(fitted) <= cols) return [fitted];
+    }
+  }
   // Flatten to styled characters, then cut rows.
   const chars: Array<{ c: string; s?: Style[] }> = [];
   for (const sg of l) for (const c of Array.from(sg.t)) chars.push({ c, s: sg.s });

@@ -30,7 +30,7 @@ import {
   type ErrorView,
   type Recipient,
 } from '../state.js';
-import { dimLine, line, seg, type Line } from '../text.js';
+import { dimLine, line, seg, type Line, link } from '../text.js';
 import { decryptAll, refreshEth, reload, sessionOf } from './data.js';
 
 /** Codes that mean the transaction was handed to the network and may be on-chain. */
@@ -471,7 +471,7 @@ export function broadcast(s: AppState): Effect[] {
               ),
             ),
             ...(error.txHash ? [dimLine(`    tx ${error.txHash}`)] : []),
-            ...(explorerUrl ? [dimLine(`    ${explorerUrl}`)] : []),
+            ...(explorerUrl ? [line('    ', link(explorerUrl, 'dim'))] : []),
             afterBroadcast
               ? line(
                   seg(

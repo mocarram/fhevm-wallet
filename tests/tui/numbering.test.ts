@@ -29,3 +29,30 @@ describe('stable numbers and cursor', () => {
     expect(h.text()).toMatch(/already decrypted/);
   });
 });
+
+describe('explorer links', () => {
+  const url = `https://sepolia.etherscan.io/tx/0x${'ab'.repeat(31)}cdef`;
+
+  it('are never split across rows: shortened in the middle, clickable in full', async () => {
+    const { line, link, plain, toAnsi, wrapLine } = await import('../../src/tui/text.js');
+    const rows = wrapLine(line('  → ', link(url, 'cyan')), 80);
+    expect(rows).toHaveLength(1);
+    const text = plain(rows[0]);
+    expect(text.length).toBeLessThanOrEqual(80);
+    expect(text).toMatch(/^ {2}→ https:\/\/sepolia\.etherscan\.io\/tx\/0xab.*….*cdef$/);
+    const ansi = toAnsi(rows[0], true);
+    expect(ansi).toContain(`\x1b]8;;${url}\x07`);
+    expect(toAnsi(rows[0], false)).not.toContain('\x1b]8');
+  });
+
+  it('Show latest in explorer uses the newest row the filter shows', async () => {
+    const h = new Harness();
+    await h.keys('h');
+    await h.keys('/', 'eth', '{enter}', '2');
+    const t = h.text(80, 30);
+    expect(t).toMatch(/→ https:\/\/sepolia\.etherscan\.io\/tx\/0x/);
+    const shown = h.s.history!.rows.find((r) => r.kind.startsWith('eth'))!;
+    const hashEnd = shown.txHash.slice(-4);
+    expect(t).toContain(hashEnd);
+  });
+});

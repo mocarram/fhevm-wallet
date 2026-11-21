@@ -11,7 +11,7 @@ import { isUnlocked, type AppState } from '../state.js';
 import type { Item } from '../screen.js';
 import { spinner } from '../format.js';
 import type { ScreenDef } from '../screen.js';
-import { dimLine, line, pad, seg, type Line } from '../text.js';
+import { dimLine, line, link, pad, seg, type Line } from '../text.js';
 import { backItem, BLANK } from './common.js';
 import { matchesFilter } from '../components/list.js';
 
@@ -121,9 +121,15 @@ export const historyScreen: ScreenDef = {
         {
           label: 'Show latest in explorer',
           act: (st) => {
-            const first = st.history?.rows[0];
+            // The newest row the filter shows, not the newest of all.
+            const first = (st.history?.rows ?? []).find((r) =>
+              matchesFilter(
+                `${r.kind} ${r.token} ${r.counterparty} ${r.amount} ${r.txHash}`,
+                st.inputs[HISTORY_FILTER],
+              ),
+            );
             st.flash = first
-              ? [line(seg(`  → ${explorerFor(st.network, first.txHash)}`, 'cyan'))]
+              ? [line('  → ', link(explorerFor(st.network, first.txHash), 'cyan'))]
               : [dimLine('  Nothing to show yet.')];
           },
         },

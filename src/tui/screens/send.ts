@@ -32,7 +32,7 @@ import { formatAmount, formatEth, spinner } from '../format.js';
 import { open, openFromRoot } from '../nav.js';
 import type { InputSpec, Item, MenuEntry, ScreenDef } from '../screen.js';
 import { back, goHome, isUnlocked, top, type AppState } from '../state.js';
-import { dimLine, line, pad, padLeft, seg, type Line } from '../text.js';
+import { dimLine, line, link, pad, padLeft, seg, type Line } from '../text.js';
 import { unlockMinutesText } from './balances.js';
 import {
   backItem,
@@ -531,7 +531,7 @@ export const sendErrorScreen: ScreenDef = {
     if (e.hint) body.push(line('  ', seg('What to try', 'bold')), line(`  ${e.hint}`));
     if (e.txHash) body.push(BLANK, line('  Transaction  ', seg(e.txHash, 'bold')));
     // On its own row so it can be copied in one piece.
-    if (v.explorerUrl) body.push(line('  Explorer'), line('  ', seg(v.explorerUrl, 'cyan')));
+    if (v.explorerUrl) body.push(line('  Explorer'), line('  ', link(v.explorerUrl, 'cyan')));
     if (e.replacementHash) body.push(line('  Replaced by  ', seg(e.replacementHash, 'bold')));
     if (v.afterBroadcast) {
       body.push(
