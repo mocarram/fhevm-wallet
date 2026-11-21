@@ -54,6 +54,7 @@ import {
   type ScanResult,
 } from '../token/tokenScan.js';
 import { loadConfig } from '../../storage/ConfigStore.js';
+import { RealWrapOps } from './realWrap.js';
 import type { TokenEntry } from '../token/TokenRegistry.js';
 import type {
   AmountRequest,
@@ -443,4 +444,19 @@ export class RealBackend implements Backend {
   explorerTxUrl(txHash: string, network: NetworkName): string {
     return getTxExplorerUrl(txHash, network);
   }
+
+  // Wrap / unwrap (wrapTypes.ts), implemented in realWrap.ts.
+  private readonly wrapOps = new RealWrapOps();
+  wrapperInfo: RealWrapOps['wrapperInfo'] = (...a) => this.wrapOps.wrapperInfo(...a);
+  wrapState: RealWrapOps['wrapState'] = (...a) => this.wrapOps.wrapState(...a);
+  prepareWrap: RealWrapOps['prepareWrap'] = (...a) => this.wrapOps.prepareWrap(...a);
+  prepareUnwrap: RealWrapOps['prepareUnwrap'] = (...a) => this.wrapOps.prepareUnwrap(...a);
+  unwrapRequestStatus: RealWrapOps['unwrapRequestStatus'] = (...a) =>
+    this.wrapOps.unwrapRequestStatus(...a);
+  txOutcome: RealWrapOps['txOutcome'] = (...a) => this.wrapOps.txOutcome(...a);
+  unwrapRequestId: RealWrapOps['unwrapRequestId'] = (...a) => this.wrapOps.unwrapRequestId(...a);
+  prepareFinalizeUnwrap: RealWrapOps['prepareFinalizeUnwrap'] = (...a) =>
+    this.wrapOps.prepareFinalizeUnwrap(...a);
+  underlyingBalance: RealWrapOps['underlyingBalance'] = (...a) =>
+    this.wrapOps.underlyingBalance(...a);
 }

@@ -19,6 +19,7 @@ import type { ScanOptions, ScanResult } from '../token/tokenScan.js';
 import type { BalanceBatch, SendHooks, TokenInfo, TransferResult } from '../token/TokenService.js';
 import type { DecryptSession } from '../fhe/DecryptSession.js';
 import type { DiscloseRequestOptions } from '../token/txErrors.js';
+import type { WrapBackend } from './wrapTypes.js';
 
 export type { BalanceBatch } from '../token/TokenService.js';
 
@@ -117,8 +118,8 @@ export interface HistorySyncResult {
   notice?: string;
 }
 
-/** Everything the UI needs from chain and relayer. */
-export interface Backend {
+/** Everything the UI needs from chain and relayer (wrap/unwrap: wrapTypes.ts). */
+export interface Backend extends WrapBackend {
   readonly kind: BackendKind;
 
   /** A reason FHE operations cannot run on `network` (e.g. no Zama mainnet key), or null. */

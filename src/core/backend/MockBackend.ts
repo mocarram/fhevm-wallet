@@ -55,6 +55,7 @@ import type { TokenCheck } from '../token/erc7984Check.js';
 import type { KnownToken } from '../token/tokenLists.js';
 import type { ScanOptions, ScanResult } from '../token/tokenScan.js';
 import { upsertTransactions } from '../../storage/TransactionStore.js';
+import { MockWrapOps } from './mockWrap.js';
 import type {
   AmountRequest,
   Backend,
@@ -71,8 +72,12 @@ import type {
   UnlockedSigner,
 } from './types.js';
 
-/** Failure modes the mock can inject. */
-export type MockFailure = 'simulate' | 'unconfirmed' | 'reverted' | 'replaced' | 'rpc';
+/**
+ * Failure modes the mock can inject. `public-pending`: public decryptions (unwrap step 2)
+ * never become ready, so an unwrap stays pending for `fhew unwrap --resume`.
+ */
+export type MockFailure =
+  'simulate' | 'unconfirmed' | 'reverted' | 'replaced' | 'rpc' | 'public-pending';
 
 /** Tunables, normally read from the environment by `mockOptionsFromEnv`. */
 export interface MockOptions {
@@ -167,7 +172,14 @@ export function mockOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): MockOp
     // Keep the default on a malformed value: this is a test knob, not user data.
   }
   const fail = env.FHEW_MOCK_FAIL as MockFailure | undefined;
-  const known: MockFailure[] = ['simulate', 'unconfirmed', 'reverted', 'replaced', 'rpc'];
+  const known: MockFailure[] = [
+    'simulate',
+    'unconfirmed',
+    'reverted',
+    'replaced',
+    'rpc',
+    'public-pending',
+  ];
   return {
     latencyMs: num(env.FHEW_MOCK_LATENCY_MS, 300),
     confirmMs: num(env.FHEW_MOCK_CONFIRM_MS, 2500),
@@ -958,6 +970,31 @@ export class MockBackend implements Backend {
   explorerTxUrl(txHash: string, network: NetworkName): string {
     return `${NETWORK_CONFIGS[network].explorerUrl}/tx/${txHash}`;
   }
+
+  /** Wrap / unwrap simulation (mockWrap.ts), on this mock's balances and transactions. */
+  readonly wrapOps = new MockWrapOps({
+    sleep: (ms) => this.sleep(ms),
+    latencyMs: () => this.opts.latencyMs,
+    fail: () => this.opts.fail,
+    rpcFailure: () => this.rpcFailure(),
+    balanceOf: (n, t, w) => this.balanceOf(n, t, w),
+    setBalance: (n, t, w, v) => void this.balances.set(this.balanceKey(n, t, w), v),
+    prepareCall: (from, n, label, onConfirmed) => this.prepareCall(from, n, label, onConfirmed),
+    registerHandle: (h, v, a) => this.registerHandle(h, v, a),
+    catalogue: (n) => this.catalogue(n),
+  });
+  wrapperInfo: MockWrapOps['wrapperInfo'] = (...a) => this.wrapOps.wrapperInfo(...a);
+  wrapState: MockWrapOps['wrapState'] = (...a) => this.wrapOps.wrapState(...a);
+  prepareWrap: MockWrapOps['prepareWrap'] = (...a) => this.wrapOps.prepareWrap(...a);
+  prepareUnwrap: MockWrapOps['prepareUnwrap'] = (...a) => this.wrapOps.prepareUnwrap(...a);
+  unwrapRequestStatus: MockWrapOps['unwrapRequestStatus'] = (...a) =>
+    this.wrapOps.unwrapRequestStatus(...a);
+  txOutcome: MockWrapOps['txOutcome'] = (...a) => this.wrapOps.txOutcome(...a);
+  unwrapRequestId: MockWrapOps['unwrapRequestId'] = (...a) => this.wrapOps.unwrapRequestId(...a);
+  prepareFinalizeUnwrap: MockWrapOps['prepareFinalizeUnwrap'] = (...a) =>
+    this.wrapOps.prepareFinalizeUnwrap(...a);
+  underlyingBalance: MockWrapOps['underlyingBalance'] = (...a) =>
+    this.wrapOps.underlyingBalance(...a);
 }
 
 /** Run a UI callback, ignoring its errors (they must never fail a send). */
