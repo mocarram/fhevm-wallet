@@ -11,6 +11,9 @@ import type { Interface } from 'ethers';
 import { maskUrlsInText, redactDebugText, redactSecrets } from '../../utils/redact.js';
 import { TimeoutError } from '../../utils/timeout.js';
 import { stripUnsafeChars } from '../../utils/text.js';
+import { classifyRpcLimit, RATE_LIMIT_RE } from '../network/rpcLimits.js';
+
+export { RATE_LIMIT_RE };
 
 /** Stable codes so UI code and tests can branch on the kind of failure. */
 export type TxErrorCode =
@@ -154,19 +157,33 @@ export function rpcErrorOf(err: unknown): RpcErrorReply | null {
   return { code: typeof rpc.code === 'number' ? rpc.code : null, message };
 }
 
-/**
- * Wording providers use for "too many requests" or a used-up quota. Whole phrases only:
- * single words like "limit" or "exceed" also appear in unrelated errors ("exceeds block
- * gas limit", "exceeds max transaction gas limit"), which must not read as throttling.
- */
-export const RATE_LIMIT_RE =
-  /\brate[\s-]?limit|too many requests|\bquota\b|(?:^|\D)-32005\b|\b429\b|throttl/i;
 /** ...and for a missing, wrong or expired key. */
 const AUTH_RE =
   /unauthori[sz]ed|forbidden|invalid (?:api )?key|api key|not allowed|authenticat|permission denied/i;
 
 /** Translate a JSON-RPC error from the endpoint itself into plain words. */
 function rpcReplyError(reply: RpcErrorReply, raw: string): WalletTxError {
+  // Range and pruning first: Infura sends "query returned more than 10000 results" with
+  // -32005, the code others use for rate limits.
+  const limit = classifyRpcLimit({ code: reply.code ?? undefined, message: reply.message });
+  if (limit === 'pruned') {
+    return new WalletTxError(
+      'RPC_ERROR',
+      'Your RPC endpoint does not keep blocks that old.',
+      'Public endpoints keep only recent history (about a week); older logs need an archive node.',
+      'Set an Etherscan API key (fhevm-wallet config --etherscan-key -) or an archive RPC URL.',
+      raw,
+    );
+  }
+  if (limit === 'range') {
+    return new WalletTxError(
+      'RPC_ERROR',
+      'Your RPC endpoint refused a log query of that size.',
+      'It limits how many blocks one eth_getLogs request may cover.',
+      'Try again, or set an RPC URL with higher limits or an Etherscan API key.',
+      raw,
+    );
+  }
   if (reply.code === -32005 || RATE_LIMIT_RE.test(reply.message)) {
     return new WalletTxError(
       'RPC_RATE_LIMITED',

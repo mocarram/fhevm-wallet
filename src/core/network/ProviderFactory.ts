@@ -13,6 +13,7 @@ import {
 import { getNetworkConfig, getRpcUrls, NetworkName } from './NetworkConfig.js';
 import { maskUrlsInText, redactSecrets } from '../../utils/redact.js';
 import { abortableGetUrl } from './abortableGetUrl.js';
+import { classifyRpcLimit, type RpcLimitKind } from './rpcLimits.js';
 
 /** Per-request timeout for JSON-RPC calls. ethers' default is 5 minutes, which freezes the UI. */
 export const RPC_TIMEOUT_MS = 20_000;
@@ -57,14 +58,69 @@ export class WrongChainError extends Error {
 }
 
 /**
+ * Endpoints that refused a request with HTTP 4xx (other than 408/429), for the rest of
+ * the process. Keyed by URL so a provider rebuilt after a settings change still skips
+ * them. drpc, for one, answers every Sepolia call on its free plan with HTTP 400.
+ */
+const refusedUrls = new Map<string, unknown>();
+
+/** Forget remembered refusals (tests, or after the user changes RPC settings). */
+export function resetRefusedEndpoints(): void {
+  refusedUrls.clear();
+}
+
+/** HTTP status of an ethers SERVER_ERROR, if it has one. */
+function httpStatusOf(err: unknown): number | null {
+  const s = (err as { response?: { statusCode?: unknown } } | null)?.response?.statusCode;
+  return typeof s === 'number' ? s : null;
+}
+
+/** True for an HTTP refusal that will not change by asking again soon. */
+function isLastingRefusal(err: unknown): boolean {
+  const s = httpStatusOf(err);
+  return s !== null && s >= 400 && s < 500 && s !== 408 && s !== 429;
+}
+
+/**
+ * How useful a failure is to report when every endpoint failed: a JSON-RPC answer that
+ * says what to change beats a timeout, which beats "this public endpoint refuses
+ * everyone on its free plan". Ties keep the first (the preferred endpoint's) error.
+ */
+const LIMIT_RANK: Record<RpcLimitKind, number> = { range: 6, rate: 5, pruned: 4, restricted: 3 };
+function failureRank(err: unknown): number {
+  if (httpStatusOf(err) === 429) return 5;
+  if (isLastingRefusal(err)) return 1;
+  return 2; // timeout, connection refused, HTTP 5xx, wrong chain
+}
+
+/** The first JSON-RPC error in a reply that means "ask another endpoint". */
+function limitIn(results: JsonRpcResult[]): RpcLimitKind | null {
+  for (const r of results as Array<JsonRpcResult | { error?: unknown }>) {
+    if ('error' in r && r.error) {
+      const kind = classifyRpcLimit(r.error);
+      if (kind) return kind;
+    }
+  }
+  return null;
+}
+
+/**
  * A JSON-RPC provider that tries the next URL when one does not answer, and checks each
  * URL's chain ID before its first real request.
  *
- * Fail-over only covers transport failures (timeout, connection refused, HTTP 5xx/429)
- * and endpoints on the wrong chain: a JSON-RPC error reply (a revert, say) is a real
- * answer and comes back unchanged. `eth_sendRawTransaction` is never retried on another
- * node: if the first attempt timed out the transaction may already be in a mempool, and
- * the caller reports it as "sent, not confirmed" with its hash instead.
+ * Fail-over covers transport failures (timeout, connection refused, HTTP 4xx/5xx) and,
+ * for read-only calls, JSON-RPC replies that only say "not here": rate limits, plan
+ * restrictions, pruned history and block-range caps (`classifyRpcLimit`). Any other
+ * JSON-RPC error (a revert, say) is a real answer and comes back unchanged. When every
+ * endpoint fails, the most useful failure is reported (see `failureRank`): a fallback
+ * that refuses free-plan traffic must not hide the preferred endpoint's real answer.
+ *
+ * `eth_sendRawTransaction` is never retried on another node: if the first attempt timed
+ * out the transaction may already be in a mempool, and the caller reports it as "sent,
+ * not confirmed" with its hash instead.
+ *
+ * The endpoint that answered stays in use. One that refused with HTTP 4xx is skipped for
+ * the rest of the process (`refusedUrls`) unless every endpoint did.
  *
  * The chain check is per URL. A verified URL is not asked again. A URL that answered with
  * the wrong chain is skipped from then on (the next fallback gets its turn). A transport
@@ -84,6 +140,7 @@ export class FailoverJsonRpcProvider extends JsonRpcProvider {
     this.urls = urls;
     this.#timeoutMs = timeoutMs;
     this.#expectedChainId = network.chainId;
+    this.#index = this.#usable(0);
   }
 
   /** The endpoint currently in use. */
@@ -100,37 +157,82 @@ export class FailoverJsonRpcProvider extends JsonRpcProvider {
     return rpcRequest(this.currentUrl, this.#timeoutMs);
   }
 
+  /** `from`, or the next URL after it that has not refused us; `from` if all have. */
+  #usable(from: number): number {
+    for (let i = 0; i < this.urls.length; i++) {
+      const j = (from + i) % this.urls.length;
+      if (!refusedUrls.has(this.urls[j])) return j;
+    }
+    return from;
+  }
+
+  /** POST `payload` to one specific URL (ethers' own _send, without the shared index). */
+  async #post(index: number, payload: JsonRpcPayload | JsonRpcPayload[]): Promise<JsonRpcResult[]> {
+    const req = rpcRequest(this.urls[index], this.#timeoutMs);
+    req.body = JSON.stringify(payload);
+    req.setHeader('content-type', 'application/json');
+    const res = await req.send();
+    res.assertOk();
+    const body = res.bodyJson as JsonRpcResult | JsonRpcResult[];
+    return Array.isArray(body) ? body : [body];
+  }
+
   override async _send(payload: JsonRpcPayload | JsonRpcPayload[]): Promise<JsonRpcResult[]> {
     const methods = (Array.isArray(payload) ? payload : [payload]).map((p) => p.method);
     const canFailOver = this.urls.length > 1 && !methods.includes('eth_sendRawTransaction');
-    let lastError: unknown;
+    // The best outcome so far when every endpoint fails: a reply to hand back, or an error.
+    let best: { rank: number; results?: JsonRpcResult[]; error?: unknown } | null = null;
+    const tried = new Set<number>();
     for (let attempt = 0; attempt < (canFailOver ? this.urls.length : 1); attempt++) {
-      const index = this.#index;
+      const index = canFailOver ? this.#usable(this.#index) : this.#index;
+      // Every usable URL was tried: the rest refused before, so do not ask them again.
+      if (tried.has(index)) break;
+      tried.add(index);
+      let rank: number;
+      let outcome: { results?: JsonRpcResult[]; error?: unknown };
       try {
         // Verify the chain on first use of every URL (in every process), so a wrong URL
         // in .env is caught before any balance read or send.
         await this.#ensureChain(index);
-        return await super._send(payload);
-      } catch (err) {
-        lastError = err;
-        // Move on only if nobody else moved the index meanwhile (parallel requests).
-        if (canFailOver && this.#index === index) {
-          this.#index = (index + 1) % this.urls.length;
+        const results = await this.#post(index, payload);
+        const limit = canFailOver ? limitIn(results) : null;
+        if (!limit) {
+          if (canFailOver) this.#index = index; // stay with the endpoint that answered
+          return results;
         }
+        rank = LIMIT_RANK[limit];
+        outcome = { results };
+      } catch (err) {
+        if (isLastingRefusal(err)) refusedUrls.set(this.urls[index], err);
+        rank = failureRank(err);
+        outcome = { error: err };
+      }
+      if (!best || rank > best.rank) best = { rank, ...outcome };
+      // Move on only if nobody else moved the index meanwhile (parallel requests).
+      if (canFailOver && this.#index === index) {
+        this.#index = this.#usable((index + 1) % this.urls.length);
       }
     }
-    throw lastError;
+    if (best?.results) return best.results;
+    throw best?.error;
   }
 
   async #ensureChain(index: number): Promise<void> {
     if (this.#verified.has(index)) return;
     const known = this.#wrongChain.get(index);
     if (known) throw known;
-    const [reply] = await super._send({ id: 0, jsonrpc: '2.0', method: 'eth_chainId', params: [] });
-    if (!reply || !('result' in reply)) {
+    const [reply] = await this.#post(index, {
+      id: 0,
+      jsonrpc: '2.0',
+      method: 'eth_chainId',
+      params: [],
+    });
+    const result = reply && 'result' in reply ? reply.result : undefined;
+    // A non-hex answer would make BigInt throw a SyntaxError nobody can act on.
+    if (typeof result !== 'string' || !/^0x[0-9a-f]+$/i.test(result)) {
       throw new Error('The RPC endpoint did not report its chain ID');
     }
-    const served = BigInt(reply.result as string);
+    const served = BigInt(result);
     if (served !== this.#expectedChainId) {
       const wrong = new WrongChainError(served, this.#expectedChainId);
       this.#wrongChain.set(index, wrong);
@@ -305,7 +407,9 @@ export async function probeRpc(
 ): Promise<RpcProbe> {
   const started = Date.now();
   const result = await rawRpcCall(url, 'eth_chainId', timeoutMs);
-  if (typeof result !== 'string') throw new Error('No chain ID in the reply');
+  if (typeof result !== 'string' || !/^0x[0-9a-f]+$/i.test(result)) {
+    throw new Error('No chain ID in the reply');
+  }
   const probe: RpcProbe = { chainId: BigInt(result), latencyMs: Date.now() - started };
   if (opts.withBlockNumber) {
     let block: unknown;

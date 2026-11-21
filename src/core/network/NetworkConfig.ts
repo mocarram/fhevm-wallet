@@ -21,11 +21,20 @@ export const CHAIN_IDS = {
 export type NetworkName = 'mainnet' | 'sepolia';
 
 /**
- * Default RPC URLs used when no custom URL is configured
+ * Default RPC URLs used when no custom URL is configured.
+ *
+ * Sepolia (measured Nov 2026): publicnode answers address-filtered eth_getLogs over
+ * 30,000+ blocks but keeps only about a week of logs ("pruned history unavailable") and
+ * refuses topic-only queries; nodies keeps old logs but caps eth_getLogs at 50 blocks.
+ * drpc refuses Sepolia on its free plan (HTTP 400) and was dropped.
+ *
+ * Mainnet is not reachable from the environment this was tested in. publicnode comes
+ * first by analogy with its Sepolia endpoint (same operator); the others are the
+ * previous defaults. Unverified.
  */
 export const DEFAULT_RPC_URLS: Record<NetworkName, string> = {
-  mainnet: 'https://eth-mainnet.public.blastapi.io',
-  sepolia: 'https://ethereum-sepolia-public.nodies.app',
+  mainnet: 'https://ethereum-rpc.publicnode.com',
+  sepolia: 'https://ethereum-sepolia-rpc.publicnode.com',
 };
 
 /**
@@ -34,9 +43,15 @@ export const DEFAULT_RPC_URLS: Record<NetworkName, string> = {
  * silently replacing it with a public node would surprise them (and leak their traffic).
  */
 export const FALLBACK_RPC_URLS: Record<NetworkName, readonly string[]> = {
-  mainnet: ['https://ethereum-rpc.publicnode.com', 'https://eth.drpc.org'],
-  sepolia: ['https://ethereum-sepolia-rpc.publicnode.com', 'https://sepolia.drpc.org'],
+  mainnet: ['https://eth-mainnet.public.blastapi.io', 'https://eth.drpc.org'],
+  sepolia: ['https://ethereum-sepolia-public.nodies.app'],
 };
+
+/** True when `network` uses the built-in public endpoints (no valid custom RPC URL). */
+export function usesPublicRpc(network: NetworkName): boolean {
+  const custom = process.env[network === 'mainnet' ? 'MAINNET_RPC_URL' : 'SEPOLIA_RPC_URL'];
+  return !custom?.trim() || validateRpcUrl(custom.trim()) !== null;
+}
 
 export const NETWORK_CONFIGS: Record<NetworkName, Omit<NetworkConfig, 'rpcUrl'>> = {
   mainnet: {

@@ -321,6 +321,103 @@ describe('FailoverJsonRpcProvider', () => {
     provider.destroy();
   });
 
+  describe('fail-over on JSON-RPC limit replies (M2/M3)', () => {
+    const LIMIT_50 = {
+      code: -32001,
+      message:
+        'Block range too large: maximum allowed is 50 blocks on your current plan. Upgrade your subscription at https://nodies.app/pricing for larger ranges.',
+    };
+    const PRUNED = { code: 4444, message: 'pruned history unavailable' };
+    const getLogs = (p: FailoverJsonRpcProvider) =>
+      p.send('eth_getLogs', [{ fromBlock: '0x0', toBlock: '0x100', topics: [] }]);
+
+    it('asks the next endpoint when one says its history is pruned, and stays there', async () => {
+      const pruned = await startNode('pruned', { rpcErrors: { eth_getLogs: PRUNED } });
+      const archive = await startNode('archive', {});
+      const provider = new FailoverJsonRpcProvider([pruned, archive], sepolia, 2_000);
+      expect(await getLogs(provider)).toBe('0x10');
+      expect(provider.currentUrl).toBe(archive);
+      await getLogs(provider);
+      expect(calls.pruned.filter((m) => m === 'eth_getLogs')).toHaveLength(1);
+      provider.destroy();
+    });
+
+    it('reports the block-range cap when every endpoint refuses, not the last error', async () => {
+      const capped = await startNode('capped', { rpcErrors: { eth_getLogs: LIMIT_50 } });
+      const pruned = await startNode('pruned2', { rpcErrors: { eth_getLogs: PRUNED } });
+      const provider = new FailoverJsonRpcProvider([capped, pruned], sepolia, 2_000);
+      await expect(getLogs(provider)).rejects.toThrow(/maximum allowed is 50 blocks/);
+      provider.destroy();
+    });
+
+    it('fails over on a JSON-RPC rate limit for reads but never re-sends a transaction', async () => {
+      const limited = await startNode('limited', {
+        rpcErrors: {
+          eth_blockNumber: { code: -32005, message: 'rate limit exceeded' },
+          eth_sendRawTransaction: { code: -32005, message: 'rate limit exceeded' },
+        },
+      });
+      const spare = await startNode('spare', {});
+      const provider = new FailoverJsonRpcProvider([limited, spare], sepolia, 2_000);
+      expect(await provider.send('eth_blockNumber', [])).toBe('0x10');
+      const again = new FailoverJsonRpcProvider([limited, spare], sepolia, 2_000);
+      await again.send('eth_chainId', []).catch(() => undefined);
+      await expect(again.send('eth_sendRawTransaction', ['0x00'])).rejects.toThrow(/rate limit/);
+      expect(calls.spare).not.toContain('eth_sendRawTransaction');
+      provider.destroy();
+      again.destroy();
+    });
+
+    it('a revert is a real answer and is not sent to the next endpoint', async () => {
+      const reverting = await startNode('reverting', {
+        rpcErrors: { eth_call: { code: 3, message: 'execution reverted', data: '0x' } },
+      });
+      const other = await startNode('other-r', {});
+      const provider = new FailoverJsonRpcProvider([reverting, other], sepolia, 2_000);
+      await expect(
+        provider.send('eth_call', [{ to: '0x' + '1'.repeat(40) }, 'latest']),
+      ).rejects.toThrow(/revert/);
+      expect(calls['other-r'] ?? []).not.toContain('eth_call');
+      provider.destroy();
+    });
+
+    it('remembers an endpoint that refused with HTTP 400 for the process', async () => {
+      const refusing = await startNode('refusing', { status: 400 });
+      const good = await startNode('good', {});
+      const first = new FailoverJsonRpcProvider([refusing, good], sepolia, 2_000);
+      expect(await first.send('eth_blockNumber', [])).toBe('0x10');
+      const seen = calls.refusing.length;
+      first.destroy();
+      // A new provider (a settings change rebuilds them) does not ask it again.
+      const second = new FailoverJsonRpcProvider([refusing, good], sepolia, 2_000);
+      expect(second.currentUrl).toBe(good);
+      expect(await second.send('eth_blockNumber', [])).toBe('0x10');
+      expect(calls.refusing.length).toBe(seen);
+      second.destroy();
+    });
+
+    it("reports the preferred endpoint's failure, not a free-plan refusal from a fallback", async () => {
+      const down = await startNode('down2', { status: 503 });
+      const planOnly = await startNode('plan', { status: 400 });
+      const provider = new FailoverJsonRpcProvider([down, planOnly], sepolia, 2_000);
+      const err = (await provider.send('eth_blockNumber', []).catch((e) => e)) as {
+        response?: { statusCode?: number };
+      };
+      expect(err.response?.statusCode).toBe(503);
+      provider.destroy();
+    });
+
+    it('says the endpoint did not report its chain when eth_chainId is not hex', async () => {
+      const odd = await startNode('odd', { chainIdHex: 'sepolia' });
+      const provider = new FailoverJsonRpcProvider([odd], sepolia, 2_000);
+      await expect(provider.send('eth_blockNumber', [])).rejects.toThrow(
+        /did not report its chain/,
+      );
+      await expect(probeRpc(odd, 2_000)).rejects.toThrow(/No chain ID/);
+      provider.destroy();
+    });
+  });
+
   describe('EIP-1193 wrapper for the relayer SDK', () => {
     it('answers eth_chainId locally and keeps revert data decodable', async () => {
       const revertData = '0x08c379a0' + '00'.repeat(32); // Error(string) selector + junk

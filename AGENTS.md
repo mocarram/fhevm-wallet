@@ -185,7 +185,10 @@ Every unit of work goes through this loop until it comes out clean:
   environment.
   A new store file must be added to `WALLET_DATA_ENTRIES`.
 - Network calls have timeouts: JSON-RPC through `getProvider` (20 s per request, chain-ID
-  check per URL, fallback endpoints, `abortableGetUrl` so a timed-out socket is closed),
+  check per URL, fallback endpoints, `abortableGetUrl` so a timed-out socket is closed;
+  read-only calls also fail over on JSON-RPC rate/plan/pruned/range replies, classified
+  in `src/core/network/rpcLimits.ts`, never `eth_sendRawTransaction`; an endpoint that
+  refuses with HTTP 4xx is skipped for the rest of the process),
   `fetch` with `AbortSignal.timeout`, relayer SDK calls through `quietSdk(fn, timeout)`
   (`src/core/fhe/sdkConsole.ts`, which gives the console back when the timeout fires;
   never wrap `quietSdk` in `withTimeout`). HTTP 429 is retried 3 times, not ethers' 12. Custom RPC URLs
