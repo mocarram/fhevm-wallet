@@ -67,6 +67,7 @@ export const historyScreen: ScreenDef = {
           '  ',
           r.counterparty,
           ...(r.disclosed ? [seg('  public', 'dim')] : []),
+          ...(r.unconfirmed ? [seg('  ! unconfirmed', 'yellow')] : []),
         ),
       );
     }

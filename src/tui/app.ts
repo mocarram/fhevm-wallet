@@ -23,7 +23,8 @@ import {
 import { QUIT, type Effect } from './effects.js';
 import { broadcast, commandSend } from './flows/send.js';
 import { broadcastTx } from './flows/tx.js';
-import { lockNow } from './flows/data.js';
+import { decryptAll, lockNow, refreshEth, reload } from './flows/data.js';
+import { loadHistory } from './flows/manage.js';
 import { findBusy } from './flows/find.js';
 import { spinner } from './format.js';
 import { openFromRoot } from './nav.js';
@@ -449,6 +450,11 @@ export function tick(s: AppState, now: number): Effect[] {
   s.now = now;
   if (s.countdown && now >= s.countdown.endsAt) {
     return s.countdown.for === 'tx' ? broadcastTx(s) : broadcast(s);
+  }
+  // A send ended unconfirmed a while ago: look again (balances, ETH, history).
+  if (s.recheckAt && now >= s.recheckAt) {
+    s.recheckAt = null;
+    return [reload(s), refreshEth(s), ...decryptAll(s), ...(s.history ? loadHistory(s) : [])];
   }
   // Auto-lock, except while a countdown holds an already-checked send.
   if (s.signer && s.unlockedUntil !== null && s.unlockedUntil <= now && !s.countdown) {

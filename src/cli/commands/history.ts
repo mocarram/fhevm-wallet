@@ -279,8 +279,10 @@ function displayTransactionTable(
     const icon = getTypeIcon(tx.type || 'transfer');
     const { label } = getDirectionInfo(tx, walletAddress);
     const amount = formatAmount(tx, walletAddress, tokens);
+    // Block 0: sent, but this wallet has seen no receipt yet (SENT_UNCONFIRMED).
+    const shown = tx.blockNumber === 0 ? `${amount} ${chalk.yellow('(unconfirmed)')}` : amount;
 
-    table.push([icon, formatShortDate(tx.timestamp), tx.tokenSymbol, label, amount]);
+    table.push([icon, formatShortDate(tx.timestamp), tx.tokenSymbol, label, shown]);
   }
 
   console.log(table.toString());

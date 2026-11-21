@@ -209,6 +209,11 @@ export interface AppState {
   setup: boolean;
   /** Set by the quit action; the shell restores the terminal and exits. */
   quit: boolean;
+  /**
+   * When to refresh ETH, balances and history again after a send ended unconfirmed
+   * (it may be mined later); null when nothing is waiting.
+   */
+  recheckAt?: number | null;
   /** Size of the last frame drawn (screens that adapt to it read this). */
   size: { cols: number; rows: number };
 }
@@ -221,6 +226,8 @@ export interface HistoryRow {
   tokenAddress?: string;
   /** The amount is public on-chain (this wallet disclosed it). */
   disclosed?: boolean;
+  /** Broadcast, but not confirmed yet as far as this wallet knows. */
+  unconfirmed?: boolean;
   kind: 'sent' | 'received' | 'eth in' | 'eth out' | 'mint' | 'burn';
   amount: string;
   token: string;

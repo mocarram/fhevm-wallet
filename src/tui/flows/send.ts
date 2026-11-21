@@ -457,8 +457,28 @@ export function broadcast(s: AppState): Effect[] {
         const explorerUrl = error.txHash
           ? deps.backend.explorerTxUrl(error.txHash, network)
           : undefined;
+        // It may still confirm: keep it in local history as unconfirmed (block 0) with
+        // its hash; a history sync replaces it with the mined transfer.
+        if (error.code === 'SENT_UNCONFIRMED' && error.txHash) {
+          try {
+            recordTransferTransaction({
+              tokenAddress: t.address,
+              tokenSymbol: t.symbol,
+              from,
+              to: to.address,
+              amount: formatTokenAmount(value, t.decimals, t.decimals),
+              txHash: error.txHash,
+              network,
+              blockNumber: 0,
+            });
+          } catch {
+            // ignored: history is a convenience
+          }
+        }
         return (st) => {
           st.pending = st.pending.filter((p) => p.id !== id);
+          // Look again in a while: the balance and history catch up once it is mined.
+          if (error.code === 'SENT_UNCONFIRMED') st.recheckAt = st.now + RECHECK_MS;
           const view: ErrorView = { error, afterBroadcast, showRaw: false, explorerUrl };
           st.lastSendError = view;
           if (st.stack.length === 1) st.flash = null;
@@ -487,6 +507,9 @@ export function broadcast(s: AppState): Effect[] {
     }),
   ];
 }
+
+/** How long after an unconfirmed send the TUI refreshes balances and history. */
+export const RECHECK_MS = 30_000;
 
 /** Wording of the post-send balance check. */
 function balanceCheckText(check: string | undefined, symbol: string): string {

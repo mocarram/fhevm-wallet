@@ -78,7 +78,14 @@ export function toHistoryRow(
     txHash: t.txHash,
     ...(t.amountHandle ? { handle: t.amountHandle, tokenAddress: t.tokenAddress } : {}),
     ...(known?.disclosed ? { disclosed: true } : {}),
+    // Sent, but no receipt yet (recorded with block 0 after SENT_UNCONFIRMED).
+    ...(t.blockNumber === 0 ? { unconfirmed: true } : {}),
   };
+}
+
+/** Unconfirmed sends first (they are the newest), then by block as stored. */
+export function unconfirmedFirst(rows: HistoryRow[]): HistoryRow[] {
+  return [...rows.filter((r) => r.unconfirmed), ...rows.filter((r) => !r.unconfirmed)];
 }
 
 /** Rows for the current wallet and network, newest first. */
@@ -86,11 +93,12 @@ export function historyRows(s: AppState): HistoryRow[] {
   const wallet = s.wallet;
   if (!wallet) return [];
   const names = new Map(s.data.contacts.map((c) => [c.address.toLowerCase(), c.name]));
-  return listTransactions({
-    walletAddress: wallet.address,
-    network: s.network,
-    limit: HISTORY_LIMIT,
-  }).map((t) => toHistoryRow(t, wallet.address, names, s.data.tokens));
+  // All rows, so unconfirmed sends (block 0, sorted last by the store) are never cut.
+  return unconfirmedFirst(
+    listTransactions({ walletAddress: wallet.address, network: s.network, limit: 100_000 }).map(
+      (t) => toHistoryRow(t, wallet.address, names, s.data.tokens),
+    ),
+  ).slice(0, HISTORY_LIMIT);
 }
 
 /** True when some shown transfer has an amount that could still be decrypted. */

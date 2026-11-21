@@ -113,6 +113,9 @@ gas, each tracked token's ERC-7984 check) with ✔ ! ✗ marks, the same as `fhe
 ## History
 
 Newest first (pending sends at the top, then by block), the latest 200 transfers.
+A send that ended "sent, not confirmed" (SENT_UNCONFIRMED) is kept as a row marked
+`! unconfirmed` with its hash until a sync finds it mined; 30 s after such a send the
+TUI refreshes ETH, balances and history once.
 Rows show decrypted amounts once the wallet is unlocked (`Decrypt amounts` unlocks first).
 Amounts this wallet may not decrypt stay `encrypted`, without an error. Decrypted amounts
 are cached by handle, so they show on later visits while locked. `Disclose an amount`

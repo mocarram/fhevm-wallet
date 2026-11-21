@@ -452,6 +452,25 @@ async function send(
       extra.txHash = txErr.txHash;
       extra.explorerUrl = backend.explorerTxUrl(txErr.txHash, network);
     }
+    // It may still confirm: keep it in local history as unconfirmed (block 0) with its
+    // hash, so `fhew history` and the TUI show it instead of nothing. A sync replaces it
+    // with the mined transfer.
+    if (txErr.code === 'SENT_UNCONFIRMED' && txErr.txHash) {
+      try {
+        recordTransferTransaction({
+          tokenAddress: token.address,
+          tokenSymbol: token.symbol,
+          from: wallet.address,
+          to: recipient,
+          amount: exact,
+          txHash: txErr.txHash,
+          network,
+          blockNumber: 0,
+        });
+      } catch {
+        // history is a convenience
+      }
+    }
     return fail(formatTxError(txErr), txErr.code, extra);
   }
 

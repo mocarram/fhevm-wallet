@@ -344,3 +344,29 @@ it('max of a zero balance says there is nothing to send', async () => {
   expect(h.screen).toBe('send-amount');
   expect(h.text()).toMatch(/You have 0 cUSDC on sepolia\./);
 });
+
+describe('a send that ends unconfirmed', () => {
+  it('is listed in History as unconfirmed with its hash, and balances are re-checked later', async () => {
+    const h = new Harness({ unlocked: true, mock: { fail: 'unconfirmed' } });
+    h.s.data.prefs.countdownSeconds = 0;
+    await toReview(h);
+    await h.keys('{enter}');
+    expect(h.s.lastSendError?.error.code).toBe('SENT_UNCONFIRMED');
+    const hash = h.s.lastSendError!.error.txHash!;
+    expect(h.s.recheckAt).toBeGreaterThan(h.now);
+    const tx = listTransactions({ walletAddress: h.s.wallet!.address, network: 'sepolia' }).find(
+      (t) => t.txHash === hash,
+    );
+    expect(tx?.blockNumber).toBe(0);
+    await h.keys('h');
+    const t = h.text(120, 40);
+    expect(t.split('\n').find((l) => /unconfirmed/.test(l))).toMatch(
+      /sent\s+-25\.00\s+cUSDC\s+bob/,
+    );
+    // Later, the tick refreshes balances and history once.
+    h.ran = [];
+    await h.advance(31_000);
+    expect(h.ran).toEqual(expect.arrayContaining(['history']));
+    expect(h.s.recheckAt).toBeNull();
+  });
+});

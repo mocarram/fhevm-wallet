@@ -181,6 +181,8 @@ export async function historyJson(options: HistoryJsonOptions): Promise<void> {
         disclosed: known ? known.disclosed : undefined,
         amountHandle: t.amountHandle ? normaliseHandle(t.amountHandle) : undefined,
         blockNumber: t.blockNumber,
+        // Sent but no receipt seen yet (recorded after SENT_UNCONFIRMED, block 0).
+        confirmed: t.blockNumber > 0,
         timestamp: t.timestamp,
       };
     });

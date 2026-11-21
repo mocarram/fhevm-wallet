@@ -22,7 +22,7 @@ import { dimLine, line, seg } from '../text.js';
 import { decryptAll, refreshEth, reload } from './data.js';
 import { runDoctorChecks } from '../../core/doctor.js';
 import type { TokenCheck } from '../../core/token/erc7984Check.js';
-import { decryptHistory, HISTORY_LIMIT, toHistoryRow } from './history.js';
+import { decryptHistory, HISTORY_LIMIT, toHistoryRow, unconfirmedFirst } from './history.js';
 
 function ok(s: AppState, text: string): void {
   s.flash = [line('  ', seg(`✔ ${text}`, 'green'))];
@@ -413,9 +413,11 @@ export function loadHistory(s: AppState): Effect[] {
   const tokens = s.data.tokens;
   const names = new Map(s.data.contacts.map((c) => [c.address.toLowerCase(), c.name]));
   const rows = (): HistoryRow[] =>
-    listTransactions({ walletAddress: wallet.address, network, limit: HISTORY_LIMIT }).map((t) =>
-      toHistoryRow(t, wallet.address, names, tokens),
-    );
+    unconfirmedFirst(
+      listTransactions({ walletAddress: wallet.address, network, limit: 100_000 }).map((t) =>
+        toHistoryRow(t, wallet.address, names, tokens),
+      ),
+    ).slice(0, HISTORY_LIMIT);
   s.history = { rows: s.history?.rows ?? [], loading: true };
   return [
     effect('history', async (deps) => {
