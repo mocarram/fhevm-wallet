@@ -2,6 +2,7 @@
  * Balance CLI command
  */
 
+import { resolveToken } from '../../core/send/index.js';
 import { Command } from 'commander';
 import {
   isWrongPassword,
@@ -39,7 +40,7 @@ export function registerBalanceCommand(program: Command): void {
     .command('balance')
     .description('View encrypted token balances')
     .option('-w, --wallet <name>', 'Wallet to use')
-    .option('-t, --token <address>', 'Specific token address')
+    .option('-t, --token <token>', 'Only this token: its symbol or address (as for send)')
     .option('-n, --network <network>', 'Network (sepolia or mainnet)')
     .option('-r, --refresh', 'Force refresh balances (bypass cache)')
     .option('--password-stdin', PASSWORD_STDIN_HELP)
@@ -128,12 +129,21 @@ export function registerBalanceCommand(program: Command): void {
           // Get tokens to check
           let tokens: TokenEntry[];
           if (options.token) {
-            if (!isValidAddress(options.token)) {
+            const bySymbol = isValidAddress(options.token)
+              ? null
+              : resolveToken(options.token, listTokens(network));
+            if (bySymbol && !bySymbol.ok) {
               process.exitCode = 1;
-              console.log(error('Invalid token address'));
+              console.log(
+                error(
+                  options.token.toLowerCase().startsWith('0x')
+                    ? 'Invalid token address'
+                    : bySymbol.error,
+                ),
+              );
               return;
             }
-            const token = getToken(options.token, network);
+            const token = bySymbol?.ok ? bySymbol.token : getToken(options.token, network);
             if (!token) {
               console.log(
                 warning(

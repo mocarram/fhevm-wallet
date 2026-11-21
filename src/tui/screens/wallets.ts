@@ -4,6 +4,7 @@
  * The create/import wizard screens are shared with first-run setup (`params.setup`).
  */
 
+import { wordlists } from 'ethers';
 import {
   isValidMnemonic,
   isValidPrivateKey,
@@ -240,9 +241,11 @@ export const walletImportSecretScreen: ScreenDef = {
   crumb: crumbFor('Import'),
   view: (s) => {
     const kind = params(s).kind === 'key' ? 'key' : 'phrase';
+    // The phrase can be shown while typing it (a deliberate choice; hidden by default).
+    const reveal = kind === 'phrase' && top(s).params.reveal === '1';
     const spec = {
       field: 'importSecret',
-      secret: true,
+      secret: !reveal,
       placeholder: kind === 'key' ? '0x… (64 hex characters)' : 'words separated by spaces',
     };
     return {
@@ -255,7 +258,9 @@ export const walletImportSecretScreen: ScreenDef = {
         inputLine(s, spec),
         BLANK,
         dimLine(
-          '  Hidden as you type. It is encrypted with your new password and never stored in plain text.',
+          reveal
+            ? '  Shown as you type: check that nobody can see your screen.'
+            : '  Hidden as you type. It is encrypted with your new password and never stored in plain text.',
         ),
       ],
       input: spec,
@@ -272,7 +277,7 @@ export const walletImportSecretScreen: ScreenDef = {
                       'That is not a private key.',
                       'It is 64 hex characters, optionally starting with 0x.',
                     ]
-                  : ['That phrase is not valid.', 'Check the words and their order.'];
+                  : phraseProblem(v);
               return;
             }
             st.inputs.importSecret = v;
@@ -280,12 +285,47 @@ export const walletImportSecretScreen: ScreenDef = {
             return open(st, 'wallet-name', { ...params(st), flow: 'import', kind });
           },
         },
+        ...(kind === 'phrase'
+          ? [
+              {
+                label: reveal ? 'Hide the phrase' : 'Show the phrase while typing',
+                act: (st: AppState) => {
+                  top(st).params.reveal = reveal ? '' : '1';
+                },
+              },
+            ]
+          : []),
         backItem(),
       ],
       hint: 'paste · enter continue · esc back',
     };
   },
 };
+
+/**
+ * Why a recovery phrase is not valid, naming the first word that is not a BIP-39 word
+ * (by position, never echoing the phrase itself) or the word count.
+ */
+export function phraseProblem(phrase: string): [string, string] {
+  const words = phrase.split(' ').filter(Boolean);
+  const bad = words.findIndex((w) => wordlists.en.getWordIndex(w.toLowerCase()) < 0);
+  if (bad >= 0) {
+    return [
+      `Word ${bad + 1} is not a recovery phrase word.`,
+      'Check its spelling (BIP-39 English words); the other words are fine so far.',
+    ];
+  }
+  if (![12, 15, 18, 21, 24].includes(words.length)) {
+    return [
+      `That phrase has ${words.length} words.`,
+      'A recovery phrase has 12, 15, 18, 21 or 24 words.',
+    ];
+  }
+  return [
+    'That phrase is not valid.',
+    'Every word is known: check their order, or a swapped word.',
+  ];
+}
 
 export const exportConfirmScreen: ScreenDef = {
   crumb: crumbFor('Back up'),

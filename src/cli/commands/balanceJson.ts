@@ -3,6 +3,7 @@
  * Kept apart from the interactive table so neither path has to know about the other.
  */
 
+import { resolveToken } from '../../core/send/index.js';
 import { isWrongPassword, walletPassword, wrongPasswordMessage } from '../utils/passwordInput.js';
 import { loadWallet, hasWallet } from '../../core/wallet/index.js';
 import { listTokens, getToken, type TokenEntry } from '../../core/token/TokenRegistry.js';
@@ -63,10 +64,16 @@ export async function balanceJson(options: BalanceJsonOptions): Promise<void> {
 
     let tokens: TokenEntry[];
     if (options.token) {
-      if (!isValidAddress(options.token)) {
-        return printJsonError('INVALID_ADDRESS', 'Invalid token address');
+      // A symbol (cusdc) or an address, as for send.
+      const bySymbol = isValidAddress(options.token)
+        ? null
+        : resolveToken(options.token, listTokens(network));
+      if (bySymbol && !bySymbol.ok) {
+        return options.token.toLowerCase().startsWith('0x')
+          ? printJsonError('INVALID_ADDRESS', 'Invalid token address')
+          : printJsonError('TOKEN_NOT_TRACKED', bySymbol.error);
       }
-      const t = getToken(options.token, network);
+      const t = bySymbol?.ok ? bySymbol.token : getToken(options.token, network);
       if (!t) {
         return printJsonError(
           'TOKEN_NOT_TRACKED',

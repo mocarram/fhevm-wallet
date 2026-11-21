@@ -78,18 +78,22 @@ export function registerOperatorCommands(program: Command): void {
     .command('operator')
     .description('View, grant or revoke ERC-7984 operators (who may move your tokens)');
 
-  const common = (c: Command) =>
+  const common = (
+    c: Command,
+    jsonHelp = 'Print machine-readable JSON (needs --yes and --password-stdin)',
+  ) =>
     c
       .option('-t, --token <token>', 'Token symbol or address (default: the only tracked token)')
       .option('-w, --wallet <name>', 'Wallet to use')
       .option('-n, --network <network>', 'Network (sepolia or mainnet)')
-      .option('--json', 'Print machine-readable JSON (set/revoke need --yes and --password-stdin)');
+      .option('--json', jsonHelp);
 
   common(
     op
       .command('list')
       .description('Show which contacts, recent addresses or given addresses are operators')
       .argument('[addresses...]', 'Addresses or contact names to check'),
+    'Print machine-readable JSON',
   ).action((addresses: string[], options: OperatorOptions) =>
     run(options, 'Could not check operators', () => list(addresses, options)),
   );

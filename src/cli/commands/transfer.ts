@@ -185,7 +185,7 @@ async function send(
   if (tokens.length === 0) {
     return fail(
       `No tokens tracked on ${network}. Add one with: fhevm-wallet token add <address>`,
-      'TOKEN_NOT_FOUND',
+      'TOKEN_NOT_TRACKED',
     );
   }
 
@@ -203,7 +203,7 @@ async function send(
         error: isValidAddress(text)
           ? `Token ${text} not tracked. Add it with: fhevm-wallet token add ${text}`
           : r.error,
-        code: 'TOKEN_NOT_FOUND',
+        code: 'TOKEN_NOT_TRACKED',
       };
     };
     const r = pick(tokenText);

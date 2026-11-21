@@ -191,6 +191,7 @@ fhew balance
 
 # View balance on specific network
 fhew balance --network mainnet
+fhew balance -t cusdc            # one token, by symbol or address (like send)
 
 # Send tokens (interactive prompts)
 fhew send
@@ -273,7 +274,7 @@ Every result names its wallet the same way, `"wallet": {"name": "alice", "addres
 "0x…"}` (`name` is `null` for a plain `history --address`), and says `"mock": true` under
 `FHEW_BACKEND=mock` (`false` otherwise). `history` rows carry `amountBaseUnits` whenever
 the amount is known. Error codes include `INVALID_AMOUNT`, `INVALID_ADDRESS`,
-`INVALID_NETWORK`, `TOKEN_NOT_FOUND`, `CONTACT_NOT_FOUND`, `CONFLICTING_TOKENS`,
+`INVALID_NETWORK`, `TOKEN_NOT_TRACKED` (send, balance, operator, disclose), `CONTACT_NOT_FOUND`, `CONFLICTING_TOKENS`,
 `WALLET_NOT_FOUND`, `NO_WALLET`, `WRONG_PASSWORD`, `PASSWORD_STDIN_REQUIRED`,
 `PROMPT_NOT_ALLOWED`, `LOOKALIKE_ADDRESS`, `INSUFFICIENT_BALANCE`, `NOT_AN_OPERATOR` and the transaction
 codes (`INSUFFICIENT_GAS_FUNDS`, `INSUFFICIENT_TOKEN_BALANCE`, `SENT_UNCONFIRMED`, `TX_REVERTED`, `TX_REPLACED`, `RPC_ERROR`, …). Changed

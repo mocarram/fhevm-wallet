@@ -113,3 +113,22 @@ describe('history sync notice', () => {
     expect(h.text()).not.toMatch(/limited to the last/);
   });
 });
+
+describe('importing a recovery phrase', () => {
+  it('names the first unknown word by position and can show the phrase', async () => {
+    const h = new Harness();
+    h.s.stack.push({
+      id: 'wallet-import-secret',
+      cur: 0,
+      params: { kind: 'phrase', flow: 'import' },
+    });
+    await h.keys('test test tset test', '{enter}');
+    expect(h.text()).toMatch(/Word 3 is not a recovery phrase word/);
+    expect(h.text()).not.toMatch(/tset/); // hidden, and never echoed in the error
+    await h.keys('{down}', '{enter}');
+    expect(h.text()).toMatch(/› test test tset test/);
+    expect(h.text()).toMatch(/Hide the phrase/);
+    await h.keys('{escape}');
+    expect(h.s.inputs.importSecret).toBeUndefined();
+  });
+});
