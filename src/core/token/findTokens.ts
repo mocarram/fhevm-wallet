@@ -139,10 +139,11 @@ export async function findTokens(
   }
 
   opts.onChecking?.(sources.size);
-  const tracked = new Set(listTokens(network).map((t) => t.address.toLowerCase()));
+  // Tracked tokens are not checked again, so their registry entry supplies the name.
+  const tracked = new Map(listTokens(network).map((t) => [t.address.toLowerCase(), t]));
   const candidates = await Promise.all(
     [...sources].map(async ([address, src]): Promise<TokenCandidate> => {
-      const listed = names.get(address);
+      const listed = tracked.get(address.toLowerCase()) ?? names.get(address);
       const base = {
         address,
         name: listed?.name ?? 'Unknown token',

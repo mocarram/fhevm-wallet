@@ -112,7 +112,13 @@ describe('token lists', () => {
   it('keeps valid entries for the chain, checksummed and sanitised', () => {
     const list = {
       tokens: [
-        { chainId: 11155111, address: A.toLowerCase(), name: 'Conf\u001b[31m USD', symbol: 'cUSD', decimals: 6 },
+        {
+          chainId: 11155111,
+          address: A.toLowerCase(),
+          name: 'Conf\u001b[31m USD',
+          symbol: 'cUSD',
+          decimals: 6,
+        },
         { chainId: 1, address: B, name: 'Main', symbol: 'M', decimals: 6 },
         { chainId: 11155111, address: 'nope', name: 'Bad', symbol: 'B', decimals: 6 },
       ],
@@ -174,7 +180,9 @@ describe('findTokens (mock backend)', () => {
   it('labels and verifies candidates from both sources and saves progress', async () => {
     const b = backend();
     const progress: number[] = [];
-    const r = await findTokens(b, WALLET, 'sepolia', { onProgress: (p) => progress.push(p.current) });
+    const r = await findTokens(b, WALLET, 'sepolia', {
+      onProgress: (p) => progress.push(p.current),
+    });
     const [cusdc, cdai] = b.catalogue('sepolia');
     const by = (a: string) => r.candidates.find((c) => c.address === a)!;
     expect(by(cusdc.address)).toMatchObject({ status: 'verified', sources: ['known'] });
@@ -190,6 +198,23 @@ describe('findTokens (mock backend)', () => {
     const again = await findTokens(b, WALLET, 'sepolia');
     expect(again.scan?.upToDate).toBe(true);
     expect(again.candidates).toHaveLength(4);
+  });
+
+  it('names a tracked token found only in history from the registry', async () => {
+    // Regression: it showed as "??? / Unknown token" with 0 decimals.
+    const b = backend();
+    const gift = mockGiftToken('sepolia');
+    addTokenWithInfo(
+      { address: gift, name: 'Gift Token', symbol: 'cGIFT', decimals: 6 },
+      'sepolia',
+    );
+    const r = await findTokens(b, WALLET, 'sepolia');
+    expect(r.candidates.find((c) => c.address === gift)).toMatchObject({
+      status: 'tracked',
+      name: 'Gift Token',
+      symbol: 'cGIFT',
+      decimals: 6,
+    });
   });
 
   it('marks tracked tokens and keeps partial progress when cancelled', async () => {
