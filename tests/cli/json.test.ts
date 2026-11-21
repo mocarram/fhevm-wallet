@@ -107,6 +107,15 @@ describe('--json output', () => {
     expect(process.exitCode).toBe(1);
   });
 
+  it('send --json names a bad recipient INVALID_ADDRESS', async () => {
+    addTokenWithInfo({ address: TOKEN, name: 'Tok', symbol: 'TOK', decimals: 6 }, 'sepolia');
+    const args = ['send', '-n', 'sepolia', '--yes', '--password-stdin', '--json'];
+    const bad = JSON.parse(await stdoutOf(...args.slice(0, 1), '0x1234', '1', ...args.slice(1)));
+    expect(bad.error.code).toBe('INVALID_ADDRESS');
+    const unknown = JSON.parse(await stdoutOf('send', 'nobody', '1', ...args.slice(1)));
+    expect(unknown.error.code).toBe('INVALID_ADDRESS');
+  });
+
   it('balance needs --password-stdin with --json; history validates the address', async () => {
     saveWalletKeystore('alice', '{}', ADDRESS);
     const bal = JSON.parse(await stdoutOf('balance', '--json', '-w', 'alice'));

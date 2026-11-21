@@ -160,7 +160,7 @@ async function send(
   if (options.contact) {
     const wanted = options.contact.toLowerCase();
     contact = contacts.find((c) => c.name.toLowerCase() === wanted);
-    if (!contact) return fail(`Contact "${options.contact}" not found`);
+    if (!contact) return fail(`Contact "${options.contact}" not found`, 'CONTACT_NOT_FOUND');
     const shifted = shiftForContact(contact, to, amount, tokenArg);
     if (!shifted.ok) return fail(shifted.error);
     amount = shifted.amount;
@@ -218,6 +218,7 @@ async function send(
   if (!rr.ok) {
     return fail(
       recipientText.toLowerCase().startsWith('0x') ? 'Invalid recipient address' : rr.error,
+      'INVALID_ADDRESS',
     );
   }
   const recipient = rr.address;
@@ -235,6 +236,7 @@ async function send(
       if (options.yes || !process.stdin.isTTY) {
         return fail(
           `Send stopped. To send to ${lookalike.name}, use: fhew send ${lookalike.name} …`,
+          'LOOKALIKE_ADDRESS',
         );
       }
       const goOn = await prompts.confirm({
