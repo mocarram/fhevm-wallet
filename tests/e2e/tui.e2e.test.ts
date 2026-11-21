@@ -5,7 +5,15 @@
  */
 
 import { spawnSync } from 'child_process';
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync, chmodSync } from 'fs';
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'fs';
 import { getAddress, id } from 'ethers';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
@@ -535,5 +543,121 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     });
     expect(res.status).toBe(1);
     expect(res.stderr).toMatch(/needs a terminal/);
+  });
+
+  /** Run the CLI once against the mock with the seeded wallet; the password on stdin. */
+  function cli(home: string, args: string[]) {
+    return spawnSync(process.execPath, [CLI, ...args], {
+      env: {
+        PATH: process.env.PATH ?? '',
+        HOME: home,
+        FHEVM_WALLET_HOME: join(home, 'wallet-data'),
+        FHEW_BACKEND: 'mock',
+        FHEW_MOCK_LATENCY_MS: '20',
+        FHEW_MOCK_CONFIRM_MS: '200',
+      },
+      input: `${PASSWORD}\n`,
+      encoding: 'utf-8',
+      timeout: 60_000,
+    });
+  }
+
+  it('fhew history --decrypt decrypts amounts once and caches them', () => {
+    const home = freshHome();
+    const res = cli(home, ['history', '--decrypt', '--password-stdin']);
+    expect(res.stdout + res.stderr).toMatch(/Decrypted 1 amount\(s\)/);
+    expect(res.stdout).toMatch(/\+25/);
+    expect(res.stdout + res.stderr).not.toMatch(/deprecated/);
+    expect(res.status).toBe(0);
+    const again = cli(home, ['history', '--decrypt', '--password-stdin']);
+    expect(again.stdout + again.stderr).toMatch(/No encrypted amounts to decrypt/);
+    expect(again.stdout).toMatch(/\+25/);
+    // Amounts never reach the audit log.
+    const audit = join(home, 'wallet-data', 'audit.log');
+    if (existsSync(audit)) expect(readFileSync(audit, 'utf-8')).not.toMatch(/25000000|amount=/);
+  });
+
+  it('fhew disclose publishes a received amount in two steps', () => {
+    const home = freshHome();
+    cli(home, ['history', '--decrypt', '--password-stdin']);
+    const store = JSON.parse(readFileSync(join(home, 'wallet-data', 'transactions.json'), 'utf-8'));
+    const tx = store.transactions.find((t: { amountHandle?: string }) => t.amountHandle);
+    const res = cli(home, ['disclose', tx.txHash, '--password-stdin', '--yes']);
+    expect(res.stdout).toMatch(/step 1 of 2/);
+    expect(res.stdout).toMatch(/Disclosed 25(\.0+)? cUSDC publicly/);
+    expect(res.status).toBe(0);
+  });
+
+  it('fhew operator set and revoke in a terminal, with confirmation', () => {
+    const home = freshHome();
+    runTui(
+      home,
+      [
+        { expect: 'password', timeout: 20 },
+        { keys: `${PASSWORD}\r` },
+        { expect: 'ALL of your cUSDC', timeout: 30 },
+        { expect: 'Grant this operator?' },
+        { keys: 'y\r' },
+        { expect: 'is now an operator for cUSDC until', timeout: 30 },
+        { exit: 0, timeout: 20 },
+      ],
+      {},
+      ['operator', 'set', 'bob', '--for', '1d'],
+    );
+    runTui(
+      home,
+      [
+        { expect: 'password', timeout: 20 },
+        { keys: `${PASSWORD}\r` },
+        { expect: 'Revoke this operator?', timeout: 30 },
+        { keys: 'y\r' },
+        { expect: 'can no longer move your cUSDC', timeout: 30 },
+        { exit: 0, timeout: 20 },
+      ],
+      {},
+      ['operator', 'revoke', 'bob'],
+    );
+    // "forever" is never granted from a script.
+    const forever = cli(home, [
+      'operator',
+      'set',
+      'bob',
+      '--for',
+      'forever',
+      '--password-stdin',
+      '--yes',
+    ]);
+    expect(forever.status).toBe(1);
+    expect(forever.stdout).toMatch(/only be granted from a terminal/);
+    const list = cli(home, ['operator', 'list']);
+    expect(list.stdout).toMatch(/bob .*not an operator/);
+  });
+
+  it('TUI: Tokens › Operators grants with a countdown, then History decrypts after unlock', () => {
+    runTui(freshHome(), [
+      { expect: 'Balances' },
+      { keys: '6' },
+      { expect: 'Operators' },
+      { keys: '4' },
+      { expect: 'Who may move your cUSDC' },
+      { expect: 'not an operator', timeout: 15 },
+      { keys: '1' },
+      { keys: 'bob\r' },
+      { expect: 'How long may it move' },
+      { keys: '1' },
+      { expect: 'Unlock and check' },
+      { keys: '1' },
+      { expect: 'Password for alice' },
+      { keys: `${PASSWORD}\r` },
+      { expect: 'Simulation passed', timeout: 30 },
+      { keys: '1' },
+      { expect: 'in ' },
+      { expect: 'pending', timeout: 15 },
+      { expect: 'bob is now an operator until', timeout: 30 },
+      { keys: 'h' },
+      { expect: '+25.00', timeout: 30 },
+      { keys: ':quit\r' },
+      { exit: 0 },
+    ]);
   });
 });

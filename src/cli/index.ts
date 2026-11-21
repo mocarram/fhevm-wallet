@@ -10,6 +10,8 @@ import { registerTokenCommands } from './commands/token.js';
 import { registerBalanceCommand } from './commands/balance.js';
 import { registerTransferCommand } from './commands/transfer.js';
 import { registerHistoryCommand } from './commands/history.js';
+import { registerOperatorCommands } from './commands/operator.js';
+import { registerDiscloseCommand } from './commands/disclose.js';
 import { registerInteractiveCommand } from './commands/interactive.js';
 import { registerDoctorCommand } from './commands/doctor.js';
 import { registerReceiveCommand } from './commands/receive.js';
@@ -123,6 +125,8 @@ export function createProgram(): Command {
   registerBalanceCommand(program);
   registerTransferCommand(program);
   registerHistoryCommand(program);
+  registerOperatorCommands(program);
+  registerDiscloseCommand(program);
   registerInteractiveCommand(program);
   registerDoctorCommand(program);
   registerReceiveCommand(program);
