@@ -27,6 +27,17 @@ describe('parseOperatorExpiry', () => {
     expect(parseOperatorExpiry('2026-13-45', NOW)).toMatchObject({ ok: false });
   });
 
+  it('refuses dates more than a year away so "forever" stays typed', () => {
+    // Regression: `--for 9999-12-31 --yes` granted an effectively unlimited operator
+    // without the typed "forever" confirmation.
+    expect(parseOperatorExpiry('9999-12-31', NOW)).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/more than a year/),
+    });
+    expect(parseOperatorExpiry('2028-01-01', NOW)).toMatchObject({ ok: false });
+    expect(parseOperatorExpiry('2027-11-01', NOW)).toMatchObject({ ok: true, forever: false });
+  });
+
   it('marks forever explicitly and refuses junk and over a year', () => {
     expect(parseOperatorExpiry('forever', NOW)).toEqual({
       ok: true,
