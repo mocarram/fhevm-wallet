@@ -27,6 +27,7 @@ import { ERC7984_INTERFACE, type TokenInfo } from '../token/TokenService.js';
 import { setCachedBalance } from '../token/BalanceCache.js';
 import { assertTransferAmount } from '../token/TokenService.js';
 import type { TokenEntry } from '../token/TokenRegistry.js';
+import type { TokenCheck } from '../token/erc7984Check.js';
 import { upsertTransactions } from '../../storage/TransactionStore.js';
 import type {
   Backend,
@@ -85,6 +86,14 @@ function catalogue(network: NetworkName): MockToken[] {
       start: 80_500_000n,
     },
   ];
+}
+
+/**
+ * A contract the mock treats as a plain ERC-20 (it has a name but no confidential
+ * balance), so tests and demos can see a refused token. Stable per network.
+ */
+export function mockNonConfidentialToken(network: NetworkName): string {
+  return mockAddress(`${network}:plain-erc20`);
 }
 
 /** Read mock settings from `FHEW_MOCK_*` variables (see the module comment). */
@@ -184,6 +193,37 @@ export class MockBackend implements Backend {
       name: `Mock token ${tag}`,
       symbol: `cM${tag}`,
       decimals: 6,
+    };
+  }
+
+  async checkToken(tokenAddress: string, network: NetworkName): Promise<TokenCheck> {
+    await this.sleep(Math.min(this.opts.latencyMs, 100));
+    this.rpcFailure();
+    const address = getAddress(tokenAddress);
+    if (address === mockNonConfidentialToken(network)) {
+      return {
+        address,
+        info: { address, name: 'Plain Token', symbol: 'PLAIN', decimals: 18 },
+        erc165: 'absent',
+        balanceHandle: false,
+        compliant: false,
+        problems: [
+          'It did not answer confidentialBalanceOf() with an encrypted balance, so it is not an ERC-7984 confidential token.',
+        ],
+        warnings: [],
+      };
+    }
+    const info = await this.getTokenInfo(address, network);
+    // Catalogue tokens report the ERC-7984 interface id; others behave like older tokens.
+    const known = catalogue(network).some((t) => t.address === address);
+    return {
+      address,
+      info,
+      erc165: known ? 'yes' : 'absent',
+      balanceHandle: true,
+      compliant: true,
+      problems: [],
+      warnings: [],
     };
   }
 

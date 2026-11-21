@@ -17,6 +17,8 @@ import {
   prepareConfidentialTransfer,
 } from '../token/TokenService.js';
 import { syncTransactions } from '../token/historySync.js';
+import { checkErc7984, type TokenCheck } from '../token/erc7984Check.js';
+import { translateTxError } from '../token/txErrors.js';
 import type { TokenEntry } from '../token/TokenRegistry.js';
 import type {
   Backend,
@@ -40,6 +42,15 @@ export class RealBackend implements Backend {
 
   getTokenInfo(tokenAddress: string, network: NetworkName) {
     return getTokenInfo(tokenAddress, network);
+  }
+
+  async checkToken(tokenAddress: string, network: NetworkName): Promise<TokenCheck> {
+    const provider = getProvider(network);
+    try {
+      return await checkErc7984((to, data) => provider.call({ to, data }), tokenAddress);
+    } catch (err) {
+      throw translateTxError(err, { action: 'token check' });
+    }
   }
 
   decryptBalance(

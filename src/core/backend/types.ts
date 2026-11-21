@@ -14,6 +14,7 @@ import type { NetworkName } from '../network/NetworkConfig.js';
 import type { RpcProbe } from '../network/ProviderFactory.js';
 import type { TokenEntry } from '../token/TokenRegistry.js';
 import type { SendHooks, TokenInfo, TransferResult } from '../token/TokenService.js';
+import type { TokenCheck } from '../token/erc7984Check.js';
 
 /** Which implementation is running. The UI shows a MOCK badge for 'mock'. */
 export type BackendKind = 'real' | 'mock';
@@ -70,6 +71,13 @@ export interface Backend {
 
   /** Name, symbol (sanitised) and decimals of an ERC-7984 contract. */
   getTokenInfo(tokenAddress: string, network: NetworkName): Promise<TokenInfo>;
+
+  /**
+   * Check that a contract is an ERC-7984 token (ERC-165 id plus a behavioural probe, see
+   * erc7984Check.ts). Throws `WalletTxError` only when the network fails; a contract that
+   * is not a token comes back with `compliant: false` and the reasons.
+   */
+  checkToken(tokenAddress: string, network: NetworkName): Promise<TokenCheck>;
 
   /**
    * Decrypt `signer`'s balance of a token, in base units. Uses (and refreshes) the local
