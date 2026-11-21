@@ -470,6 +470,25 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     expect(out.ok).toBe(true);
   });
 
+  it('Tokens › Find tokens: multi-select with a (all) and Enter bulk-adds', () => {
+    const screens = runTui(freshHome(), [
+      { expect: 'Balances' },
+      { keys: ':tokens\r' },
+      { expect: 'Find tokens' },
+      { keys: '3' },
+      { expect: 'found in your history · unverified', timeout: 20 },
+      { expect: 'not ERC-7984, not offered' },
+      { keys: 'a' },
+      { expect: '[x] cGIFT' },
+      { keys: '\r' },
+      { expect: 'Added cDAI, cGIFT', timeout: 10 },
+      { keys: CTRL_C },
+      { keys: '0' },
+      { exit: 0 },
+    ]);
+    expect(screens.join('\n')).toMatch(/1 already tracked/);
+  });
+
   it('keeps mock and real data apart, whatever the settings files say', () => {
     const run = (args: string[], env: Record<string, string>) =>
       spawnSync(process.execPath, [CLI, ...args], {
