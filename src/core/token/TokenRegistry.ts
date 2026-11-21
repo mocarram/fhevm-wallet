@@ -2,7 +2,6 @@
  * Token registry for tracking user's tokens
  */
 
-import { existsSync, readFileSync } from 'fs';
 import { writeSecureFile } from '../../storage/secureFs.js';
 import { join } from 'path';
 import { z } from 'zod';
@@ -11,6 +10,7 @@ import { getTokenInfo, type TokenInfo } from './TokenService.js';
 import { sanitizeTokenName, sanitizeTokenSymbol } from './tokenText.js';
 import { logEvent } from '../../storage/AuditLog.js';
 import { DATA_DIR, ensureDataDir } from '../../storage/paths.js';
+import { readJsonStore } from '../../storage/jsonStore.js';
 
 const TokenEntrySchema = z.object({
   address: z.string(),
@@ -36,23 +36,19 @@ const TOKENS_FILE = join(DATA_DIR, 'tokens.json');
 function loadRegistry(): TokenRegistry {
   ensureDataDir();
 
-  if (!existsSync(TOKENS_FILE)) {
-    return { tokens: [] };
-  }
-
-  try {
-    const data = readFileSync(TOKENS_FILE, 'utf-8');
-    const registry = TokenRegistrySchema.parse(JSON.parse(data));
-    // Entries saved by older versions were stored unsanitized; clean them on the way out.
-    registry.tokens = registry.tokens.map((t) => ({
-      ...t,
-      name: sanitizeTokenName(t.name),
-      symbol: sanitizeTokenSymbol(t.symbol),
-    }));
-    return registry;
-  } catch {
-    return { tokens: [] };
-  }
+  const registry = readJsonStore(
+    TOKENS_FILE,
+    (d) => TokenRegistrySchema.parse(d),
+    () => ({ tokens: [] }) as TokenRegistry,
+    'token list',
+  );
+  // Entries saved by older versions were stored unsanitized; clean them on the way out.
+  registry.tokens = registry.tokens.map((t) => ({
+    ...t,
+    name: sanitizeTokenName(t.name),
+    symbol: sanitizeTokenSymbol(t.symbol),
+  }));
+  return registry;
 }
 
 /**

@@ -2,8 +2,8 @@
  * Address book storage for saving frequently used addresses
  */
 
-import { existsSync, readFileSync } from 'fs';
 import { writeSecureFile } from './secureFs.js';
+import { readJsonStore } from './jsonStore.js';
 import { join } from 'path';
 import { z } from 'zod';
 import { DATA_DIR, ensureDataDir } from './paths.js';
@@ -29,16 +29,12 @@ const ADDRESS_BOOK_FILE = join(DATA_DIR, 'addressbook.json');
 function loadAddressBook(): AddressBookData {
   ensureDataDir();
 
-  if (!existsSync(ADDRESS_BOOK_FILE)) {
-    return { entries: [] };
-  }
-
-  try {
-    const data = readFileSync(ADDRESS_BOOK_FILE, 'utf-8');
-    return AddressBookSchema.parse(JSON.parse(data));
-  } catch {
-    return { entries: [] };
-  }
+  return readJsonStore(
+    ADDRESS_BOOK_FILE,
+    (d) => AddressBookSchema.parse(d),
+    () => ({ entries: [] }),
+    'address book',
+  );
 }
 
 /**

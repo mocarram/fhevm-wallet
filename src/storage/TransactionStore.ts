@@ -2,7 +2,7 @@
  * Transaction history storage with blockchain sync
  */
 
-import { existsSync, readFileSync } from 'fs';
+import { readJsonStore } from './jsonStore.js';
 import { writeSecureFile } from './secureFs.js';
 import { join } from 'path';
 import { z } from 'zod';
@@ -65,16 +65,12 @@ const TRANSACTIONS_FILE = join(DATA_DIR, 'transactions.json');
 function loadStore(): TransactionStoreData {
   ensureDataDir();
 
-  if (!existsSync(TRANSACTIONS_FILE)) {
-    return { transactions: [], syncState: {} };
-  }
-
-  try {
-    const data = readFileSync(TRANSACTIONS_FILE, 'utf-8');
-    return TransactionStoreSchema.parse(JSON.parse(data));
-  } catch {
-    return { transactions: [], syncState: {} };
-  }
+  return readJsonStore(
+    TRANSACTIONS_FILE,
+    (d) => TransactionStoreSchema.parse(d),
+    () => ({ transactions: [], syncState: {} }),
+    'transaction history',
+  );
 }
 
 /**

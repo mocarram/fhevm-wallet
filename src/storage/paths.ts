@@ -56,6 +56,9 @@ export interface DataDirPolicy {
 /** Temp files `writeSecureFile` leaves for a moment during an atomic write. */
 const TEMP_FILE_RE = /^\.[0-9a-f]{12}\.tmp$/;
 
+/** A store file moved aside because it could not be read (`src/storage/jsonStore.ts`). */
+const CORRUPT_FILE_RE = /^[a-z-]+\.json\.corrupt-\d{8}T\d{6}Z$/;
+
 /**
  * Decide, once, whether the data dir is the wallet's to chmod. The default
  * `~/.fhevm-wallet` and a folder the wallet creates are. An existing folder named by
@@ -81,7 +84,10 @@ export function getDataDirPolicy(): DataDirPolicy {
   let foreign: string[] = [];
   try {
     foreign = readdirSync(DATA_DIR).filter(
-      (e) => !(WALLET_DATA_ENTRIES as readonly string[]).includes(e) && !TEMP_FILE_RE.test(e),
+      (e) =>
+        !(WALLET_DATA_ENTRIES as readonly string[]).includes(e) &&
+        !TEMP_FILE_RE.test(e) &&
+        !CORRUPT_FILE_RE.test(e),
     );
   } catch {
     /* unreadable: the access check reports it */

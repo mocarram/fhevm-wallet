@@ -2,8 +2,8 @@
  * Configuration storage
  */
 
-import { existsSync, readFileSync } from 'fs';
 import { writeSecureFile } from './secureFs.js';
+import { readJsonStore } from './jsonStore.js';
 import { join } from 'path';
 import { z } from 'zod';
 import { NetworkName } from '../core/network/NetworkConfig.js';
@@ -26,16 +26,12 @@ const CONFIG_FILE = join(DATA_DIR, 'config.json');
 export function loadConfig(): Config {
   ensureDataDir();
 
-  if (!existsSync(CONFIG_FILE)) {
-    return ConfigSchema.parse({});
-  }
-
-  try {
-    const data = readFileSync(CONFIG_FILE, 'utf-8');
-    return ConfigSchema.parse(JSON.parse(data));
-  } catch {
-    return ConfigSchema.parse({});
-  }
+  return readJsonStore(
+    CONFIG_FILE,
+    (d) => ConfigSchema.parse(d),
+    () => ConfigSchema.parse({}),
+    'settings file',
+  );
 }
 
 /**
