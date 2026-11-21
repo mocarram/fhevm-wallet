@@ -42,7 +42,9 @@ describe('checkTxDropped', () => {
   it('dropped: nonce taken at the finalized block, no receipt on a node that has it', async () => {
     const n = await node({ head: HEAD, finalized: HEAD - 70, nonceAt: () => 6 });
     expect(await checkTxDropped(WALLET, 5, HASH, 'sepolia')).toBe('dropped');
-    expect(n.countTags).toEqual(['finalized']);
+    // Counted at the finalized block's number, never at the tag (a split batch could
+    // answer the tag from another node).
+    expect(n.countTags).toEqual(['0x' + (HEAD - 70).toString(16)]);
   });
 
   it('a nonce taken only at latest (reorg-able) is not enough', async () => {
@@ -73,10 +75,7 @@ describe('checkTxDropped', () => {
       nonceAt: (b) => (b <= HEAD - SETTLED_FALLBACK_BLOCKS ? 6 : 7),
     });
     expect(await checkTxDropped(WALLET, 5, HASH, 'sepolia')).toBe('dropped');
-    expect(n.countTags).toEqual([
-      'finalized',
-      '0x' + (HEAD - SETTLED_FALLBACK_BLOCKS).toString(16),
-    ]);
+    expect(n.countTags).toEqual(['0x' + (HEAD - SETTLED_FALLBACK_BLOCKS).toString(16)]);
     // And there, too, only the settled count decides.
     const m = await node({
       head: HEAD,
@@ -85,6 +84,51 @@ describe('checkTxDropped', () => {
     });
     clearProviderCache();
     expect(await checkTxDropped(WALLET, 5, HASH, 'sepolia')).toBe('nonce-open');
-    expect(m.countTags.length).toBe(2);
+    expect(m.countTags.length).toBe(1);
+  });
+
+  it('fails closed on an error entry in a batch reply', async () => {
+    await node({
+      head: HEAD,
+      finalized: HEAD - 70,
+      nonceAt: () => 6,
+      rpcErrors: { eth_getTransactionReceipt: { code: -32000, message: 'internal error' } },
+    });
+    await expect(checkTxDropped(WALLET, 5, HASH, 'sepolia')).rejects.toBeDefined();
+  });
+
+  it('fails closed when the count at the finalized block errors (node without it)', async () => {
+    await node({
+      head: HEAD,
+      finalized: HEAD - 70,
+      rpcErrors: { eth_getTransactionCount: { code: -32000, message: 'header not found' } },
+    });
+    await expect(checkTxDropped(WALLET, 5, HASH, 'sepolia')).rejects.toBeDefined();
+  });
+
+  it('fails closed on one error object without ids for a whole batch', async () => {
+    await node({
+      head: HEAD,
+      finalized: HEAD - 70,
+      nonceAt: () => 6,
+      batchErrorFor: 'eth_getTransactionReceipt',
+    });
+    await expect(checkTxDropped(WALLET, 5, HASH, 'sepolia')).rejects.toBeDefined();
+  });
+
+  it('a fail-over mid-check to a node behind the settled block is never "dropped"', async () => {
+    // Node 1 answers the settled nonce (chain id, finalized block, count), then goes away.
+    const first = await startStubRpc({
+      head: HEAD,
+      finalized: HEAD - 64,
+      nonceAt: () => 6,
+      httpErrorAfter: 3,
+    });
+    const second = await startStubRpc({ head: HEAD - 100, nonceAt: () => 5 });
+    nodes.push(first, second);
+    net.urls = [first.url, second.url];
+    const r = await checkTxDropped(WALLET, 5, HASH, 'sepolia').catch(() => 'error');
+    expect(r).not.toBe('dropped');
+    expect(second.calls).toContain('eth_getTransactionReceipt');
   });
 });

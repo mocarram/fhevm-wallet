@@ -6,9 +6,10 @@
  * or after a fail-over it may sit in another node's mempool. The proof is that another
  * transaction took its nonce, read so that two inconsistent nodes cannot fake it:
  *
- * 1. The account's nonce at a *settled* block: `finalized` (the block and the count in one
- *    JSON-RPC batch, so one node answers both), or `latest − SETTLED_FALLBACK_BLOCKS` where
- *    an endpoint does not know `finalized`. `latest` alone can be reorged away.
+ * 1. The account's nonce at a *settled* block: the `finalized` block's number, then the
+ *    count at that number (a node without the block errors instead of counting at another),
+ *    or `latest − SETTLED_FALLBACK_BLOCKS` where an endpoint does not know `finalized`.
+ *    `latest` alone can be reorged away. Any error or unreadable reply fails closed.
  * 2. Our receipt, read in one batch with `eth_blockNumber`, from a node whose head is at or
  *    past that settled block. A node behind it might simply not have our block yet: then
  *    the answer is `behind` ("try again in a minute"), never "dropped".
@@ -73,15 +74,26 @@ export async function settledNonce(
   address: string,
   network: NetworkName,
 ): Promise<{ nonce: number; block: number }> {
+  let finalized: number | null = null;
   try {
-    const [block, count] = await batch(network, [
+    const [block] = await batch(network, [
       { method: 'eth_getBlockByNumber', params: ['finalized', false] },
-      { method: 'eth_getTransactionCount', params: [address, 'finalized'] },
     ]);
-    const number = (block as { number?: unknown } | null)?.number;
-    return { nonce: hexNum(count), block: hexNum(number) };
+    finalized = hexNum((block as { number?: unknown } | null)?.number);
   } catch {
     // No `finalized` here (or a garbled answer): count a fixed depth below the head.
+  }
+  if (finalized !== null) {
+    // Counted at that block *number*, not the tag: a gateway may split a batch across
+    // nodes, and a node without this block errors instead of counting at another one.
+    try {
+      const [count] = await batch(network, [
+        { method: 'eth_getTransactionCount', params: [address, '0x' + finalized.toString(16)] },
+      ]);
+      return { nonce: hexNum(count), block: finalized };
+    } catch (err) {
+      throw translateTxError(err, { action: 'transaction check' });
+    }
   }
   try {
     const [head] = await batch(network, [{ method: 'eth_blockNumber', params: [] }]);

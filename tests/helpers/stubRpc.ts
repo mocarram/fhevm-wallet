@@ -41,6 +41,12 @@ export interface StubOptions {
   nonceAt?: (block: number) => number;
   /** eth_getTransactionReceipt answers by hash (lowercase); others are null. */
   receipts?: Record<string, { status: number; blockNumber: number }>;
+  /** Answer these methods with a JSON-RPC error entry. */
+  rpcErrors?: Record<string, { code: number; message: string }>;
+  /** Answer a batch of these methods with one error object without ids. */
+  batchErrorFor?: string;
+  /** After this many POSTs, answer every request with HTTP 503 (a node going away). */
+  httpErrorAfter?: number;
 }
 
 /** A running stub. `calls` lists methods in arrival order; `ranges` each eth_getLogs span. */
@@ -75,8 +81,11 @@ export async function startStubRpc(options: StubOptions): Promise<StubNode> {
   const countTags: string[] = [];
   const ranges: Array<[number, number]> = [];
   let rateLimited = 0;
+  let posts = 0;
   const answer = (m: { id: number; method: string; params: unknown[] }) => {
     calls.push(m.method);
+    const forced = options.rpcErrors?.[m.method];
+    if (forced) return { jsonrpc: '2.0', id: m.id, error: forced };
     const ok = (result: unknown) => ({ jsonrpc: '2.0', id: m.id, result });
     const fail = (code: number, message: string) => ({
       jsonrpc: '2.0',
@@ -191,7 +200,20 @@ export async function startStubRpc(options: StubOptions): Promise<StubNode> {
     req.on('data', (c) => (body += c));
     req.on('end', () => {
       const parsed = JSON.parse(body);
-      const out = Array.isArray(parsed) ? parsed.map(answer) : answer(parsed);
+      if (options.httpErrorAfter !== undefined && ++posts > options.httpErrorAfter) {
+        res.statusCode = 503;
+        res.end('unavailable');
+        return;
+      }
+      const batchFails =
+        Array.isArray(parsed) &&
+        options.batchErrorFor !== undefined &&
+        parsed.some((m: { method: string }) => m.method === options.batchErrorFor);
+      const out = batchFails
+        ? { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'batch refused' } }
+        : Array.isArray(parsed)
+          ? parsed.map(answer)
+          : answer(parsed);
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify(out));
     });
