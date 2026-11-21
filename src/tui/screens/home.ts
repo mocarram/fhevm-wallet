@@ -28,22 +28,25 @@ export function balancesLine(s: AppState): Line {
     if (i) out.push(seg('   ', 'dim'));
     out.push(seg(`${t.symbol} `, 'dim'));
     const b = s.balances[t.address.toLowerCase()];
-    if (s.decrypting && (!b || b.source === 'cache')) {
-      out.push(seg(`${spinner(s.now)} decrypting`, 'cyan'));
-    } else if (b) {
+    const refreshing = Boolean(s.refreshing[t.address.toLowerCase()]);
+    if (b) {
       out.push(seg(formatBalance(b.value, t.decimals), 'bold'));
+      // A background re-decrypt keeps the old value on screen with a spinner beside it.
+      if (refreshing) out.push(seg(` ${spinner(s.now)}`, 'cyan'));
       if (b.source === 'session') anySession = true;
       if (b.at !== undefined) oldest = oldest === undefined ? b.at : Math.min(oldest, b.at);
+    } else if (refreshing) {
+      out.push(seg(`${spinner(s.now)} decrypting`, 'cyan'));
     } else {
       out.push(seg('locked', 'dim'));
       anyMissing = true;
     }
   });
   let tail: string;
-  if (s.decrypting) tail = 'updating…';
-  else if (anySession && isUnlocked(s)) tail = `decrypted ${age(oldest, s.now)}`;
-  else if (oldest !== undefined || anySession)
-    tail = `cached ${age(oldest, s.now)} · unlock to refresh`;
+  const shownAge = oldest !== undefined || anySession ? age(oldest, s.now) : '';
+  if (s.decrypting) tail = shownAge ? `${shownAge} · updating…` : 'updating…';
+  else if (anySession && isUnlocked(s)) tail = `decrypted ${shownAge}`;
+  else if (shownAge) tail = `cached ${shownAge} · unlock to refresh`;
   else if (anyMissing) tail = 'unlock to decrypt';
   else tail = '';
   if (tail) out.push(seg(`   · ${tail}`, 'dim'));

@@ -10,7 +10,7 @@ import { startSend } from '../flows/send.js';
 import { unlock } from '../flows/wallet.js';
 import { open } from '../nav.js';
 import type { ScreenDef } from '../screen.js';
-import { isUnlocked, type AppState } from '../state.js';
+import { isUnlocked, top, type AppState } from '../state.js';
 import { dimLine, line, pad, seg, type Line } from '../text.js';
 import { backItem, BLANK, inputLine } from './common.js';
 
@@ -112,7 +112,13 @@ export const unlockScreen: ScreenDef = {
         dimLine(`  ${unlockMinutesText(s)} The key is kept in memory only.`),
       ],
       input: spec,
-      items: [{ label: 'Unlock', act: (st) => unlock(st, 'balances') }, backItem()],
+      items: [
+        {
+          label: 'Unlock',
+          act: (st) => unlock(st, top(st).params.after === 'history' ? 'history' : 'balances'),
+        },
+        backItem(),
+      ],
       hint: 'type password · enter unlock · esc back',
     };
   },

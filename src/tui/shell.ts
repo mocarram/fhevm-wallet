@@ -23,6 +23,7 @@ import { describeError, errorLines } from './errors.js';
 import { normalizeKey, type RawKey } from './keys.js';
 import { lockWallet, type AppState } from './state.js';
 import { toAnsi } from './text.js';
+import { setSdkConsoleTuiActive } from '../core/fhe/sdkConsole.js';
 
 const ALT_ON = '\x1b[?1049h';
 const ALT_OFF = '\x1b[?1049l';
@@ -73,6 +74,8 @@ export function runShell(opts: ShellOptions): Promise<ShellResult> {
     output: process.stdout as WriteStream,
   };
   const color = opts.color ?? wantsColor();
+  // The relayer SDK's console notes must never land inside a frame (sdkConsole.ts).
+  setSdkConsoleTuiActive(true);
 
   return new Promise<ShellResult>((resolve) => {
     let lastFrame = '';
@@ -122,8 +125,10 @@ export function runShell(opts: ShellOptions): Promise<ShellResult> {
       process.removeListener('exit', onExit);
       process.removeListener('uncaughtException', onCrash);
       process.removeListener('unhandledRejection', onCrash);
-      // Forget the key and anything prepared with it before handing back control.
+      // Forget the key, the decrypt signature and anything prepared with them before
+      // handing back control.
       lockWallet(state);
+      setSdkConsoleTuiActive(false);
       state.send = {};
       restore();
       try {

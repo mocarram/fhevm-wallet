@@ -6,7 +6,15 @@
  * terminal shell runs. That keeps every screen's behaviour unit-testable without a TTY.
  */
 
-import type { BackendKind, PreparedSend, UnlockedSigner } from '../core/backend/types.js';
+import type {
+  BackendKind,
+  DiscloseStage,
+  PreparedDisclose,
+  PreparedSend,
+  PreparedTx,
+  UnlockedSigner,
+} from '../core/backend/types.js';
+import type { DecryptSession } from '../core/fhe/DecryptSession.js';
 import type { NetworkName } from '../core/network/NetworkConfig.js';
 import type { TokenInfo } from '../core/token/TokenService.js';
 import type { TokenCheck } from '../core/token/erc7984Check.js';
@@ -56,6 +64,38 @@ export interface PendingSend {
   amountText: string;
   toLabel: string;
   txHash?: string;
+  /** For operator changes and disclosures: what is pending, instead of "-amount". */
+  label?: string;
+}
+
+/**
+ * A non-transfer transaction being reviewed (operator change, disclosure step). Runs
+ * through the same review → countdown → sign-and-broadcast flow as a send.
+ */
+export interface TxAction {
+  kind: 'operator' | 'disclose-request' | 'disclose';
+  /** Token contract address. */
+  token: string;
+  /** What will happen, in one line, e.g. "Let bob move your cUSDC until 22 Nov 14:05". */
+  title: string;
+  /** Short text for the pending row and notices, e.g. "operator: bob". */
+  short: string;
+  /** Strong warning lines shown on review (operators). */
+  warning?: string[];
+  operator?: string;
+  until?: number;
+  handle?: string;
+  prepared?: PreparedTx | PreparedDisclose;
+  checking?: boolean;
+  /** Screen to return to once broadcast. */
+  then: 'operators' | 'history';
+}
+
+/** Operator status of one address for the selected token. */
+export interface OperatorRow {
+  address: string;
+  label: string;
+  isOperator: boolean;
 }
 
 /** A transaction error shown on the error screen. */
@@ -95,6 +135,13 @@ export interface AppState {
   eth: { wei: bigint; at: number } | null;
   balances: Record<string, BalanceEntry>;
   decrypting: boolean;
+  /** Tokens (lowercase address) being re-decrypted right now: Home shows a spinner per row. */
+  refreshing: Record<string, true>;
+  /**
+   * User-decrypt keypair + signature for the unlocked wallet (one signature for every
+   * tracked token). Memory only; dropped with the key on lock, auto-lock, switch and exit.
+   */
+  decryptSession: DecryptSession | null;
   /** Text fields, by field id. Kept when stepping back; secret fields are cleared on leave. */
   inputs: Record<string, string>;
   /** Validation message under the current screen's field: [problem, hint]. */
@@ -112,7 +159,18 @@ export interface AppState {
   /** Text shown with a spinner while an effect runs on the current screen. */
   busy: string | null;
   send: SendDraft;
-  countdown: { endsAt: number; total: number } | null;
+  /** `tx` counts down a TxAction instead of the send draft. */
+  countdown: { endsAt: number; total: number; for?: 'send' | 'tx' } | null;
+  txAction: TxAction | null;
+  /** The Disclose screen's view of one amount handle. */
+  disclose: {
+    handle: string;
+    token: string;
+    stage?: DiscloseStage;
+    loading: boolean;
+    error?: string;
+  } | null;
+  operators: { token: string; rows: OperatorRow[]; loading: boolean; error?: string } | null;
   pending: PendingSend[];
   nextPendingId: number;
   errorView: ErrorView | null;
@@ -120,7 +178,13 @@ export interface AppState {
   lastSendError: ErrorView | null;
   /** New address from the last confirmed send, offered for saving on Home. */
   offerSave: string | null;
-  history: { rows: HistoryRow[]; loading: boolean; error?: string } | null;
+  history: {
+    rows: HistoryRow[];
+    loading: boolean;
+    error?: string;
+    /** Amounts are being decrypted in the background. */
+    decrypting?: boolean;
+  } | null;
   doctor: DoctorRow[] | null;
   /** Find tokens: progress while scanning, then the candidates. */
   find: {
@@ -142,6 +206,11 @@ export interface AppState {
 /** A display row of the History screen. */
 export interface HistoryRow {
   when: string;
+  /** Amount handle of a confidential transfer (for decrypting and disclosing). */
+  handle?: string;
+  tokenAddress?: string;
+  /** The amount is public on-chain (this wallet disclosed it). */
+  disclosed?: boolean;
   kind: 'sent' | 'received' | 'eth in' | 'eth out' | 'mint' | 'burn';
   amount: string;
   token: string;
@@ -171,6 +240,8 @@ export function initialState(opts: {
     eth: null,
     balances: {},
     decrypting: false,
+    refreshing: {},
+    decryptSession: null,
     inputs: {},
     fieldError: null,
     flash: null,
@@ -182,6 +253,9 @@ export function initialState(opts: {
     busy: null,
     send: {},
     countdown: null,
+    txAction: null,
+    disclose: null,
+    operators: null,
     pending: [],
     nextPendingId: 1,
     errorView: null,
@@ -286,14 +360,18 @@ export function goHome(s: AppState, flash: Line[] | null = null): void {
 export function lockWallet(s: AppState): void {
   s.signer = null;
   s.unlockedUntil = null;
+  // The decrypt signature is as good as the key for reading balances: it goes too.
+  s.decryptSession?.clear();
+  s.decryptSession = null;
   // A prepared transfer holds the connected wallet: it must not outlive the unlock.
   s.send.prepared = undefined;
   s.send.preparedFor = undefined;
+  if (s.txAction) s.txAction.prepared = undefined;
 }
 
 /** True while a send draft is being reviewed or signed (the countdown included). */
 export function sendInProgress(s: AppState): boolean {
-  return s.stack.some((f) => f.id === 'send-review');
+  return s.stack.some((f) => f.id === 'send-review' || f.id === 'tx-review');
 }
 
 /** Whether the wallet is unlocked right now. */

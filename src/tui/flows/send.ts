@@ -31,10 +31,10 @@ import {
   type Recipient,
 } from '../state.js';
 import { dimLine, line, seg, type Line } from '../text.js';
-import { decryptAll, refreshEth, reload } from './data.js';
+import { decryptAll, refreshEth, reload, sessionOf } from './data.js';
 
 /** Codes that mean the transaction was handed to the network and may be on-chain. */
-const AFTER_BROADCAST = new Set<string>(['SENT_UNCONFIRMED', 'TX_REVERTED', 'TX_REPLACED']);
+export const AFTER_BROADCAST = new Set<string>(['SENT_UNCONFIRMED', 'TX_REVERTED', 'TX_REPLACED']);
 
 /** Minimum countdown on mainnet, even when the countdown is switched off. */
 export const MAINNET_MIN_COUNTDOWN = 5;
@@ -207,12 +207,15 @@ export function reviewChecks(s: AppState): Effect[] {
             'Open Settings to add what is missing.',
           );
         }
+        // The session's signature also covers the balance checks before and after.
+        const session = sessionOf(deps, signer, network) ?? undefined;
         const prepared = await deps.backend.prepareTransfer(
           signer,
           t.address,
           to.address,
           value,
           network,
+          { session },
         );
         const at = deps.now();
         return (st) => {
@@ -407,7 +410,9 @@ export function broadcast(s: AppState): Effect[] {
           }
           st.notice = notice;
           if (st.stack.length === 1) st.flash = null; // the "Sending…" line is now outdated
-          return [reload(st), refreshEth(st)];
+          // Re-decrypt every balance in the background (incoming transfers may have
+          // landed too); a no-op when the send locked the wallet again.
+          return [reload(st), refreshEth(st), ...decryptAll(st)];
         };
       } catch (err) {
         const error = describeError(err, { action: 'send' });

@@ -22,6 +22,7 @@ import { dimLine, line, seg } from '../text.js';
 import { decryptAll, refreshEth, reload } from './data.js';
 import { runDoctorChecks } from '../../core/doctor.js';
 import type { TokenCheck } from '../../core/token/erc7984Check.js';
+import { decryptHistory, HISTORY_LIMIT, toHistoryRow } from './history.js';
 
 function ok(s: AppState, text: string): void {
   s.flash = [line('  ', seg(`✔ ${text}`, 'green'))];
@@ -228,6 +229,9 @@ export function setNetwork(
       updateConfig({ defaultNetwork: network });
       return (st) => {
         st.network = network;
+        // The decrypt signature is bound to one chain: sign again on the new one.
+        st.decryptSession?.clear();
+        st.decryptSession = null;
         st.balances = {};
         st.eth = null;
         st.send = {};
@@ -420,30 +424,9 @@ export function loadHistory(s: AppState): Effect[] {
   const tokens = s.data.tokens;
   const names = new Map(s.data.contacts.map((c) => [c.address.toLowerCase(), c.name]));
   const rows = (): HistoryRow[] =>
-    listTransactions({ walletAddress: wallet.address, network, limit: 50 }).map((t) => {
-      const out = t.from.toLowerCase() === wallet.address.toLowerCase();
-      const other = out ? t.to : t.from;
-      const kind: HistoryRow['kind'] =
-        t.type === 'eth'
-          ? out
-            ? 'eth out'
-            : 'eth in'
-          : t.type === 'mint'
-            ? 'mint'
-            : t.type === 'burn'
-              ? 'burn'
-              : out
-                ? 'sent'
-                : 'received';
-      return {
-        when: shortWhen(t.timestamp),
-        kind,
-        amount: t.amount === null ? 'encrypted' : `${out ? '-' : '+'}${t.amount}`,
-        token: t.tokenSymbol,
-        counterparty: names.get(other.toLowerCase()) ?? shortAddress(other),
-        txHash: t.txHash,
-      };
-    });
+    listTransactions({ walletAddress: wallet.address, network, limit: HISTORY_LIMIT }).map((t) =>
+      toHistoryRow(t, wallet.address, names, tokens),
+    );
   s.history = { rows: s.history?.rows ?? [], loading: true };
   return [
     effect('history', async (deps) => {
@@ -456,6 +439,8 @@ export function loadHistory(s: AppState): Effect[] {
         const synced = rows();
         return (st) => {
           st.history = { rows: synced, loading: false };
+          // Unlocked: decrypt the new amounts in the background.
+          return decryptHistory(st);
         };
       } catch (err) {
         const msg = describeError(err, { action: 'history sync' }).title;
@@ -465,6 +450,7 @@ export function loadHistory(s: AppState): Effect[] {
             loading: false,
             error: `Couldn't sync: ${msg} Showing what is saved locally.`,
           };
+          return decryptHistory(st);
         };
       }
     }),

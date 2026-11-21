@@ -22,6 +22,7 @@ import { frame, clearSecrets, goHome, lockWallet, type AppState } from '../state
 import { line, seg } from '../text.js';
 import { errorLines, fieldErrorFrom } from '../errors.js';
 import { decryptAll, refreshEth, reload } from './data.js';
+import { decryptHistory } from './history.js';
 import { popTo } from '../nav.js';
 
 /** How long an unlock lasts, from the "Stay unlocked for" setting. */
@@ -32,7 +33,7 @@ export function unlockDurationMs(minutes: number): number {
 }
 
 /** Where to go after a successful unlock. */
-export type AfterUnlock = 'balances' | 'review' | 'none';
+export type AfterUnlock = 'balances' | 'history' | 'review' | 'none';
 
 /**
  * Decrypt the current wallet's keystore with the password in the `unlock` field. The key
@@ -67,8 +68,10 @@ export function unlock(
           st.signer = signer;
           st.unlockedUntil = deps.now() + unlockDurationMs(st.data.prefs.unlockMinutes);
           if (st.stack.length > 1) st.stack.pop();
-          if (after === 'balances') return decryptAll(st);
           if (after === 'review' && onReview) return onReview(st);
+          // Every unlock refreshes balances in the background (one signature for all).
+          if (after === 'history') return [...decryptAll(st), ...decryptHistory(st)];
+          return decryptAll(st);
         };
       } catch {
         return (st) => {

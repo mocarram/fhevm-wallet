@@ -1,0 +1,121 @@
+/**
+ * History rows and their decrypted amounts.
+ *
+ * Confidential transfers carry only an amount handle. Once the wallet is unlocked the
+ * amounts are decrypted in the background with the session's single signature and
+ * cached by handle (owner-only storage), so later visits show them without unlocking.
+ * Amounts this wallet may not decrypt stay "encrypted" without an error.
+ */
+
+import { shortAddress } from '../../core/send/recipient.js';
+import type { TokenEntry } from '../../core/token/TokenRegistry.js';
+import { decryptHistoryAmounts, knownAmount } from '../../core/token/historyAmounts.js';
+import { listTransactions, type Transaction } from '../../storage/TransactionStore.js';
+import { formatBalance } from '../../core/send/amount.js';
+import { describeError } from '../errors.js';
+import { effect, type Effect } from '../effects.js';
+import { isUnlocked, type AppState, type HistoryRow } from '../state.js';
+import { dimLine, line, seg } from '../text.js';
+import { sessionOf } from './data.js';
+import { shortWhen } from './manage.js';
+
+/** How many transfers History shows. */
+export const HISTORY_LIMIT = 50;
+
+/** One display row for a stored transaction. */
+export function toHistoryRow(
+  t: Transaction,
+  wallet: string,
+  names: Map<string, string>,
+  tokens: TokenEntry[],
+): HistoryRow {
+  const out = t.from.toLowerCase() === wallet.toLowerCase();
+  const other = out ? t.to : t.from;
+  const kind: HistoryRow['kind'] =
+    t.type === 'eth'
+      ? out
+        ? 'eth out'
+        : 'eth in'
+      : t.type === 'mint'
+        ? 'mint'
+        : t.type === 'burn'
+          ? 'burn'
+          : out
+            ? 'sent'
+            : 'received';
+  const sign = out ? '-' : '+';
+  let amount = t.amount === null ? 'encrypted' : `${sign}${t.amount}`;
+  const known = t.amount === null ? knownAmount(t) : null;
+  const token = tokens.find((x) => x.address.toLowerCase() === t.tokenAddress.toLowerCase());
+  if (known && token) amount = `${sign}${formatBalance(known.value, token.decimals)}`;
+  return {
+    when: shortWhen(t.timestamp),
+    kind,
+    amount,
+    token: t.tokenSymbol,
+    counterparty: names.get(other.toLowerCase()) ?? shortAddress(other),
+    txHash: t.txHash,
+    ...(t.amountHandle ? { handle: t.amountHandle, tokenAddress: t.tokenAddress } : {}),
+    ...(known?.disclosed ? { disclosed: true } : {}),
+  };
+}
+
+/** Rows for the current wallet and network, newest first. */
+export function historyRows(s: AppState): HistoryRow[] {
+  const wallet = s.wallet;
+  if (!wallet) return [];
+  const names = new Map(s.data.contacts.map((c) => [c.address.toLowerCase(), c.name]));
+  return listTransactions({
+    walletAddress: wallet.address,
+    network: s.network,
+    limit: HISTORY_LIMIT,
+  }).map((t) => toHistoryRow(t, wallet.address, names, s.data.tokens));
+}
+
+/** True when some shown transfer has an amount that could still be decrypted. */
+export function hasEncryptedRows(s: AppState): boolean {
+  return (s.history?.rows ?? []).some((r) => r.amount === 'encrypted' && r.handle);
+}
+
+/**
+ * Decrypt the encrypted amounts in history in the background. Needs the wallet unlocked
+ * (returns no effects otherwise); uses the same session signature as the balances.
+ */
+export function decryptHistory(s: AppState): Effect[] {
+  if (!isUnlocked(s) || !s.wallet || !s.history) return [];
+  const wallet = s.wallet;
+  const network = s.network;
+  const signer = s.signer!;
+  const tokens = s.data.tokens;
+  s.history.decrypting = true;
+  return [
+    effect('history-decrypt', async (deps) => {
+      const session = sessionOf(deps, signer, network);
+      const txs = listTransactions({
+        walletAddress: wallet.address,
+        network,
+        limit: HISTORY_LIMIT,
+      });
+      const result = session
+        ? await decryptHistoryAmounts(deps.backend, session, txs, tokens)
+        : { decrypted: 0, hidden: 0, failed: 0 };
+      return (st) => {
+        if (!st.history) return;
+        st.history.decrypting = false;
+        if (st.network !== network || st.wallet?.address !== wallet.address) return;
+        st.history.rows = historyRows(st);
+        if (st.stack[st.stack.length - 1].id !== 'history') return;
+        if (result.failed) {
+          const why = describeError(result.error ?? new Error('unknown'), {
+            action: 'decrypt',
+          }).title;
+          st.flash = [
+            line('  ', seg(`! Couldn't decrypt ${result.failed} amount(s): ${why}`, 'yellow')),
+          ];
+        } else if (result.decrypted) {
+          st.flash = [dimLine(`  ✔ Decrypted ${result.decrypted} amount(s).`)];
+        }
+      };
+    }),
+  ];
+}

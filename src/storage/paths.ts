@@ -286,6 +286,7 @@ export const WALLET_DATA_ENTRIES = [
   'addressbook.json',
   'transactions.json',
   'balance-cache.json',
+  'amount-cache.json',
   'ui-prefs.json',
   'token-lists.json',
   'scan-state.json',

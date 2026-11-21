@@ -4,7 +4,10 @@
 
 import { peekCachedBalance } from '../../core/token/BalanceCache.js';
 import { describeError } from '../errors.js';
-import { effect, type Effect } from '../effects.js';
+import type { UnlockedSigner } from '../../core/backend/types.js';
+import type { DecryptSession } from '../../core/fhe/DecryptSession.js';
+import type { NetworkName } from '../../core/network/NetworkConfig.js';
+import { effect, type Deps, type Effect } from '../effects.js';
 import { loadSnapshot } from '../snapshot.js';
 import {
   isUnlocked,
@@ -66,8 +69,33 @@ export function refreshEth(s: AppState): Effect {
 }
 
 /**
- * Decrypt every tracked token's balance (and refresh ETH). Needs the wallet unlocked;
- * returns no effects otherwise. `force` skips the handle-based cache.
+ * The decrypt session for the unlocked wallet, created on first use. Runs inside an
+ * effect: `dispatch` applies at once, so two effects racing here share one session (and
+ * one signature). Null when the wallet was locked or switched meanwhile.
+ */
+export function sessionOf(
+  deps: Deps,
+  signer: UnlockedSigner,
+  network: NetworkName,
+): DecryptSession | null {
+  let session: DecryptSession | null = null;
+  deps.dispatch((st) => {
+    if (st.signer !== signer || st.network !== network) return;
+    const cur = st.decryptSession;
+    if (!cur || !cur.active || cur.network !== network || cur.address !== signer.address) {
+      cur?.clear();
+      st.decryptSession = deps.backend.newDecryptSession(signer, network);
+    }
+    session = st.decryptSession;
+  });
+  return session;
+}
+
+/**
+ * Decrypt every tracked token's balance in the background (and refresh ETH): one
+ * signature for all of them and one batched relayer request. Needs the wallet unlocked;
+ * returns no effects otherwise. Old values stay on screen with a spinner per row while
+ * this runs, so it never blocks input. `force` skips the handle-based cache.
  */
 export function decryptAll(s: AppState, force = false): Effect[] {
   if (!isUnlocked(s) || !s.wallet) return [];
@@ -77,29 +105,34 @@ export function decryptAll(s: AppState, force = false): Effect[] {
   const lockAfter = s.data.prefs.unlockMinutes === 0;
   if (tokens.length === 0) return [refreshEth(s)];
   s.decrypting = true;
+  for (const t of tokens) s.refreshing[t.address.toLowerCase()] = true;
   return [
     refreshEth(s),
     effect('decrypt', async (deps) => {
       const readiness = deps.backend.readinessProblem(network);
-      const results: Record<string, bigint> = {};
+      let results: Record<string, bigint> = {};
       const failures: string[] = [];
       if (!readiness) {
-        for (const t of tokens) {
-          try {
-            results[t.address.toLowerCase()] = await deps.backend.decryptBalance(
-              t.address,
-              signer,
-              network,
-              { forceRefresh: force },
-            );
-          } catch (err) {
-            failures.push(`${t.symbol}: ${describeError(err, { action: 'decrypt' }).title}`);
+        const session = sessionOf(deps, signer, network);
+        if (session) {
+          const batch = await deps.backend.decryptBalances(
+            session,
+            tokens.map((t) => t.address),
+            { forceRefresh: force },
+          );
+          results = batch.values;
+          for (const t of tokens) {
+            const err = batch.errors[t.address.toLowerCase()];
+            if (err !== undefined) {
+              failures.push(`${t.symbol}: ${describeError(err, { action: 'decrypt' }).title}`);
+            }
           }
         }
       }
       const at = deps.now();
       return (st) => {
         st.decrypting = false;
+        for (const t of tokens) delete st.refreshing[t.address.toLowerCase()];
         if (st.network !== network) return;
         for (const [k, value] of Object.entries(results)) {
           st.balances[k] = { value, at, source: 'session' };
