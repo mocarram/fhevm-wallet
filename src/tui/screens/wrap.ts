@@ -35,8 +35,13 @@ const HELP: Array<[string, string]> = [
   [':wrap 25 cusdc', 'Wrap from anywhere (:unwrap 10 cusdc)'],
 ];
 
+/** "Balances › Wrap" when opened from Balances, else just the screen's name. */
+export function wrapCrumb(s: AppState, name: string): string[] {
+  return s.stack.some((f) => f.id === 'balances') ? ['Balances', name] : [name];
+}
+
 export const wrapPickScreen: ScreenDef = {
-  crumb: ['Wrap or unwrap'],
+  crumb: (s) => wrapCrumb(s, 'Wrap or unwrap'),
   onEnter: (s) => loadWrapData(s),
   view: (s) => {
     const mode = top(s).params.mode === 'unwrap' ? 'unwrap' : 'wrap';
@@ -201,13 +206,13 @@ function enterWrap(s: AppState) {
 }
 
 export const wrapScreen: ScreenDef = {
-  crumb: ['Wrap'],
+  crumb: (s) => wrapCrumb(s, 'Wrap'),
   onEnter: enterWrap,
   view: (s) => wrapView(s, 'wrap'),
 };
 
 export const unwrapScreen: ScreenDef = {
-  crumb: ['Unwrap'],
+  crumb: (s) => wrapCrumb(s, 'Unwrap'),
   onEnter: enterWrap,
   view: (s) => wrapView(s, 'unwrap'),
 };

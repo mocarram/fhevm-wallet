@@ -51,7 +51,7 @@ export const balancesScreen: ScreenDef = {
         ),
       );
       const note = wrapRowNote(s, t.address);
-      if (note) body.push(note);
+      if (note) list.push(note); // under its own token row, not after ETH
     }
     if (s.data.tokens.length === 0) body.push(dimLine('  No tokens tracked. Add one in Tokens.'));
     // Notes after the token rows stay on screen while a long list scrolls.

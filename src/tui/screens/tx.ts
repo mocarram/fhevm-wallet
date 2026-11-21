@@ -13,10 +13,40 @@ import { dimLine, line, seg, type Line } from '../text.js';
 import { unlockMinutesText } from './balances.js';
 import { backItem, BLANK, inputLine } from './common.js';
 
-/** Where the action came from: Tokens › Operators, or History › Disclose. */
-function txCrumb(s: AppState, ...rest: string[]): string[] {
-  const from = s.txAction?.kind === 'operator' ? ['Tokens', 'Operators'] : ['History', 'Disclose'];
+/**
+ * Where the action came from, per kind: Tokens › Operators, History › Disclose, or the
+ * wrap screens (under Balances when opened from there, like `wrapCrumb`).
+ */
+export function txCrumb(s: AppState, ...rest: string[]): string[] {
+  const kind = s.txAction?.kind;
+  const balances = s.stack.some((f) => f.id === 'balances') ? ['Balances'] : [];
+  const from =
+    kind === 'operator'
+      ? ['Tokens', 'Operators']
+      : kind === 'wrap'
+        ? [...balances, 'Wrap']
+        : kind === 'unwrap'
+          ? [...balances, 'Unwrap']
+          : kind === 'unwrap-finish'
+            ? [...balances, 'Finish unwrap']
+            : ['History', 'Disclose'];
   return [...from, ...rest];
+}
+
+/** The countdown's crumb: what is being sent. */
+function countdownWord(s: AppState): string {
+  const a = s.txAction;
+  switch (a?.kind) {
+    case 'operator':
+      return a.until ? 'Granting' : 'Revoking';
+    case 'wrap':
+      return 'Wrapping';
+    case 'unwrap':
+    case 'unwrap-finish':
+      return 'Unwrapping';
+    default:
+      return 'Disclosing';
+  }
 }
 
 export const txReviewScreen: ScreenDef = {
@@ -95,11 +125,7 @@ export const txSignScreen: ScreenDef = {
 };
 
 export const txCountScreen: ScreenDef = {
-  crumb: (s) =>
-    txCrumb(
-      s,
-      s.txAction?.kind !== 'operator' ? 'Disclosing' : s.txAction.until ? 'Granting' : 'Revoking',
-    ),
+  crumb: (s) => txCrumb(s, countdownWord(s)),
   view: (s) => {
     const cd = s.countdown;
     const left = cd ? Math.max(0, Math.ceil((cd.endsAt - s.now) / 1000)) : 0;

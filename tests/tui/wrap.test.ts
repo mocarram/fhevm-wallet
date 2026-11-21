@@ -8,6 +8,7 @@ import { listUnwraps } from '../../src/storage/UnwrapStore.js';
 import { loadSnapshot } from '../../src/tui/snapshot.js';
 import { finishPending } from '../../src/tui/flows/wrap.js';
 import { lockWallet } from '../../src/tui/state.js';
+import { breadcrumb } from '../../src/tui/statusBar.js';
 import { wipeTestDataDir } from '../helpers/dataDir.js';
 import { Harness } from './harness.js';
 
@@ -24,8 +25,13 @@ describe('Wrap', () => {
     const h = new Harness({ unlocked: true });
     await h.keys('b');
     expect(h.text()).toMatch(/↳ wraps USDC · 500\.00 USDC public in this wallet/);
+    // The note sits right under its own token row (V1), not under ETH.
+    const rows = h.text().split('\n');
+    const note = rows.findIndex((r) => r.includes('↳ wraps USDC'));
+    expect(rows[note - 1]).toMatch(/^\s+cUSDC\s/);
     await h.keys('w'); // the only wrapper: straight to its Wrap screen
     expect(h.screen).toBe('wrap');
+    expect(breadcrumb(h.s)).toBe('Home › Balances › Wrap'); // L2
     let t = h.text();
     expect(t).toMatch(/Wrap USDC into cUSDC/);
     expect(t).toMatch(/USDC\s+500\.00\s+public, in this wallet/);
@@ -35,6 +41,7 @@ describe('Wrap', () => {
     expect(h.text()).toMatch(/You get 25 cUSDC\./);
     await h.keys('{enter}');
     expect(h.screen).toBe('tx-review');
+    expect(breadcrumb(h.s)).toBe('Home › Balances › Wrap › Review');
     t = h.text();
     expect(t).toMatch(/Wrap 25\.00 USDC into 25\.00 cUSDC/);
     expect(t).toMatch(/wrapped amount is public on-chain/);
@@ -90,6 +97,7 @@ describe('Unwrap', () => {
     await h.keys('10');
     expect(h.text()).toMatch(/You get 10\.00 USDC \(public\)\./);
     await h.keys('{enter}');
+    expect(breadcrumb(h.s)).toBe('Home › Balances › Unwrap › Review');
     const t = h.text();
     expect(t).toMatch(/Unwrap 10\.00 cUSDC into 10\.00 USDC/);
     expect(t).toMatch(/unwrapped amount becomes public/);
