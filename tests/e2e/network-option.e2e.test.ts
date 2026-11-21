@@ -92,4 +92,15 @@ describe('-n/--network after the subcommand is used', () => {
     expect(res.code).toBe(0);
     expect(tokensIn(h).map((t) => t.network)).toEqual(['sepolia']);
   });
+
+  it('operator set and disclose -n mainnet reach the Mainnet --yes guard', () => {
+    const h = home('sepolia');
+    const op = runCli(['operator', 'set', WALLET, '--for', '1d', '-n', 'mainnet', '--yes'], h);
+    expect(op.stdout).toMatch(/Mainnet tokens without asking you/);
+    expect(op.code).toBe(1);
+    const hash = '0x' + '12'.repeat(32);
+    const dis = runCli(['disclose', hash, '-n', 'mainnet', '--yes'], h);
+    expect(dis.stdout).toMatch(/publish a Mainnet transfer amount without asking you/);
+    expect(dis.code).toBe(1);
+  });
 });

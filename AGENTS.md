@@ -250,6 +250,9 @@ Every unit of work goes through this loop until it comes out clean:
   typed, so the program's preAction hook copies it to the running subcommand's own
   `network` option (`adoptTypedNetwork`, `src/cli/utils/networkOption.ts`). A new
   command that takes a network declares `-n, --network` and reads `options.network`.
+- A one-shot command that signs a transaction takes `--mainnet` and calls
+  `mainnetAllowed` (`src/cli/utils/txFlow.ts`, rule in `src/cli/utils/mainnetGuard.ts`)
+  before reading the password: without a prompt, Mainnet needs `-n mainnet` and `--mainnet`.
 - Anything that needs the chain or relayer goes through the `Backend` interface so the
   mock supports it; a command that does is added to `MOCK_COMMANDS`
   (`src/core/backend/mockGuard.ts`).

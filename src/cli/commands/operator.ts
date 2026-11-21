@@ -19,12 +19,14 @@ import { resolveRecipient } from '../../core/send/resolve.js';
 import { listAddresses } from '../../storage/AddressBook.js';
 import { listTransactions } from '../../storage/TransactionStore.js';
 import { bold, formatAddress } from '../../utils/formatting.js';
+import { MAINNET_OPTION_HELP } from '../utils/mainnetGuard.js';
 import { PASSWORD_STDIN_HELP } from '../utils/passwordInput.js';
 import { prompts } from '../utils/prompts.js';
 import { describeError } from '../utils/userError.js';
 import {
   confirmAndSend,
   fail,
+  mainnetAllowed,
   pickNetwork,
   pickToken,
   pickWallet,
@@ -39,6 +41,7 @@ interface OperatorOptions {
   for?: string;
   passwordStdin?: boolean;
   yes?: boolean;
+  mainnet?: boolean;
 }
 
 /** Register `fhew operator`. */
@@ -73,7 +76,8 @@ export function registerOperatorCommands(program: Command): void {
       .argument('<operator>', 'Operator address or contact name')
       .requiredOption('--for <expiry>', 'How long: 1h, 1d, 7d, 2w, a date (2026-12-01) or forever')
       .option('--password-stdin', PASSWORD_STDIN_HELP)
-      .option('-y, --yes', 'Do not ask for confirmation (the simulation still runs)'),
+      .option('-y, --yes', 'Do not ask for confirmation (the simulation still runs)')
+      .option('--mainnet', MAINNET_OPTION_HELP),
   ).action(async (operator: string, options: OperatorOptions) => {
     try {
       await change(operator, options, 'set');
@@ -88,7 +92,8 @@ export function registerOperatorCommands(program: Command): void {
       .description('Stop an operator from moving your tokens (expiry set to 0)')
       .argument('<operator>', 'Operator address or contact name')
       .option('--password-stdin', PASSWORD_STDIN_HELP)
-      .option('-y, --yes', 'Do not ask for confirmation (the simulation still runs)'),
+      .option('-y, --yes', 'Do not ask for confirmation (the simulation still runs)')
+      .option('--mainnet', MAINNET_OPTION_HELP),
   ).action(async (operator: string, options: OperatorOptions) => {
     try {
       await change(operator, options, 'revoke');
@@ -145,6 +150,11 @@ async function list(addresses: string[], options: OperatorOptions): Promise<void
 async function change(operatorText: string, options: OperatorOptions, mode: 'set' | 'revoke') {
   const network = pickNetwork(options.network);
   if (!network) return;
+  const what =
+    mode === 'set'
+      ? 'let another address move your Mainnet tokens'
+      : 'change an operator of your Mainnet tokens';
+  if (!mainnetAllowed(network, options, what)) return;
   const token = pickToken(network, options.token);
   const walletRef = pickWallet(options.wallet);
   if (!token || !walletRef) return;

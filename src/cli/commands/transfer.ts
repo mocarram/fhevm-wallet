@@ -49,6 +49,11 @@ import {
   warning,
 } from '../../utils/formatting.js';
 import { isValidAddress, isValidNetwork } from '../../utils/validation.js';
+import {
+  MAINNET_GUARD_CODE,
+  MAINNET_OPTION_HELP,
+  mainnetGuardProblem,
+} from '../utils/mainnetGuard.js';
 
 /** Options of `fhew send`. */
 interface SendOptions {
@@ -60,23 +65,6 @@ interface SendOptions {
   yes?: boolean;
   mainnet?: boolean;
   json?: boolean;
-}
-
-/**
- * Mainnet guard for `fhew send`. When nobody will be asked to confirm (`--yes`, or no
- * terminal), a Mainnet send needs two explicit signs of intent on the command line:
- * `-n mainnet` (so a configured default network can never pick Mainnet silently) and
- * `--mainnet`. Returns the refusal to show, or null when the send may go on.
- */
-export function mainnetGuardProblem(opts: {
-  network: NetworkName;
-  networkOption?: string;
-  mainnetFlag?: boolean;
-  willAsk: boolean;
-}): string | null {
-  if (opts.network !== 'mainnet' || opts.willAsk) return null;
-  if (opts.networkOption === 'mainnet' && opts.mainnetFlag) return null;
-  return 'Nothing was sent: this would move real funds on Mainnet without asking you. To allow it, pass both -n mainnet and --mainnet, or run the command in a terminal without --yes.';
 }
 
 /** Set by `--json`: errors and the result are printed as JSON on stdout. */
@@ -116,10 +104,7 @@ export function registerTransferCommand(program: Command): void {
     .option('-c, --contact <name>', 'Use address book contact as recipient')
     .option('--password-stdin', PASSWORD_STDIN_HELP)
     .option('-y, --yes', 'Send without asking for confirmation (the checks still run)')
-    .option(
-      '--mainnet',
-      'Allow a Mainnet send without confirmation (with --yes or no terminal); needs -n mainnet too',
-    )
+    .option('--mainnet', MAINNET_OPTION_HELP)
     .option('--json', 'Print the result as JSON (needs --yes and --password-stdin)')
     .action(async (to?: string, amount?: string, tokenArg?: string, options: SendOptions = {}) => {
       jsonMode = Boolean(options.json);
@@ -163,7 +148,7 @@ async function send(
     mainnetFlag: options.mainnet,
     willAsk,
   });
-  if (guard) return fail(guard);
+  if (guard) return fail(guard, MAINNET_GUARD_CODE);
 
   const backend: Backend = createBackend();
   const notReady = backend.readinessProblem(network);

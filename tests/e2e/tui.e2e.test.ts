@@ -633,6 +633,51 @@ describe.skipIf(!python)('terminal UI (pty, mock backend)', () => {
     expect(list.stdout).toMatch(/bob .*not an operator/);
   });
 
+  it('operator set/revoke and disclose follow the Mainnet --yes rule of send', () => {
+    const home = freshHome();
+    // Mainnet as the configured default, with the mock's Mainnet cUSDC tracked.
+    const tokensFile = join(home, 'wallet-data', 'tokens.json');
+    const reg = JSON.parse(readFileSync(tokensFile, 'utf-8'));
+    const usdc = reg.tokens.find((t: { symbol: string }) => t.symbol === 'cUSDC');
+    reg.tokens.push({
+      ...usdc,
+      network: 'mainnet',
+      address: getAddress('0x' + id('fhew-mock:mainnet:cUSDC').slice(-40)),
+    });
+    writeFileSync(tokensFile, JSON.stringify(reg), { mode: 0o600 });
+    const cfgFile = join(home, 'wallet-data', 'config.json');
+    const cfg = JSON.parse(readFileSync(cfgFile, 'utf-8'));
+    writeFileSync(cfgFile, JSON.stringify({ ...cfg, defaultNetwork: 'mainnet' }), { mode: 0o600 });
+
+    const handle = '0x' + 'ab'.repeat(32);
+    for (const args of [
+      ['operator', 'set', 'bob', '--for', '1d', '--password-stdin', '--yes'],
+      ['operator', 'set', 'bob', '--for', '1d', '-n', 'mainnet', '--password-stdin', '--yes'],
+      ['operator', 'revoke', 'bob', '--mainnet', '--password-stdin', '--yes'],
+      ['disclose', handle, '--password-stdin', '--yes'],
+      ['disclose', handle, '-n', 'mainnet', '--password-stdin'],
+    ]) {
+      const res = cli(home, args);
+      expect(res.status, args.join(' ')).toBe(1);
+      expect(res.stdout, args.join(' ')).toMatch(/Nothing was sent: this would .*Mainnet/);
+      expect(res.stdout + res.stderr).not.toMatch(/Wallet loaded/);
+    }
+    const ok = cli(home, [
+      'operator',
+      'set',
+      'bob',
+      '--for',
+      '1d',
+      '-n',
+      'mainnet',
+      '--mainnet',
+      '--password-stdin',
+      '--yes',
+    ]);
+    expect(ok.stdout).toMatch(/is now an operator for cUSDC until/);
+    expect(ok.status).toBe(0);
+  });
+
   it('TUI: Tokens › Operators grants with a countdown, then History decrypts after unlock', () => {
     runTui(freshHome(), [
       { expect: 'Balances' },

@@ -169,6 +169,7 @@ terminal, prompts are never shown: pass the values as arguments, `--password-std
 refused unless the command line itself says `-n mainnet` **and** `--mainnet`, so a
 default network set in the config can never send real funds unasked. In a terminal
 without `--yes`, a Mainnet send asks you to retype the amount, as the terminal UI does.
+`fhew operator set|revoke` and `fhew disclose` follow the same Mainnet rule.
 Exporting a raw private key is interactive only.
 
 Find tokens labels each candidate. **verified**: on a known list and it passes the

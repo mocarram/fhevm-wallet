@@ -3,11 +3,7 @@ import { homedir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createProgram } from '../../src/cli/index.js';
-import {
-  mainnetGuardProblem,
-  retypeMatches,
-  shiftForContact,
-} from '../../src/cli/commands/transfer.js';
+import { retypeMatches, shiftForContact } from '../../src/cli/commands/transfer.js';
 import { addAddress } from '../../src/storage/AddressBook.js';
 import { saveConfig } from '../../src/storage/ConfigStore.js';
 import { wipeTestDataDir } from '../helpers/dataDir.js';
@@ -165,22 +161,6 @@ describe('send command early exits', () => {
     const out = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
     expect(out).toMatch(/Using contact: Alice/);
     promptSpies.forEach((spy) => spy.mockRestore());
-  });
-});
-
-describe('mainnetGuardProblem', () => {
-  const base = { network: 'mainnet' as const, willAsk: false };
-  it('refuses Mainnet without confirmation unless -n mainnet and --mainnet are both given', () => {
-    expect(mainnetGuardProblem(base)).toMatch(/Nothing was sent/);
-    expect(mainnetGuardProblem({ ...base, networkOption: 'mainnet' })).not.toBeNull();
-    expect(mainnetGuardProblem({ ...base, mainnetFlag: true })).not.toBeNull();
-    expect(
-      mainnetGuardProblem({ ...base, networkOption: 'mainnet', mainnetFlag: true }),
-    ).toBeNull();
-  });
-  it('leaves interactive Mainnet sends and Sepolia alone', () => {
-    expect(mainnetGuardProblem({ ...base, willAsk: true })).toBeNull();
-    expect(mainnetGuardProblem({ network: 'sepolia', willAsk: false })).toBeNull();
   });
 });
 

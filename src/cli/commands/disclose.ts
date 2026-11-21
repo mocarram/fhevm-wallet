@@ -21,11 +21,13 @@ import { formatTxError, translateTxError } from '../../core/token/txErrors.js';
 import { setCachedAmounts } from '../../storage/AmountCache.js';
 import { getTransactionByHash, listTransactions } from '../../storage/TransactionStore.js';
 import { bold } from '../../utils/formatting.js';
+import { MAINNET_OPTION_HELP } from '../utils/mainnetGuard.js';
 import { PASSWORD_STDIN_HELP } from '../utils/passwordInput.js';
 import { describeError } from '../utils/userError.js';
 import {
   confirmAndSend,
   fail,
+  mainnetAllowed,
   pickNetwork,
   pickToken,
   pickWallet,
@@ -39,6 +41,7 @@ interface DiscloseOptions {
   network?: string;
   passwordStdin?: boolean;
   yes?: boolean;
+  mainnet?: boolean;
 }
 
 /** How often, and how long apart, step 2 is tried after step 1 confirms. */
@@ -61,6 +64,7 @@ export function registerDiscloseCommand(program: Command): void {
     .option('-n, --network <network>', 'Network (sepolia or mainnet)')
     .option('--password-stdin', PASSWORD_STDIN_HELP)
     .option('-y, --yes', 'Do not ask for confirmation (the simulations still run)')
+    .option('--mainnet', MAINNET_OPTION_HELP)
     .action(async (ref: string, options: DiscloseOptions) => {
       try {
         await disclose(ref, options);
@@ -73,6 +77,7 @@ export function registerDiscloseCommand(program: Command): void {
 async function disclose(ref: string, options: DiscloseOptions): Promise<void> {
   const network = pickNetwork(options.network);
   if (!network) return;
+  if (!mainnetAllowed(network, options, 'publish a Mainnet transfer amount')) return;
   const walletRef = pickWallet(options.wallet);
   if (!walletRef) return;
   if (!/^0x[0-9a-fA-F]{64}$/.test(ref)) {

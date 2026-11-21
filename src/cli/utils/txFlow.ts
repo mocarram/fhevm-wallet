@@ -16,12 +16,13 @@ import { getWalletAddress, hasWallet, loadWallet } from '../../core/wallet/index
 import { getDefaultNetwork, getDefaultWallet } from '../../storage/ConfigStore.js';
 import { error, formatNetworkName, warning } from '../../utils/formatting.js';
 import { isValidNetwork } from '../../utils/validation.js';
+import { MAINNET_GUARD_CODE, mainnetGuardProblem } from './mainnetGuard.js';
 import { walletPassword } from './passwordInput.js';
 import { prompts } from './prompts.js';
 import { describeError } from './userError.js';
 
-/** Print an error and mark the command as failed. */
-export function fail(message: string): void {
+/** Print an error and mark the command as failed. `code` is used by --json output. */
+export function fail(message: string, _code = 'ERROR'): void {
   process.exitCode = 1;
   console.log(error(message));
 }
@@ -34,6 +35,29 @@ export function pickNetwork(option?: string): NetworkName | null {
     return null;
   }
   return option;
+}
+
+/**
+ * The Mainnet rule of `fhew send` for any command that signs: without a confirmation
+ * prompt (`--yes`, or no terminal), Mainnet needs `-n mainnet` and `--mainnet` on the
+ * command line. False (and the refusal printed) when the command must stop. Call it
+ * before reading the password, so a refused run never touches the key.
+ */
+export function mainnetAllowed(
+  network: NetworkName,
+  options: { network?: string; mainnet?: boolean; yes?: boolean },
+  what: string,
+): boolean {
+  const problem = mainnetGuardProblem({
+    network,
+    networkOption: options.network,
+    mainnetFlag: options.mainnet,
+    willAsk: !options.yes && Boolean(process.stdin.isTTY),
+    what,
+  });
+  if (!problem) return true;
+  fail(problem, MAINNET_GUARD_CODE);
+  return false;
 }
 
 /** A tracked token by symbol or address, the only one, or null (error printed). */
