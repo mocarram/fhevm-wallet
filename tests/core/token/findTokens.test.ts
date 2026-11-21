@@ -75,17 +75,20 @@ describe('scanIncoming', () => {
     expect(calls.filter(([f, t]) => t - f + 1 <= 1000).length).toBeGreaterThan(0);
   });
 
-  it('stops on a rate limit, keeping progress, and can be cancelled', async () => {
+  it('retries a rate limit with back-off, then stops keeping progress; can be cancelled', async () => {
     let n = 0;
     const src: LogSource = {
       getBlockNumber: async () => 50_000,
       getLogs: async () => {
-        if (++n === 2) throw new Error('429 Too Many Requests: rate limit');
+        if (++n >= 2) throw new Error('429 Too Many Requests: rate limit');
         return [{ address: A }];
       },
     };
-    const r = await scanIncoming(src, WALLET, { fromBlock: 0 });
+    const waits: number[] = [];
+    const sleep = async (ms: number) => void waits.push(ms);
+    const r = await scanIncoming(src, WALLET, { fromBlock: 0, sleep });
     expect(r.error).toBeDefined();
+    expect(waits).toEqual([1_000, 2_000, 4_000]);
     expect(r.scannedTo).toBe(9999);
     expect(r.contracts).toEqual([getAddress(A)]);
     const ac = new AbortController();
@@ -95,11 +98,62 @@ describe('scanIncoming', () => {
     expect(c.scannedTo).toBe(-1);
   });
 
+  it('goes straight to the limit an endpoint names (nodies: 50 blocks)', async () => {
+    const calls: Array<[number, number]> = [];
+    const src: LogSource = {
+      getBlockNumber: async () => 1_149,
+      getLogs: async (f) => {
+        calls.push([f.fromBlock, f.toBlock]);
+        if (f.toBlock - f.fromBlock + 1 > 50) {
+          throw Object.assign(new Error('could not coalesce error'), {
+            error: {
+              code: -32001,
+              message: 'Block range too large: maximum allowed is 50 blocks on your current plan.',
+            },
+          });
+        }
+        return [];
+      },
+    };
+    const r = await scanIncoming(src, WALLET, { fromBlock: 1_000 });
+    expect(r.error).toBeUndefined();
+    expect(r.scannedTo).toBe(1_149);
+    // One refusal, then three 50-block chunks: no halving down from 10,000.
+    expect(calls).toEqual([
+      [1000, 1149],
+      [1000, 1049],
+      [1050, 1099],
+      [1100, 1149],
+    ]);
+  });
+
+  it('stops at the request budget instead of looping silently', async () => {
+    const { src, calls } = chain(1_000_000, [], 1000);
+    const r = await scanIncoming(src, WALLET, { fromBlock: 0, maxRequests: 20 });
+    expect(r.budgetExhausted).toBe(true);
+    expect(calls).toHaveLength(20);
+    expect(r.scannedTo).toBeGreaterThan(0);
+    expect(r.scannedTo).toBeLessThan(1_000_000);
+  });
+
+  it('scans only a recent window when asked to', async () => {
+    const { src } = chain(100_000, [
+      { block: 10, address: A },
+      { block: 99_000, address: B },
+    ]);
+    const r = await scanIncoming(src, WALLET, { fromBlock: 0, recentWindow: 5_000 });
+    expect(r.limitedFrom).toBe(95_001);
+    expect(r.contracts).toEqual([getAddress(B)]);
+  });
+
   it('tells range errors from rate limits', () => {
     expect(isRangeTooLarge(new Error('query returned more than 10000 results'))).toBe(true);
     expect(isRangeTooLarge(new Error('block range is too wide'))).toBe(true);
     expect(isRangeTooLarge(new Error('rate limit exceeded'))).toBe(false);
     expect(isRangeTooLarge(new Error('fetch failed'))).toBe(false);
+    expect(isRangeTooLarge({ error: { code: 4444, message: 'pruned history unavailable' } })).toBe(
+      false,
+    );
   });
 });
 

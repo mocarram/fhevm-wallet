@@ -59,6 +59,11 @@ export interface FindResult {
     error?: { code: string; message: string };
     /** True when no new blocks were scanned (everything up to `toBlock` was done before). */
     upToDate: boolean;
+    /**
+     * Plain-English note on what the scan did not cover (a recent window only, or the
+     * request budget ran out) and what to do about it. Shown under the scan line.
+     */
+    notice?: string;
   } | null;
   /** Why the configured token list could not be refreshed. */
   listError?: string;
@@ -111,6 +116,7 @@ export async function findTokens(
       fromBlock,
       signal: opts.signal,
       onProgress: opts.onProgress,
+      recentOnly: opts.fromBlock === undefined,
     });
     const contracts = new Set([...(resume && saved ? saved.contracts : []), ...r.contracts]);
     for (const c of contracts) add(c, 'history');
@@ -128,6 +134,7 @@ export async function findTokens(
       const e = r.error instanceof WalletTxError ? r.error : translateTxError(r.error);
       error = { code: e.code, message: e.message };
     }
+    const notice = scanNotice(r);
     scan = {
       fromBlock: r.fromBlock,
       toBlock: r.toBlock,
@@ -135,6 +142,7 @@ export async function findTokens(
       cancelled: r.cancelled,
       error,
       upToDate: r.fromBlock > r.toBlock,
+      ...(notice ? { notice } : {}),
     };
   }
 
@@ -175,6 +183,22 @@ export async function findTokens(
     (a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status) || a.symbol.localeCompare(b.symbol),
   );
   return { candidates, scan, listError: known.listError };
+}
+
+/** What a scan left out, in one or two sentences, or undefined when it covered everything. */
+export function scanNotice(r: {
+  fromBlock: number;
+  scannedTo: number;
+  limitedFrom?: number;
+  budgetExhausted?: boolean;
+}): string | undefined {
+  if (r.budgetExhausted) {
+    return `Stopped at block ${r.scannedTo} to avoid sending thousands of requests: this RPC endpoint allows only small log searches. Progress is saved; run again to continue, or set your own RPC URL (an archive or paid node).`;
+  }
+  if (r.limitedFrom !== undefined) {
+    return `Searched only recent blocks (from ${r.limitedFrom}): the public RPC endpoints refuse wide searches across all tokens. To search older history, set your own RPC URL (an archive or paid node) and scan from an earlier block.`;
+  }
+  return undefined;
 }
 
 /** "known list", "found in your history", or both, for labels. */

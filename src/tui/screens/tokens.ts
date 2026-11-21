@@ -216,9 +216,10 @@ export const tokenFindScreen: ScreenDef = {
           dimLine(
             sc.upToDate
               ? `  Your history is scanned up to block ${sc.toBlock}.`
-              : `  Scanned blocks ${sc.fromBlock} to ${sc.toBlock} of ${s.network}.`,
+              : `  Scanned blocks ${sc.fromBlock} to ${sc.scannedTo} of ${s.network}.`,
           ),
         );
+      if (sc?.notice) body.push(line('  ', seg(`! ${sc.notice}`, 'yellow')));
       if (r.listError) body.push(line('  ', seg(`! Your token list: ${r.listError}`, 'yellow')));
       body.push(BLANK);
       const options = findOptions(s);

@@ -6,7 +6,7 @@
  */
 
 import type { NetworkName } from '../network/NetworkConfig.js';
-import { NETWORK_CONFIGS, getRpcUrls } from '../network/NetworkConfig.js';
+import { NETWORK_CONFIGS, getRpcUrls, usesPublicRpc } from '../network/NetworkConfig.js';
 import {
   describeProbeFailure,
   getProvider,
@@ -45,6 +45,7 @@ import {
 } from '../token/txErrors.js';
 import { knownTokens } from '../token/tokenLists.js';
 import {
+  PUBLIC_SCAN_WINDOW,
   scanIncoming,
   SCAN_START_BLOCK,
   type ScanOptions,
@@ -306,7 +307,10 @@ export class RealBackend implements Backend {
     opts: Omit<ScanOptions, 'toBlock'>,
   ): Promise<ScanResult> {
     const provider = getProvider(network);
-    const result = await scanIncoming(provider, address, opts);
+    // The built-in public endpoints refuse or cap topic-only log queries (publicnode:
+    // "specify an address"; nodies: 50 blocks), so scan only a recent window there.
+    const recentWindow = opts.recentOnly && usesPublicRpc(network) ? PUBLIC_SCAN_WINDOW : undefined;
+    const result = await scanIncoming(provider, address, { ...opts, recentWindow });
     if (result.error) result.error = translateTxError(result.error, { action: 'token scan' });
     return result;
   }

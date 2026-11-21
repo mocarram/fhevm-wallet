@@ -236,8 +236,9 @@ export function registerTokenFind(token: Command): void {
             ),
           );
         else if (s && !s.upToDate)
-          console.log(chalk.dim(`Scanned blocks ${s.fromBlock} to ${s.toBlock}.`));
+          console.log(chalk.dim(`Scanned blocks ${s.fromBlock} to ${s.scannedTo}.`));
         else if (s) console.log(chalk.dim(`History already scanned up to block ${s.toBlock}.`));
+        if (s?.notice) console.log(warning(s.notice));
         if (result.listError) console.log(warning(`Your token list: ${result.listError}`));
 
         if (!result.candidates.length) {
