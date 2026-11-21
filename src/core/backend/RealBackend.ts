@@ -93,14 +93,36 @@ function toPreparedTx(p: PreparedCall): PreparedTx {
 /**
  * Refuse a new step 2 while an earlier one is still pending: it is in a mempool and
  * would be mined as well, paying twice. A mined or unknown one is handled elsewhere.
+ * Fails closed: when the RPC cannot answer, an earlier step 2 may be pending, so nothing
+ * is sent (an error read as "not pending" could pay twice).
  */
 async function refuseIfDisclosurePending(network: NetworkName, handle: string): Promise<void> {
   const hash = getAmountEntry(network, handle)?.discloseTx;
   if (!hash) return;
   const provider = getProvider(network);
-  const receipt = await provider.getTransactionReceipt(hash).catch(() => null);
+  const cannotCheck = (err: unknown) => {
+    const e = translateTxError(err, { action: 'transaction check' });
+    return new WalletTxError(
+      e.code === 'UNKNOWN' ? 'RPC_ERROR' : e.code,
+      "Couldn't check the disclosure sent earlier, so nothing was sent.",
+      `The network did not answer about ${hash}: it may still be waiting to be mined.`,
+      'Try again in a moment. Nothing was sent.',
+      e.raw,
+    );
+  };
+  let receipt;
+  try {
+    receipt = await provider.getTransactionReceipt(hash);
+  } catch (err) {
+    throw cannotCheck(err);
+  }
   if (receipt) return; // mined (a revert may be retried; success is caught by the stage)
-  const pending = await provider.getTransaction(hash).catch(() => null);
+  let pending;
+  try {
+    pending = await provider.getTransaction(hash);
+  } catch (err) {
+    throw cannotCheck(err);
+  }
   if (!pending) return; // dropped or never arrived: sending again is safe
   throw new WalletTxError(
     'SENT_UNCONFIRMED',
