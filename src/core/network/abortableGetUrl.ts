@@ -28,6 +28,9 @@ export const abortableGetUrl: FetchGetUrlFunc = async (
       headers: req.headers,
       body: req.body ?? undefined,
       signal: controller.signal,
+      // Hand redirects back to ethers: FetchRequest follows them itself, with its
+      // redirect limit and its refusal to move from https to plain http.
+      redirect: 'manual',
     });
     const body = new Uint8Array(await res.arrayBuffer());
     const headers: Record<string, string> = {};

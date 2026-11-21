@@ -1,8 +1,11 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createServer, Server } from 'http';
 import { AddressInfo } from 'net';
-import { BrowserProvider, Network } from 'ethers';
+import { BrowserProvider, FetchRequest, Network } from 'ethers';
+import { abortableGetUrl } from '../../../src/core/network/abortableGetUrl.js';
 import {
+  assertRpcChain,
+  describeProbeFailure,
   clearProviderCache,
   clearProviderForNetwork,
   FailoverJsonRpcProvider,
@@ -127,6 +130,44 @@ describe('FailoverJsonRpcProvider', () => {
     expect(await provider.getBlockNumber()).toBe(16);
     expect(provider.currentUrl).toBe(up);
     provider.destroy();
+  });
+
+  it('lets ethers follow a 307 redirect (the transport does not follow it alone)', async () => {
+    const target = await startNode('redirected', {});
+    let hops = 0;
+    const redirector = createServer((req, res) => {
+      hops++;
+      req.resume();
+      res.statusCode = 307;
+      res.setHeader('location', target);
+      res.end();
+    });
+    await new Promise<void>((r) => redirector.listen(0, '127.0.0.1', () => r()));
+    servers.push(redirector);
+    const from = `http://127.0.0.1:${(redirector.address() as AddressInfo).port}`;
+
+    // The raw transport hands the 307 back instead of following it itself...
+    const req = new FetchRequest(from);
+    req.timeout = 2_000;
+    const raw = await abortableGetUrl(req);
+    expect(raw.statusCode).toBe(307);
+    expect(raw.headers.location).toBe(target);
+
+    // ...and ethers' own redirect handling (limit, https-to-http refusal) takes over.
+    const provider = new FailoverJsonRpcProvider([from], sepolia, 2_000);
+    expect(await provider.getBlockNumber()).toBe(16);
+    expect(hops).toBeGreaterThanOrEqual(2); // chain check and the call both redirected
+    expect(calls.redirected).toEqual(['eth_chainId', 'eth_blockNumber']);
+    provider.destroy();
+  });
+
+  it('a probe that gets HTTP 500 says the endpoint returned an error', async () => {
+    const url = await startNode('probe500', { status: 500 });
+    await expect(assertRpcChain(url, 11155111n)).rejects.toThrow(/returned an error \(HTTP 500\)/);
+    expect(describeProbeFailure({ code: 'TIMEOUT' })).toMatch(/did not answer/);
+    expect(describeProbeFailure(new Error('No chain ID in the reply'))).toMatch(
+      /not like an Ethereum JSON-RPC node/,
+    );
   });
 
   it('checks the chain ID once before the first request', async () => {

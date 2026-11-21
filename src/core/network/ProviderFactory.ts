@@ -280,6 +280,22 @@ export async function probeRpc(url: string, timeoutMs = RPC_PROBE_TIMEOUT_MS): P
 }
 
 /**
+ * One sentence on why a probe failed: no answer at all, an HTTP error, or an answer that
+ * is not a JSON-RPC chain ID. Users fix these differently (connection vs URL vs provider).
+ */
+export function describeProbeFailure(err: unknown): string {
+  const e = (err ?? {}) as { code?: unknown; response?: { statusCode?: unknown } };
+  const status = typeof e.response?.statusCode === 'number' ? e.response.statusCode : null;
+  if (e.code === 'SERVER_ERROR' || status !== null) {
+    return `That RPC endpoint returned an error${status !== null ? ` (HTTP ${status})` : ''}. Check the URL, including any API key in it.`;
+  }
+  if (e.code === 'TIMEOUT' || e.code === 'NETWORK_ERROR' || e.code === 'CANCELLED') {
+    return 'That RPC endpoint did not answer. Check the URL and your connection.';
+  }
+  return 'That RPC endpoint answered, but not like an Ethereum JSON-RPC node. Check the URL.';
+}
+
+/**
  * Throw unless `url` answers with `expectedChainId`. A Sepolia URL saved as the mainnet
  * RPC (or the reverse) would otherwise produce confusing failures at send time.
  */
@@ -287,8 +303,8 @@ export async function assertRpcChain(url: string, expectedChainId: bigint): Prom
   let probe: RpcProbe;
   try {
     probe = await probeRpc(url);
-  } catch {
-    throw new Error('That RPC endpoint did not answer. Check the URL and your connection.');
+  } catch (err) {
+    throw new Error(describeProbeFailure(err));
   }
   if (probe.chainId !== expectedChainId) {
     throw new Error(
