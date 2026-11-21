@@ -188,6 +188,92 @@ Plan: a separate post-2.0 phase that migrates `src/core/fhe` behind the existing
 `DecryptAuthority` / encryption seams, with on-chain verification on Sepolia. Sources:
 https://www.npmjs.com/package/@zama-fhe/sdk , https://github.com/zama-ai/sdk
 
+## Phase 5: Wrap / Unwrap (ERC-20 ⇄ ERC-7984 wrapper tokens)
+
+Nearly every Sepolia ERC-7984 token is an OpenZeppelin `ERC7984ERC20Wrapper`: a
+confidential token backed 1:`rate` by a public ERC-20 (cZAMA ⇄ ZAMA, cUSDT ⇄ USDT, …).
+Users fund a confidential balance by wrapping, and leave it by unwrapping. A user wrapped
+`1e8` base units of an 18-decimal ERC-20 into a wrapper with `rate = 1e12` and got **0**:
+the wrapper rounds down to whole confidential units and does not revert. The wallet must
+make that impossible to miss.
+
+### Researched interface (Sepolia, 2026-11-21)
+
+Evidence: PUSH4 selectors and PUSH32 event topics in the deployed bytecode (implementation
+behind EIP-1967 proxies), decoded Sepolia unwrap and finalize transactions (e.g.
+`0x171c5e33…` and `0x528003ea…` on cZAMAMock), and the OpenZeppelin
+Confidential Contracts 0.5.3 source (`token/ERC7984/extensions/ERC7984ERC20Wrapper.sol`).
+
+- cZAMA `0x85E3…F938`, cUSDT `0x421f…2Df7`, cUSDC `0xef98…729e`, cWBTC, cWETH (9077-byte
+  contracts) and the upgradeable mocks cZAMAMock `0xf2D6…FbFB`, cUSDTMock, cUSDCMock (proxy →
+  `0xae37…af04`) all have OZ ≥ 0.4:
+  - `underlying() → address`, `rate() → uint256`, `decimals()` (≤ 6; `rate = 10^(underlying
+    decimals − 6)`: cZAMA/cWETH 1e12, cWBTC 100, cUSDT 1)
+  - `wrap(address to, uint256 amount) → euint64`: pulls `amount − amount % rate` with
+    `transferFrom`, mints `amount / rate` (SafeCast to uint64; total supply capped at
+    `maxTotalSupply() = 2^64−1` via `inferredTotalSupply`). Nothing reverts for
+    `amount < rate`: it mints 0.
+  - `unwrap(address from, address to, bytes32 encryptedAmount, bytes inputProof) → bytes32`
+    (plus `unwrap(from, to, euint64)` for an already-allowed handle). Burns *up to* the
+    amount (ERC-7984: more than the balance burns 0), makes the burnt handle publicly
+    decryptable and returns it as the request id. `from` must be `msg.sender` or have it
+    as operator; the input is bound to (wrapper, msg.sender).
+  - `finalizeUnwrap(bytes32 unwrapRequestId, uint64 cleartext, bytes decryptionProof)`:
+    **anyone** may call it; checks the KMS signatures (`FHE.checkSignatures`), deletes the
+    request, sends `cleartext * rate` underlying to the receiver. A second call reverts
+    with `InvalidUnwrapRequest(id)`.
+  - `unwrapRequester(bytes32) → address` (0 once finalized or unknown),
+    `unwrapAmount(bytes32) → euint64` (= the id).
+  - Events `UnwrapRequested(address indexed receiver, bytes32 indexed unwrapRequestId,
+    bytes32 amount)` and `UnwrapFinalized(address indexed receiver, bytes32 indexed
+    unwrapRequestId, bytes32 encryptedAmount, uint64 cleartextAmount)`.
+- The older cUSDC `0xa8Ca…1c01` (proxy → `0x9a5c…a1e5`) is OZ 0.3.x: same `wrap`, `unwrap`
+  and `finalizeUnwrap(bytes32,uint64,bytes)` selectors, events `UnwrapRequested(address
+  indexed, bytes32)` / `UnwrapFinalized(address indexed, bytes32, uint64)`, and no
+  `unwrapRequester`: there "already finalized" is only visible as the
+  `InvalidUnwrapRequest` revert during simulation.
+- cKRW and cSHARD are plain ERC-7984 tokens (no `underlying()`): no wrap actions.
+- Gateway-callback wrappers (OZ ≤ 0.2) are not supported: finalize would fail simulation.
+
+### Plan
+
+- [ ] Core: wrapper detection (`underlying()` + `rate()` answer) with the underlying's
+      name, symbol and decimals read and sanitised, cached in `wrappers.json`
+- [ ] Core: exact amount maths in bigint (`src/core/token/wrapMath.ts`): wrap input in
+      underlying units, `wrapped = amount / rate`, `dust = amount % rate`; refuse
+      `wrapped == 0` and `wrapped > 2^64−1`; warn on dust; unwrap input in confidential
+      units, receive `amount × rate`
+- [ ] Wrap: ERC-20 balance and allowance check; approve **exactly** `wrapped × rate`
+      (never unlimited; reset to 0 first only when the token refuses a non-zero change);
+      `wrap(self, wrapped × rate)` so the dust never leaves the wallet; both through
+      `prepareTokenCall` / `signAndBroadcast`; re-decrypt the confidential balance after
+- [ ] Unwrap: decrypted balance check, encrypt for (wrapper, sender), `unwrap(self, self,
+      handle, proof)`; read the request id from `UnwrapRequested`; public decryption through
+      the relayer; `finalizeUnwrap`; ERC-20 balance re-read
+- [ ] Pending unwraps in `unwraps.json` (owner-only), saved when the request is signed;
+      resume reconciles with the chain first (receipt of our transactions,
+      `unwrapRequester`) so no step is sent twice; a new unwrap of a token with an
+      unconfirmed request is refused until that one is checked
+- [ ] CLI: `fhew wrap <amount> [token]`, `fhew unwrap <amount> [token]`,
+      `fhew unwrap --list`, `fhew unwrap --resume [id]`; `-n -w --yes --password-stdin
+      --mainnet --json`; in `MOCK_COMMANDS`
+- [ ] MockBackend: deterministic wrappers (mock cUSDC wraps USDC at rate 1, mock cDAI wraps
+      an 18-decimal DAI at rate 1e12), approvals, unwrap requests that survive a restart
+      through the pending store, `FHEW_MOCK_FAIL=public-pending`
+- [ ] TUI: Wrap / Unwrap from Balances and Tokens (wrapper tokens only), one screen with
+      both balances, the exact result and dust, then the shared Review → Confirm →
+      countdown; pending unwraps on Home and Balances with "Finish unwrap"; `:wrap 25
+      cusdc`, `:unwrap 10 cusdc`; `?` help
+- [ ] Tests: maths (rounding, dust, zero, bounds), detection, approve plan, the pending
+      state machine (no double send), MockBackend, TUI harness, pty e2e under the mock
+- [ ] Live on Sepolia (test wallet): wrap a minted ZAMA amount into cZAMA, unwrap cZAMA end
+      to end, the zero/dust refusals before signing; tx hashes in the PR
+
+Acceptance: a wrap that would mint 0 is refused before anything is signed, with the
+smallest amount that works; dust is shown before confirming; approvals are exact; a
+killed unwrap is finished by `fhew unwrap --resume` (or Home › Finish unwrap) without
+re-sending a step that was already sent; `npm run verify` and `npm audit` are clean.
+
 ## Not yet done (needs the user)
 
 - On-chain verification on Sepolia with a real ERC-7984 token and funded wallet.

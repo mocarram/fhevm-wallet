@@ -103,6 +103,74 @@ yellow and start unselected. Contracts that fail the check are listed below, dim
 "not ERC-7984, not offered". Space toggles, `a` selects all, Enter adds the selection,
 `r` scans again from where it stopped.
 
+## Wrap / Unwrap (wrapper tokens)
+
+A tracked token is a *wrapper* when it answers `underlying()` and `rate()` (OpenZeppelin
+`ERC7984ERC20Wrapper`). Balances shows a dim line under each wrapper row:
+`↳ wraps ZAMA · 12.5 ZAMA in this wallet (public)`. Balances and Tokens get
+`Wrap or unwrap` (key `w`), which opens the token picker (skipped when only one wrapper is
+tracked); non-wrapper tokens are listed dimmed as "not a wrapper".
+
+Wrap screen (`Home › Balances › Wrap`), amounts typed in the **public** token's units:
+
+```
+  Wrap ZAMA into cZAMA
+  ZAMA   12.5                 public, in this wallet
+  cZAMA  97.00                confidential (or "locked")
+  1 cZAMA = 1 ZAMA · amounts below 0.000001 ZAMA cannot be wrapped
+
+  ZAMA to wrap › 2.0000005█
+  You get 2.000000 cZAMA. 0.0000005 ZAMA stays in your wallet (below 1 cZAMA unit).
+```
+
+- A result of 0 is an error under the field and Continue is refused: "That wraps to 0
+  cZAMA: the smallest amount is 0.000001 ZAMA." / "Nothing was signed."
+- More than the public balance, or a result above 2^64−1 confidential units, is refused.
+- `max` and `half` use the public balance; their dust is shown the same way.
+- Unwrap is the same screen with the sides swapped (`u` / `w` switches): amounts in
+  confidential units, "You get 10 ZAMA (public)"; it needs the decrypted balance (unlock
+  first) because a burn above the balance burns 0.
+
+Review uses the shared operator/disclosure Review (Confirm → countdown → background
+broadcast) with detail lines:
+
+```
+  Wrap 2 ZAMA into 2 cZAMA
+  The wrapped amount is public on-chain; later balances and transfers are private.
+
+  You give   2 ZAMA (public)
+  You get    2 cZAMA (confidential)
+  Stays      0.0000005 ZAMA (below 1 cZAMA unit)          only with dust
+  Step 1     Approve cZAMA to take exactly 2 ZAMA (not unlimited)   only when needed
+  Step 2     Wrap
+  Fee        up to 0.0004 ETH (approval) + about 0.0006 ETH (wrap, simulated after the approval)
+```
+
+After the confirm both transactions go out in order; the wrap is simulated only after the
+approval confirmed (it cannot be simulated before). If that simulation fails, the notice
+says "The approval went through, the wrap was not sent" and Wrap again skips the
+approval. On confirmation the confidential balance re-decrypts and the notice shows
+`✔ Wrapped 2 ZAMA → 2 cZAMA · cZAMA 97.00 → 99.00`.
+
+Unwrap Review: "Unwrap 10 cZAMA into 10 ZAMA", warning "The unwrapped amount becomes
+public on-chain.", `Step 1 Request: burns 10 cZAMA and asks Zama to decrypt the amount`,
+`Step 2 Finish: publish the decrypted amount with its proof; ZAMA arrives`. One confirm
+covers both. The request is saved as pending the moment it is signed. After it confirms
+the wallet waits for the public decryption (up to a minute) and sends step 2 itself.
+
+Pending unwraps (not finished yet) show on Home above the menu as an unnumbered item
+`Finish unwrap: 10 cZAMA → ZAMA` (key `u`, value `waiting`) and under Balances. Finish
+unwrap first checks the chain: already finished (by this wallet or anyone) → "✔ Already
+finished"; step 2 sent but unconfirmed → its hash, "Not sent again"; decryption not ready
+→ "Not decryptable yet, try again in a minute"; otherwise the Review for step 2 alone.
+
+Command bar: `wrap 25 cusdc` and `unwrap 10 cusdc` open the Wrap/Unwrap screen with the
+amount filled in; `wrap` / `unwrap` alone open the picker. `?` on these screens lists `w`,
+`u` and the units rule.
+
+CLI (same wording): `fhew wrap 25 czama`, `fhew unwrap 10 czama`, `fhew unwrap --list`,
+`fhew unwrap --resume [id]`.
+
 ## Receive, Doctor
 
 Receive shows the address and a terminal QR code (half blocks, quiet zone) of the address,
