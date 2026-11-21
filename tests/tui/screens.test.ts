@@ -339,8 +339,12 @@ describe('History, Receive and Doctor', () => {
     expect(h.text()).toContain(h.signer.address);
     await h.keys('1');
     expect(h.text()).toMatch(/terminal clipboard/);
+    expect(h.text(100, 60)).toMatch(/█▀|▀█|▄/);
+    expect(h.text(100, 60)).toMatch(/QR: the address only/);
     await h.keys('2');
-    expect(h.text()).toMatch(/faucet/i);
+    expect(h.text(100, 60)).toContain(`QR: ethereum:${h.signer.address}@11155111`);
+    await h.keys('3');
+    expect(h.text(100, 60)).toMatch(/faucet/i);
   });
 
   it('Doctor runs its checks', async () => {

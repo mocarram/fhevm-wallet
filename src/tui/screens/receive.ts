@@ -1,12 +1,16 @@
 /**
- * Receive: the wallet address, a copy action and faucet links on Sepolia.
- * A terminal QR code is planned for Phase 4.
+ * Receive: the wallet address with a terminal QR code (the plain address, or an EIP-681
+ * `ethereum:<address>@<chainId>` link on request), a copy action and faucet links on
+ * Sepolia.
  */
 
 import { effect } from '../effects.js';
 import type { Item, ScreenDef } from '../screen.js';
 import { dimLine, line, seg, type Line } from '../text.js';
 import { backItem, BLANK } from './common.js';
+import { eip681, qrLines } from '../../core/qr.js';
+import { NETWORK_CONFIGS } from '../../core/network/NetworkConfig.js';
+import { top } from '../state.js';
 
 /** Public Sepolia faucets (they change over time; the list is informational). */
 export const SEPOLIA_FAUCETS = [
@@ -53,9 +57,30 @@ export const receiveScreen: ScreenDef = {
       BLANK,
       line('  ', seg(s.wallet?.address ?? '', 'bold')),
       BLANK,
-      dimLine('  A QR code for this address is coming in a later update.'),
     ];
-    const items: Item[] = [copyAddressItem()];
+    const eip = top(s).params.qr === 'eip681';
+    if (s.wallet) {
+      const text = eip
+        ? eip681(s.wallet.address, NETWORK_CONFIGS[s.network].chainIdNumber)
+        : s.wallet.address;
+      body.push(...qrLines(text).map((l) => line('  ', l)));
+      body.push(
+        dimLine(
+          eip
+            ? `  QR: ${text} (wallet apps that read EIP-681 pick the network too)`
+            : '  QR: the address only. Check the network with the sender.',
+        ),
+      );
+    }
+    const items: Item[] = [
+      copyAddressItem(),
+      {
+        label: eip ? 'QR with the address only' : 'QR with network (EIP-681)',
+        act: (st) => {
+          top(st).params.qr = eip ? '' : 'eip681';
+        },
+      },
+    ];
     if (s.network === 'sepolia') {
       items.push({
         label: 'Get test ETH',
