@@ -76,6 +76,32 @@ describe('status bar', () => {
     expect(plain(statusBar(h.s, 120))).not.toMatch(/MOCK/);
   });
 
+  it('draws each part as its own pill (approved design B)', () => {
+    const h = new Harness({ unlocked: true });
+    h.s.eth = { wei: 421n * 10n ** 15n, at: h.now };
+    const segs = statusBar(h.s, 140);
+    const styleOf = (re: RegExp) => segs.find((g) => re.test(g.t))?.s;
+    expect(styleOf(/fhEVM Wallet/)).toContain('brand');
+    expect(styleOf(/^ alice $/)).toContain('wallet');
+    expect(styleOf(/^0x/)).toContain('walletAddr');
+    expect(styleOf(/unlocked 15m/)).toContain('unlocked');
+    expect(styleOf(/0\.4210 ETH/)).toContain('eth');
+    expect(styleOf(/Sepolia/)).toContain('net');
+    // Locked gets its own pill colour, not the unlocked one.
+    h.s.unlockedUntil = null;
+    const locked = statusBar(h.s, 140).find((g) => /locked/.test(g.t));
+    expect(locked?.t).toBe(' locked ');
+    expect(locked?.s).toContain('locked');
+    // Narrow: the address goes, the name keeps its pill.
+    const narrow = statusBar(h.s, 70);
+    expect(narrow.find((g) => /alice/.test(g.t))?.s).toContain('wallet');
+    expect(plain(narrow)).not.toMatch(/0x/);
+    // Without colour the pills are plain text: no escape codes except the MOCK badge.
+    h.s.backendKind = 'real';
+    expect(toAnsi(statusBar(h.s, 140), false)).not.toMatch(/\x1b/);
+    expect(toAnsi(statusBar(h.s, 140), true)).toContain('\x1b[48;5;94;97m locked ');
+  });
+
   it('shrinks to fit narrow terminals', () => {
     const h = new Harness();
     h.s.stack.push({ id: 'settings-rpc-url', cur: 0, params: {} });

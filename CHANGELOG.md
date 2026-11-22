@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed
+
+- The terminal UI's status bar draws each part as its own coloured pill: wallet on
+  grey (address softer), lock state green when unlocked and brown when locked, ETH on
+  indigo; the network, MAINNET, MOCK and low-gas colours keep their meaning.
+
+
 ### New
 
 - Wrap / Unwrap for ERC-20 wrapper tokens (OpenZeppelin `ERC7984ERC20Wrapper`, e.g.
@@ -114,6 +121,7 @@
   messages, upgrading a 2.0 data folder, and history sync (first sync of 4 tokens in
   about 1.5 s; a resumed sync with no skipped blocks).
 
+## Unreleased
 
 Requires Node.js 24.11 or later.
 

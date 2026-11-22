@@ -16,6 +16,11 @@ screen shows a window around the cursor with `↑ n more` / `↓ n more`.
  fhEVM Wallet  Home › Send › Review          [Sepolia] alice 0x3f9A…C21d unlocked 15m 0.4210 ETH
                                               ^ red MAINNET badge on mainnet; yellow ETH when low;
                                                 "⠋ 1 pending" segment while a send confirms
+ Each part is a pill with its own background (design "B · Pills"): brand on grey, the
+ breadcrumb on the plain bar, network blue (red on mainnet), wallet on grey (name bold,
+ address softer; the address goes first when the row is short), lock state green when
+ unlocked and brown when locked, ETH on indigo (yellow when low). Without colour
+ (NO_COLOR) the bar is plain text.
  With FHEW_BACKEND=mock, "MOCK · simulated, no real funds" follows the brand on the left.
  <result of the last action, if any>
 

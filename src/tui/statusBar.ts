@@ -18,24 +18,36 @@ export function breadcrumb(s: AppState): string {
   return parts.length ? parts.join(' › ') : 'Home';
 }
 
-/** Render the status bar to exactly `cols` columns (or fewer when cols is tiny). */
+/**
+ * Render the status bar to exactly `cols` columns (or fewer when cols is tiny).
+ *
+ * Each part is a "pill" with its own background (docs/ui-design.md): brand, breadcrumb on
+ * the plain bar, pending, network, wallet (name bold, address softer), lock state (green
+ * unlocked, brown locked) and ETH (indigo; yellow when low). Without colour (NO_COLOR) it
+ * is plain text, so nothing depends on colour alone.
+ */
 export function statusBar(s: AppState, cols: number): Line {
-  const brand = seg(' fhEVM Wallet ', 'bar bold');
+  const brand = seg(' fhEVM Wallet ', 'brand');
   const crumb = breadcrumb(s);
   const right: Seg[] = [];
   if (s.pending.length)
     right.push(seg(` ${spinner(s.now)} ${s.pending.length} pending `, 'pending'));
   right.push(s.network === 'mainnet' ? seg(' MAINNET ', 'mainnet') : seg(' Sepolia ', 'net'));
 
-  let walletSeg: Seg | null = null;
-  let addrText = '';
+  // The wallet pill is the name (bold) plus, when it fits, the short address in a softer
+  // shade on the same background.
+  let walletSegs: Seg[] = [];
+  let nameOnly: Seg[] = [];
   let lockSeg: Seg | null = null;
   let ethSeg: Seg | null = null;
   if (!s.wallet) {
-    walletSeg = seg(' no wallet yet ', 'bar');
+    walletSegs = nameOnly = [seg(' no wallet yet ', 'wallet')];
   } else {
-    addrText = ` ${shortAddress(s.wallet.address)}`;
-    walletSeg = seg(` ${s.wallet.name}${addrText} `, 'bar');
+    walletSegs = [
+      seg(` ${s.wallet.name} `, 'wallet'),
+      seg(`${shortAddress(s.wallet.address)} `, 'walletAddr'),
+    ];
+    nameOnly = [seg(` ${s.wallet.name} `, 'wallet')];
     if (isUnlocked(s)) {
       // Minutes left, rounded up (15m for the whole first minute after a 15-minute
       // unlock) but never above the setting: the expiry is set a moment after the frame's
@@ -44,15 +56,15 @@ export function statusBar(s: AppState, cols: number): Line {
       const mins = Math.ceil(left / 60_000);
       const cap = s.data.prefs.unlockMinutes > 0 ? s.data.prefs.unlockMinutes : mins;
       lockSeg = seg(
-        left < 60_000 ? 'unlocked <1m ' : `unlocked ${Math.min(mins, cap)}m `,
-        'bar dim',
+        left < 60_000 ? ' unlocked <1m ' : ` unlocked ${Math.min(mins, cap)}m `,
+        'unlocked',
       );
     } else {
-      lockSeg = seg('locked ', 'bar dim');
+      lockSeg = seg(' locked ', 'locked');
     }
     ethSeg = s.eth
-      ? seg(` ${formatEth(s.eth.wei)} ETH `, isLowGas(s) ? 'low' : 'bar')
-      : seg(' … ETH ', 'bar dim');
+      ? seg(` ${formatEth(s.eth.wei)} ETH `, isLowGas(s) ? 'low' : 'eth')
+      : seg(' … ETH ', 'eth dim');
   }
 
   // The mock badge sits right after the brand, on the left, so it survives any shrinking
@@ -64,9 +76,7 @@ export function statusBar(s: AppState, cols: number): Line {
     const head: Seg[] = [brand];
     if (s.backendKind === 'mock') head.push(longMock ? mockLong : mockShort);
     const parts: Seg[] = [...right];
-    if (walletSeg) {
-      parts.push(withAddr || !s.wallet ? walletSeg : seg(` ${s.wallet.name} `, 'bar'));
-    }
+    parts.push(...(withAddr ? walletSegs : nameOnly));
     if (lockSeg) parts.push(lockSeg);
     if (ethSeg) parts.push(ethSeg);
     const crumbSeg = seg(` ${crumbText} `, 'bar');

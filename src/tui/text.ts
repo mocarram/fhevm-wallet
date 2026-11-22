@@ -16,6 +16,12 @@ export type Style =
   | 'cyan'
   | 'sel'
   | 'bar'
+  | 'brand'
+  | 'wallet'
+  | 'walletAddr'
+  | 'unlocked'
+  | 'locked'
+  | 'eth'
   | 'net'
   | 'mainnet'
   | 'low'
@@ -121,9 +127,17 @@ const CODES: Record<Style, string> = {
   cyan: '36',
   sel: '7',
   bar: '48;5;236;37',
+  // Status bar pills (approved design "B · Pills"): each part on its own block so the
+  // eye finds it without reading. 256-colour backgrounds, bright white text.
+  brand: '48;5;238;97;1',
+  wallet: '48;5;238;97;1',
+  walletAddr: '48;5;238;38;5;250',
+  unlocked: '48;5;22;97',
+  locked: '48;5;94;97',
+  eth: '48;5;61;97;1',
   net: '48;5;24;97',
   mainnet: '41;97;1',
-  low: '43;30',
+  low: '43;30;1',
   pending: '48;5;94;97',
   // Bold bright yellow on magenta; also kept (as reverse video) without colour.
   mock: '45;93;1',
