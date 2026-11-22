@@ -13,13 +13,14 @@ row of the window says `rows 21-40 of 200 · pgup/pgdn scroll`. A menu longer th
 screen shows a window around the cursor with `↑ n more` / `↓ n more`.
 
 ```
- fhEVM Wallet  Home › Send › Review          [Sepolia] alice 0x3f9A…C21d unlocked 15m 0.4210 ETH
+ fhEVM Wallet  Home › Send › Review           Sepolia  alice 0x3f9A…C21d unlocked 15m 0.4210 ETH
                                               ^ red MAINNET badge on mainnet; yellow ETH when low;
                                                 "⠋ 1 pending" segment while a send confirms
  Each part is a pill with its own background (design "B · Pills"): brand on grey, the
  breadcrumb on the plain bar, network blue (red on mainnet), wallet on grey (name bold,
  address softer; the address goes first when the row is short), lock state green when
- unlocked and brown when locked, ETH on indigo (yellow when low). Without colour
+ unlocked and brown when locked (the same brown as the pending pill; the words tell
+ them apart), ETH on indigo (yellow when low; softer text while it loads). Without colour
  (NO_COLOR) the bar is plain text.
  With FHEW_BACKEND=mock, "MOCK · simulated, no real funds" follows the brand on the left.
  <result of the last action, if any>

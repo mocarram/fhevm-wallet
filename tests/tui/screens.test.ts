@@ -100,6 +100,14 @@ describe('status bar', () => {
     h.s.backendKind = 'real';
     expect(toAnsi(statusBar(h.s, 140), false)).not.toMatch(/\x1b/);
     expect(toAnsi(statusBar(h.s, 140), true)).toContain('\x1b[48;5;94;97m locked ');
+    // Loading ETH: its own softer pill, never bold and faint at once.
+    h.s.eth = null;
+    const loading = statusBar(h.s, 140).find((g) => /… ETH/.test(g.t));
+    expect(loading?.s).toEqual(['ethLoading']);
+    expect(toAnsi(statusBar(h.s, 140), true)).not.toMatch(/;1;2m/);
+    // No wallet yet: a placeholder in the softer shade, not styled like a wallet name.
+    h.s.wallet = null;
+    expect(statusBar(h.s, 140).find((g) => /no wallet yet/.test(g.t))?.s).toEqual(['walletAddr']);
   });
 
   it('shrinks to fit narrow terminals', () => {

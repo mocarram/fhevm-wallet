@@ -22,6 +22,7 @@ export type Style =
   | 'unlocked'
   | 'locked'
   | 'eth'
+  | 'ethLoading'
   | 'net'
   | 'mainnet'
   | 'low'
@@ -133,11 +134,14 @@ const CODES: Record<Style, string> = {
   wallet: '48;5;238;97;1',
   walletAddr: '48;5;238;38;5;250',
   unlocked: '48;5;22;97',
+  // Same brown as `pending` on purpose (the approved preview); the words tell them apart.
   locked: '48;5;94;97',
   eth: '48;5;61;97;1',
+  // Not bold + faint at once (terminals disagree on that pair): a softer text colour.
+  ethLoading: '48;5;61;38;5;250',
   net: '48;5;24;97',
   mainnet: '41;97;1',
-  low: '43;30;1',
+  low: '43;30',
   pending: '48;5;94;97',
   // Bold bright yellow on magenta; also kept (as reverse video) without colour.
   mock: '45;93;1',

@@ -41,7 +41,7 @@ export function statusBar(s: AppState, cols: number): Line {
   let lockSeg: Seg | null = null;
   let ethSeg: Seg | null = null;
   if (!s.wallet) {
-    walletSegs = nameOnly = [seg(' no wallet yet ', 'wallet')];
+    walletSegs = nameOnly = [seg(' no wallet yet ', 'walletAddr')];
   } else {
     walletSegs = [
       seg(` ${s.wallet.name} `, 'wallet'),
@@ -64,7 +64,7 @@ export function statusBar(s: AppState, cols: number): Line {
     }
     ethSeg = s.eth
       ? seg(` ${formatEth(s.eth.wei)} ETH `, isLowGas(s) ? 'low' : 'eth')
-      : seg(' … ETH ', 'eth dim');
+      : seg(' … ETH ', 'ethLoading');
   }
 
   // The mock badge sits right after the brand, on the left, so it survives any shrinking
