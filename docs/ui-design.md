@@ -113,7 +113,7 @@ yellow and start unselected. Contracts that fail the check are listed below, dim
 
 ## Wrap / Unwrap (wrapper tokens)
 
-A tracked token is a *wrapper* when it answers `underlying()` and `rate()` (OpenZeppelin
+A tracked token is a _wrapper_ when it answers `underlying()` and `rate()` (OpenZeppelin
 `ERC7984ERC20Wrapper`). Balances shows a dim line under each wrapper row:
 `↳ wraps ZAMA · 12.5 ZAMA in this wallet (public)`. Balances and Tokens get
 `Wrap or unwrap` (key `w`), which opens the token picker (skipped when only one wrapper is
@@ -207,7 +207,7 @@ CLI (same wording): `fhew wrap 25 czama`, `fhew unwrap 10 czama`, `fhew unwrap -
 
 Receive shows the address and a terminal QR code (half blocks, quiet zone) of the address,
 or of an EIP-681 link `ethereum:<address>@<chainId>` after "QR with network (EIP-681)".
-Doctor lists one row per check (Node, data folder, each RPC URL masked, relayer, ETH for
+Doctor lists one row per check (Node, data folder, each RPC endpoint by its host (the masked URL when two share a host or when it fails), relayer, ETH for
 gas, each tracked token's ERC-7984 check) with ✔ ! ✗ marks, the same as `fhew doctor`.
 
 ## History
@@ -219,6 +219,8 @@ A send that ended "sent, not confirmed" (SENT_UNCONFIRMED) is kept as a row mark
 `! unconfirmed` with its hash until a sync finds it mined; 30 s after such a send the
 TUI refreshes ETH, balances and history once.
 Rows show decrypted amounts once the wallet is unlocked (`Decrypt amounts` unlocks first).
+A wrap or unwrap names the wrapped ERC-20 in the With column (`from USDC`, `to USDC`); a
+mint or burn of a token that is no known wrapper shows `—`.
 Amounts this wallet may not decrypt stay `encrypted`, without an error. Decrypted amounts
 are cached by handle, so they show on later visits while locked. `Disclose an amount`
 lists confidential transfers; the Disclose screen shows the stage (private → step 1 done,

@@ -13,7 +13,7 @@ import { shortAddress } from '../../core/send/recipient.js';
 import type { TokenEntry } from '../../core/token/TokenRegistry.js';
 import { decryptHistoryAmounts, knownAmount } from '../../core/token/historyAmounts.js';
 import { listTransactions, type Transaction } from '../../storage/TransactionStore.js';
-import { cachedWrappers } from '../../storage/WrapperCache.js';
+import { wrapperSymbols } from '../../storage/WrapperCache.js';
 import { describeError } from '../errors.js';
 import { effect, type Effect } from '../effects.js';
 import { isUnlocked, type AppState, type HistoryRow } from '../state.js';
@@ -115,9 +115,10 @@ export function historyRows(s: AppState): HistoryRow[] {
   if (!wallet) return [];
   const names = new Map(s.data.contacts.map((c) => [c.address.toLowerCase(), c.name]));
   // All rows, so unconfirmed sends (block 0, sorted last by the store) are never cut.
+  const wrappers = wrapperSymbols(s.network); // once, not per row
   return unconfirmedFirst(
     listTransactions({ walletAddress: wallet.address, network: s.network, limit: 100_000 }).map(
-      (t) => toHistoryRow(t, wallet.address, names, s.data.tokens, cachedWrappers(s.network)),
+      (t) => toHistoryRow(t, wallet.address, names, s.data.tokens, wrappers),
     ),
   ).slice(0, HISTORY_LIMIT);
 }

@@ -143,19 +143,24 @@ export function formatBalance(value: bigint, decimals: number, precision = 2): s
 }
 
 /**
- * A network fee in ETH, shared by the CLI and the TUI: 4 decimals, or 2 significant digits below 0.0001 ETH, so a
- * cheap fee never reads "0.0000" (0.000021). Never more than 6 decimals: a fee below 0.000001 ETH (common on
- * Sepolia) is shown as 0.000001, not "0.000000000046". Always rounded up, because a fee is shown as an upper bound.
+ * A network fee in ETH, shared by the CLI and the TUI, always rounded up because a fee is
+ * shown as an upper bound ("up to"):
+ * - from 0.0001 ETH: 4 decimals (0.00019999 → 0.0002);
+ * - below that: 2 significant digits, so a cheap fee never reads "0.0000" (0.000021,
+ *   0.0000015);
+ * - below 0.000001 ETH (common on Sepolia): 0.000001, not "0.000000000046".
  */
 export function formatEthFee(wei: bigint): string {
-  if (wei <= 0n || wei >= 10n ** 14n) return formatBalance(wei, 18, 4);
+  if (wei <= 0n) return formatBalance(wei, 18, 4);
+  const step4 = 10n ** 14n; // 0.0001 ETH
+  if (wei >= step4) return formatBalance(((wei + step4 - 1n) / step4) * step4, 18, 4);
   const floor = 10n ** 12n; // 0.000001 ETH
   if (wei <= floor) return '0.000001';
   const digits = wei.toString().length; // 13 or 14 digits here
   const keep = 10n ** BigInt(Math.max(0, digits - 2));
   const rounded = ((wei + keep - 1n) / keep) * keep;
-  const s = rounded.toString().padStart(18, '0');
-  return `0.${s}`.replace(/0+$/, '');
+  const str = rounded.toString().padStart(18, '0');
+  return `0.${str}`.replace(/0+$/, '');
 }
 
 /** An ETH balance for summaries: 4 decimals, like the TUI (not ethers' 18). */

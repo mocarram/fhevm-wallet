@@ -88,6 +88,23 @@ export function cachedWrappers(
   return out;
 }
 
+/**
+ * The underlying ERC-20 symbol of every cached wrapper on `network`, by lowercase token
+ * address, however old the check. For display only (History's "from USDC"): the age limit
+ * protects signing, and a wrap row should not turn into "—" a week after Balances was last
+ * opened. One read of wrappers.json per call.
+ */
+export function wrapperSymbols(
+  network: NetworkName,
+): Record<string, { underlying: { symbol: string } }> {
+  const out: Record<string, { underlying: { symbol: string } }> = {};
+  for (const [k, e] of Object.entries(load())) {
+    if (!k.startsWith(`${network}:`) || !e.info) continue;
+    out[k.slice(network.length + 1)] = { underlying: { symbol: e.info.underlying.symbol } };
+  }
+  return out;
+}
+
 /** Remember the result of a wrapper check (`null`: not a wrapper). */
 export function setCachedWrapper(
   network: NetworkName,

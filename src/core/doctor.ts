@@ -108,12 +108,16 @@ export function rpcHost(url: string): string {
 async function rpcRows(backend: Backend, network: NetworkName): Promise<DoctorRow[]> {
   const checks = await backend.checkRpcEndpoints(network);
   const anyOk = checks.some((c) => c.ok);
+  // Show the host; fall back to the (masked) URL when two endpoints share a host.
+  const hosts = checks.map((c) => rpcHost(c.url));
+  const label = (i: number): string =>
+    hosts.filter((h) => h === hosts[i]).length > 1 ? checks[i].url : hosts[i];
   const rows: DoctorRow[] = checks.map((c, i) =>
     c.ok
       ? {
           id: `rpc.${i}`,
           status: 'ok',
-          text: `RPC ${rpcHost(c.url)} · chain ${c.chainId}`,
+          text: `RPC ${label(i)} · chain ${c.chainId}`,
           detail: `block ${c.blockNumber ?? '?'} · ${c.latencyMs} ms`,
         }
       : {

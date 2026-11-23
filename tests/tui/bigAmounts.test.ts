@@ -26,6 +26,7 @@ describe('formatCompactAmount', () => {
     // 0 decimals: the whole euint64 range is units.
     expect(formatCompactAmount(MAX_EUINT64, 0)).toBe('18,446.74Q');
     expect(formatCompactAmount(-2_500_000n, 0)).toBe('-2.50M');
+    expect(formatCompactAmount(-1n, 6)).toBe('-0.000001');
   });
 });
 

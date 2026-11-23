@@ -12,7 +12,7 @@ import { addAddress, removeAddress } from '../../storage/AddressBook.js';
 import { updateConfig } from '../../storage/ConfigStore.js';
 import { removeEnvVar, saveEnvVar } from '../../storage/paths.js';
 import { listTransactions } from '../../storage/TransactionStore.js';
-import { cachedWrappers } from '../../storage/WrapperCache.js';
+import { wrapperSymbols } from '../../storage/WrapperCache.js';
 import { loadUiPrefs, saveUiPrefs, type UiPrefs } from '../../storage/UiPrefsStore.js';
 import { isValidContactName } from '../../utils/validation.js';
 import { shortAddress } from '../../core/send/recipient.js';
@@ -413,12 +413,14 @@ export function loadHistory(s: AppState): Effect[] {
   const network = s.network;
   const tokens = s.data.tokens;
   const names = new Map(s.data.contacts.map((c) => [c.address.toLowerCase(), c.name]));
-  const rows = (): HistoryRow[] =>
-    unconfirmedFirst(
+  const rows = (): HistoryRow[] => {
+    const wrappers = wrapperSymbols(network); // once per build, not per row
+    return unconfirmedFirst(
       listTransactions({ walletAddress: wallet.address, network, limit: 100_000 }).map((t) =>
-        toHistoryRow(t, wallet.address, names, tokens, cachedWrappers(network)),
+        toHistoryRow(t, wallet.address, names, tokens, wrappers),
       ),
     ).slice(0, HISTORY_LIMIT);
+  };
   s.history = { rows: s.history?.rows ?? [], loading: true };
   return [
     effect('history', async (deps) => {

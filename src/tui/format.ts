@@ -34,6 +34,7 @@ const COMPACT_UNITS: Array<[bigint, string]> = [
  * keep the exact value.
  */
 export function formatCompactAmount(value: bigint, decimals: number): string {
+  if (value < 0n) return `-${formatCompactAmount(-value, decimals)}`;
   const unit = 10n ** BigInt(decimals);
   const whole = (value < 0n ? -value : value) / unit;
   for (const [size, suffix] of COMPACT_UNITS) {

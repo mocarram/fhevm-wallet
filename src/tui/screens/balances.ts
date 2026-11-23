@@ -30,7 +30,8 @@ export const balancesScreen: ScreenDef = {
     };
     // The column grows with the widest exact amount (up to 18,446,744,073,709.551615 for a
     // 6-decimal token), so a big balance never pushes the Contract column out of line.
-    const col = Math.max(18, ...s.data.tokens.map((t) => width(shownOf(t))));
+    const ethShown = s.eth ? formatEth(s.eth.wei) : '…';
+    const col = Math.max(18, width(ethShown), ...s.data.tokens.map((t) => width(shownOf(t))));
     const body: Line[] = [
       dimLine(`  Token      ${pad('Balance', col)}  Contract`),
       dimLine(`  ${'─'.repeat(31 + col)}`),
@@ -38,7 +39,7 @@ export const balancesScreen: ScreenDef = {
         '  ',
         seg(pad('ETH', 9), 'bold'),
         '  ',
-        seg(pad(s.eth ? formatEth(s.eth.wei) : '…', col), isLowGas(s) ? 'yellow' : ''),
+        seg(pad(ethShown, col), isLowGas(s) ? 'yellow' : ''),
         '  ',
         seg('native · pays gas', 'dim'),
       ),

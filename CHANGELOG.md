@@ -10,10 +10,11 @@
 
 ### Fixed
 
-- Fees below 0.000001 ETH (common on Sepolia) read `0.000001 ETH` instead of
-  `0.000000000046 ETH`.
-- History named `0x0000…0000` as the other side of a wrap or unwrap: it now says
-  `from ZAMA` / `to ZAMA`.
+- Fees are always rounded up, since they are shown as an upper bound: fees below
+  0.000001 ETH (common on Sepolia) read `0.000001 ETH` instead of `0.000000000046 ETH`,
+  and a fee of 0.00019999 ETH reads `0.0002`, not `0.0001`.
+- History named `0x0000…0000` as the other side of a wrap or unwrap: it now names the
+  wrapped ERC-20 (`from USDC` / `to USDC`), or `—` for a token that is no known wrapper.
 - Doctor printed `· ·` before the block number and relayer timing, and the full RPC URL
   made the row too wide; it now shows the RPC host and one separator. In `doctor --json`
   the `detail` text no longer starts with `· `.

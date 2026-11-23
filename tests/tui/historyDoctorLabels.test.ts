@@ -91,3 +91,47 @@ describe('Doctor: RPC rows', () => {
     expect(h.text()).not.toMatch(/· ·/);
   });
 });
+
+describe('History screen wiring', () => {
+  it('names the ERC-20 of a cached wrapper on a real History screen, even when the check is old', async () => {
+    const { setCachedWrapper } = await import('../../src/storage/WrapperCache.js');
+    const { upsertTransaction } = await import('../../src/storage/TransactionStore.js');
+    const h = new Harness();
+    const t = h.s.data.tokens[0];
+    setCachedWrapper('sepolia', t.address, {
+      address: t.address,
+      name: t.name,
+      symbol: t.symbol,
+      decimals: t.decimals,
+      rate: 1n,
+      underlying: {
+        address: '0x' + '11'.repeat(20),
+        name: 'USD Coin',
+        symbol: 'USDC',
+        decimals: 6,
+      },
+      hasRequester: true,
+    });
+    upsertTransaction(
+      tx({
+        txHash: '0x' + 'cd'.repeat(32),
+        type: 'mint',
+        tokenAddress: t.address,
+        tokenSymbol: t.symbol,
+        from: ZERO,
+        to: h.s.wallet!.address,
+        amount: '5',
+      }),
+    );
+    // A week and a day later the cache entry is stale for signing, not for this label.
+    h.now += 8 * 24 * 3600_000;
+    const realNow = Date.now;
+    Date.now = () => realNow() + 8 * 24 * 3600_000;
+    try {
+      await h.keys('h');
+      expect(h.text(104)).toMatch(/mint\s+\+5\.00\s+cUSDC\s+from USDC/);
+    } finally {
+      Date.now = realNow;
+    }
+  });
+});

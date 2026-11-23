@@ -20,7 +20,8 @@ describe('CLI summary formatting (L5)', () => {
   });
 
   it('fees and balances are not printed with 18 decimals', () => {
-    expect(formatEthFee(123_456_789_012_345n)).toBe('0.0001');
+    // Rounded up: the fee is printed as "up to", so 0.000123 ETH must not read 0.0001.
+    expect(formatEthFee(123_456_789_012_345n)).toBe('0.0002');
     expect(formatEthFee(21_000_000_000_000n)).toBe('0.000021');
     expect(formatEthBalance(421_000_000_000_000_000n)).toBe('0.4210');
   });
