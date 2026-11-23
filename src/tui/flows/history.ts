@@ -13,6 +13,7 @@ import { shortAddress } from '../../core/send/recipient.js';
 import type { TokenEntry } from '../../core/token/TokenRegistry.js';
 import { decryptHistoryAmounts, knownAmount } from '../../core/token/historyAmounts.js';
 import { listTransactions, type Transaction } from '../../storage/TransactionStore.js';
+import { cachedWrappers } from '../../storage/WrapperCache.js';
 import { describeError } from '../errors.js';
 import { effect, type Effect } from '../effects.js';
 import { isUnlocked, type AppState, type HistoryRow } from '../state.js';
@@ -41,6 +42,7 @@ export function toHistoryRow(
   wallet: string,
   names: Map<string, string>,
   tokens: TokenEntry[],
+  wrappers: Record<string, { underlying: { symbol: string } }> = {},
 ): HistoryRow {
   const out = t.from.toLowerCase() === wallet.toLowerCase();
   const other = out ? t.to : t.from;
@@ -74,13 +76,32 @@ export function toHistoryRow(
     kind,
     amount,
     token: t.tokenSymbol,
-    counterparty: names.get(other.toLowerCase()) ?? shortAddress(other),
+    counterparty: counterpartyLabel(t, other, names, wrappers),
     txHash: t.txHash,
     ...(t.amountHandle ? { handle: t.amountHandle, tokenAddress: t.tokenAddress } : {}),
     ...(known?.disclosed ? { disclosed: true } : {}),
     // Sent, but no receipt yet (recorded with block 0 after SENT_UNCONFIRMED).
     ...(t.blockNumber === 0 ? { unconfirmed: true } : {}),
   };
+}
+
+const ZERO_ADDRESS = /^0x0{40}$/i;
+
+/**
+ * Who the transfer was with. A mint or burn has the zero address on the other side, which
+ * means nothing to a reader: for a wrapper token it is a wrap ("from ZAMA") or an unwrap
+ * request ("to ZAMA"), otherwise there is no other party ("—").
+ */
+function counterpartyLabel(
+  t: Transaction,
+  other: string,
+  names: Map<string, string>,
+  wrappers: Record<string, { underlying: { symbol: string } }>,
+): string {
+  if (!ZERO_ADDRESS.test(other)) return names.get(other.toLowerCase()) ?? shortAddress(other);
+  const w = wrappers[t.tokenAddress.toLowerCase()];
+  if (!w) return '—';
+  return t.type === 'burn' ? `to ${w.underlying.symbol}` : `from ${w.underlying.symbol}`;
 }
 
 /** Unconfirmed sends first (they are the newest), then by block as stored. */
@@ -96,7 +117,7 @@ export function historyRows(s: AppState): HistoryRow[] {
   // All rows, so unconfirmed sends (block 0, sorted last by the store) are never cut.
   return unconfirmedFirst(
     listTransactions({ walletAddress: wallet.address, network: s.network, limit: 100_000 }).map(
-      (t) => toHistoryRow(t, wallet.address, names, s.data.tokens),
+      (t) => toHistoryRow(t, wallet.address, names, s.data.tokens, cachedWrappers(s.network)),
     ),
   ).slice(0, HISTORY_LIMIT);
 }

@@ -92,6 +92,19 @@ function dataDirRows(dataDir: string): DoctorRow[] {
   }
 }
 
+/**
+ * The host of an RPC URL for the doctor row ("ethereum-sepolia-rpc.publicnode.com"): the
+ * full URL made the row too wide for a 104-column terminal, and a path can carry a key.
+ */
+export function rpcHost(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.host : url;
+  } catch {
+    return url;
+  }
+}
+
 async function rpcRows(backend: Backend, network: NetworkName): Promise<DoctorRow[]> {
   const checks = await backend.checkRpcEndpoints(network);
   const anyOk = checks.some((c) => c.ok);
@@ -100,8 +113,8 @@ async function rpcRows(backend: Backend, network: NetworkName): Promise<DoctorRo
       ? {
           id: `rpc.${i}`,
           status: 'ok',
-          text: `RPC ${c.url} · chain ${c.chainId} (${network})`,
-          detail: `· block ${c.blockNumber ?? '?'} · ${c.latencyMs} ms`,
+          text: `RPC ${rpcHost(c.url)} · chain ${c.chainId}`,
+          detail: `block ${c.blockNumber ?? '?'} · ${c.latencyMs} ms`,
         }
       : {
           id: `rpc.${i}`,
@@ -133,7 +146,7 @@ async function relayerRows(backend: Backend, network: NetworkName): Promise<Doct
           id: 'relayer',
           status: 'ok',
           text: `Zama relayer ${r.url} answers`,
-          detail: `· ${r.latencyMs} ms`,
+          detail: `${r.latencyMs} ms`,
         }
       : {
           id: 'relayer',
