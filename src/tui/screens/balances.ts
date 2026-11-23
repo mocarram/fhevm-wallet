@@ -11,7 +11,7 @@ import { loadWrapData, openWrap, pendingUnwrapItems, wrapRowNote } from '../flow
 import { open } from '../nav.js';
 import type { ScreenDef } from '../screen.js';
 import { isUnlocked, top, type AppState } from '../state.js';
-import { dimLine, line, pad, seg, type Line } from '../text.js';
+import { dimLine, line, pad, seg, width, type Line } from '../text.js';
 import { backItem, BLANK, inputLine } from './common.js';
 
 function unlockMinutesText(s: AppState): string {
@@ -24,14 +24,21 @@ export const balancesScreen: ScreenDef = {
   // Opening Balances while unlocked refreshes them (the cache skips unchanged handles).
   onEnter: (s) => [...decryptAll(s), ...loadWrapData(s)],
   view: (s) => {
+    const shownOf = (t: (typeof s.data.tokens)[number]): string => {
+      const b = s.balances[t.address.toLowerCase()];
+      return b ? formatAmount(b.value, t.decimals) : s.decrypting ? 'decrypting…' : 'locked';
+    };
+    // The column grows with the widest exact amount (up to 18,446,744,073,709.551615 for a
+    // 6-decimal token), so a big balance never pushes the Contract column out of line.
+    const col = Math.max(18, ...s.data.tokens.map((t) => width(shownOf(t))));
     const body: Line[] = [
-      dimLine('  Token      Balance             Contract'),
-      dimLine('  ─────────────────────────────────────────────────'),
+      dimLine(`  Token      ${pad('Balance', col)}  Contract`),
+      dimLine(`  ${'─'.repeat(31 + col)}`),
       line(
         '  ',
         seg(pad('ETH', 9), 'bold'),
         '  ',
-        seg(pad(s.eth ? formatEth(s.eth.wei) : '…', 18), isLowGas(s) ? 'yellow' : ''),
+        seg(pad(s.eth ? formatEth(s.eth.wei) : '…', col), isLowGas(s) ? 'yellow' : ''),
         '  ',
         seg('native · pays gas', 'dim'),
       ),
@@ -39,13 +46,13 @@ export const balancesScreen: ScreenDef = {
     const list: Line[] = [];
     for (const t of s.data.tokens) {
       const b = s.balances[t.address.toLowerCase()];
-      const shown = b ? formatAmount(b.value, t.decimals) : s.decrypting ? 'decrypting…' : 'locked';
+      const shown = shownOf(t);
       list.push(
         line(
           '  ',
           seg(pad(t.symbol, 9), 'bold'),
           '  ',
-          seg(pad(shown, 18), b?.source === 'session' ? 'green' : 'dim'),
+          seg(pad(shown, col), b?.source === 'session' ? 'green' : 'dim'),
           '  ',
           seg(shortAddress(t.address), 'dim'),
         ),

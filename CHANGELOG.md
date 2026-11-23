@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Home shortens balances from a million up (`12.34B`, `18.44T`, rounded down) so
+  several tokens fit on one row. Every other screen keeps the exact amount, and the
+  Balances and History columns grow with the widest value so nothing goes out of line.
+
+### Fixed
+
+- Fees below 0.000001 ETH (common on Sepolia) read `0.000001 ETH` instead of
+  `0.000000000046 ETH`.
+- History named `0x0000…0000` as the other side of a wrap or unwrap: it now says
+  `from ZAMA` / `to ZAMA`.
+- Doctor printed `· ·` before the block number and relayer timing, and the full RPC URL
+  made the row too wide; it now shows the RPC host and one separator. In `doctor --json`
+  the `detail` text no longer starts with `· `.
+
+### Tests
+
+- Wraps of ERC-20s with 2 and 0 decimals (rate 1): exact both ways, no dust.
+
 ## 2.0.0 — 2026-11-23
 
 Requires Node.js 24.11 or later.

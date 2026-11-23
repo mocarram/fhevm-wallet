@@ -70,7 +70,9 @@ a 0 or q inside a burst of keys only arms Quit ("Press 0 again to quit").
 ## Home
 
 Low-gas nudge (when ETH covers < 5 sends), cached balances with age (at most two rows;
-entries never split, the rest counted as `+N more · b Balances`), then:
+entries never split, the rest counted as `+N more · b Balances`; from a million up a
+balance is shortened, rounded down: `12.34B`, `18.44T`; Balances, History and every
+review show the exact amount, and their amount columns grow to the widest value), then:
 (after unlock and after each confirmed send the balances re-decrypt in the background:
 each value stays on screen with a spinner beside it and the line ends `2m ago ·
 updating…`; one EIP-712 signature covers every tracked token for the unlocked session)

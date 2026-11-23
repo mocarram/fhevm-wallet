@@ -19,6 +19,33 @@ export function formatAmount(value: bigint, decimals: number): string {
   return decimals === 0 ? int : `${int}.${frac.padEnd(Math.min(2, decimals), '0')}`;
 }
 
+/** Suffixes for `formatCompactAmount`: million, billion, trillion, quadrillion. */
+const COMPACT_UNITS: Array<[bigint, string]> = [
+  [10n ** 15n, 'Q'],
+  [10n ** 12n, 'T'],
+  [10n ** 9n, 'B'],
+  [10n ** 6n, 'M'],
+];
+
+/**
+ * A short amount for the Home strip, where several tokens share one row: exact below one
+ * million ("999,999.50"), above it two decimals of a unit ("12.34B", "18.44T"). Always
+ * rounded down, so it never shows more than you hold; Balances and every other screen
+ * keep the exact value.
+ */
+export function formatCompactAmount(value: bigint, decimals: number): string {
+  const unit = 10n ** BigInt(decimals);
+  const whole = (value < 0n ? -value : value) / unit;
+  for (const [size, suffix] of COMPACT_UNITS) {
+    if (whole < size) continue;
+    const hundredths = ((value < 0n ? -value : value) * 100n) / (size * unit);
+    const int = (hundredths / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    const frac = (hundredths % 100n).toString().padStart(2, '0');
+    return `${value < 0n ? '-' : ''}${int}.${frac}${suffix}`;
+  }
+  return formatAmount(value, decimals);
+}
+
 /** Spinner frame for `now`. */
 export function spinner(now: number): string {
   return SPINNER[Math.floor(now / 120) % SPINNER.length];

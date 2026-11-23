@@ -11,7 +11,7 @@ import { isUnlocked, type AppState } from '../state.js';
 import type { Item } from '../screen.js';
 import { spinner } from '../format.js';
 import type { ScreenDef } from '../screen.js';
-import { dimLine, line, link, pad, seg, type Line } from '../text.js';
+import { dimLine, line, link, pad, seg, width, type Line } from '../text.js';
 import { backItem, BLANK } from './common.js';
 import { matchesFilter } from '../components/list.js';
 
@@ -21,9 +21,12 @@ export const historyScreen: ScreenDef = {
   crumb: ['History'],
   onEnter: loadHistory,
   view: (s) => {
+    // The Amount column grows with the widest exact amount, so a big transfer never pushes
+    // Token and With out of line.
+    const col = Math.max(18, ...(s.history?.rows ?? []).map((r) => width(r.amount)));
     const body: Line[] = [
-      dimLine('  When          Type       Amount              Token    With'),
-      dimLine('  ───────────────────────────────────────────────────────────────'),
+      dimLine(`  When          Type       ${pad('Amount', col)}  Token    With`),
+      dimLine(`  ${'─'.repeat(45 + col)}`),
     ];
     // Newest first (pending sends, then by block); the rows scroll with PgUp/PgDn while
     // the header, the notes and the menu stay on screen.
@@ -36,7 +39,7 @@ export const historyScreen: ScreenDef = {
           '  ',
           pad('sending', 9),
           '  ',
-          seg(pad(p.label ?? `-${p.amountText}`, 27), 'yellow'),
+          seg(pad(p.label ?? `-${p.amountText}`, col + 9), 'yellow'),
           ' ',
           pad(p.toLabel, 13),
           seg(`${spinner(s.now)} pending`, 'yellow'),
@@ -59,7 +62,7 @@ export const historyScreen: ScreenDef = {
           pad(r.kind, 9),
           '  ',
           seg(
-            pad(r.amount, 18),
+            pad(r.amount, col),
             r.amount.startsWith('+') ? 'green' : r.amount.startsWith('-') ? 'yellow' : 'dim',
           ),
           '  ',
