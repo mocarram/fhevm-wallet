@@ -164,3 +164,57 @@ describe('describeRate', () => {
     expect(describeRate(CUSDT)).toBe('1 cUSDT = 1 USDT');
   });
 });
+
+/**
+ * ERC-20s with fewer than 6 decimals. The wrapper's decimals are then the ERC-20's own,
+ * so the rate is 1: every amount wraps 1:1, with no dust and no smallest amount beyond one
+ * base unit. These go through the same maths as USDC (rate 1); the tests pin it down.
+ */
+describe('ERC-20s with fewer than 6 decimals (rate 1)', () => {
+  const CEUR2: WrapSides = {
+    rate: 1n,
+    symbol: 'cEURS',
+    decimals: 2,
+    underlying: { symbol: 'EURS', decimals: 2 },
+  };
+  const CPTS0: WrapSides = {
+    rate: 1n,
+    symbol: 'cPTS',
+    decimals: 0,
+    underlying: { symbol: 'PTS', decimals: 0 },
+  };
+
+  it('2 decimals: 12.34 EURS wraps to exactly 12.34 cEURS, and 0.01 is the smallest', () => {
+    expect(planWrap('12.34', CEUR2, { balance: 10_000n })).toMatchObject({
+      ok: true,
+      amount: 1234n,
+      wrapped: 1234n,
+      pull: 1234n,
+      dust: 0n,
+    });
+    expect(smallestWrap(CEUR2)).toBe(1n);
+    expect(describeRate(CEUR2)).toBe('1 cEURS = 1 EURS');
+    // A third decimal does not exist on a 2-decimal token: refused, not rounded.
+    expect(planWrap('0.001', CEUR2).ok).toBe(false);
+  });
+
+  it('2 decimals: unwrapping 5.5 cEURS returns exactly 5.50 EURS', () => {
+    expect(planUnwrap('5.5', CEUR2, { balance: 1234n })).toMatchObject({
+      ok: true,
+      amount: 550n,
+      receive: 550n,
+    });
+  });
+
+  it('0 decimals: whole units only, 1:1 both ways', () => {
+    expect(planWrap('7', CPTS0, { balance: 10n })).toMatchObject({
+      ok: true,
+      wrapped: 7n,
+      pull: 7n,
+      dust: 0n,
+    });
+    expect(planWrap('0.5', CPTS0).ok).toBe(false);
+    expect(planUnwrap('3', CPTS0, { balance: 7n })).toMatchObject({ ok: true, receive: 3n });
+    expect(describeRate(CPTS0)).toBe('1 cPTS = 1 PTS');
+  });
+});
