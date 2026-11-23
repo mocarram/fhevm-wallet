@@ -58,7 +58,7 @@ tests/                     vitest; mirrors src/
 tests/e2e/                 end-to-end runs of dist/index.js in a throwaway HOME
 site/                      the website (plain HTML/CSS/JS, no build step), deployed to
                            https://mocarram.github.io/fhevm-wallet/ by
-                           .github/workflows/pages.yml when site/ changes on staging
+                           .github/workflows/pages.yml when site/ changes on main
 ```
 
 ### ERC-7984 rules that bit us before
