@@ -42,7 +42,9 @@ describe('fhew doctor (mock)', () => {
     const ok = runCli(['doctor'], t.home, env);
     expect(ok.code).toBe(0);
     expect(ok.stdout).toMatch(/MOCK/);
-    expect(ok.stdout).toMatch(/Node\.js v24/);
+    // Any supported Node (24.11 or later, e.g. 25 or 26), not only 24, and not "too old".
+    expect(ok.stdout).toMatch(/Node\.js v\d+\.\d+\.\d+/);
+    expect(ok.stdout).not.toMatch(/too old/);
     expect(ok.stdout).toMatch(/Zama relayer mock:\/\/relayer answers/);
     const down = runCli(['doctor'], t.home, { ...env, FHEW_MOCK_FAIL: 'rpc' });
     expect(down.code).toBe(1);
