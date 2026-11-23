@@ -322,7 +322,11 @@ describe('small Review and status bar fixes (L4)', () => {
     expect(formatFee(21_000_000_000_000n)).toBe('0.000021');
     expect(formatFee(21_400_000_000_001n)).toBe('0.000022'); // an upper bound rounds up
     expect(formatFee(300_000_000_000_000n)).toBe('0.0003');
-    expect(formatFee(5n)).toBe('0.000000000000000005');
+    // Never more than 6 decimals: Sepolia's near-free fees read 0.000001, not 0.000000000046.
+    expect(formatFee(46_000_000n)).toBe('0.000001');
+    expect(formatFee(5n)).toBe('0.000001');
+    expect(formatFee(1_000_000_000_000n)).toBe('0.000001');
+    expect(formatFee(1_000_000_000_001n)).toBe('0.0000011');
   });
 
   it('the lock badge says 15m right after a 15-minute unlock, not 16m', async () => {

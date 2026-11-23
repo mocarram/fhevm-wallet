@@ -144,13 +144,15 @@ export function formatBalance(value: bigint, decimals: number, precision = 2): s
 
 /**
  * A network fee in ETH, shared by the CLI and the TUI: 4 decimals, or 2 significant digits below 0.0001 ETH, so a
- * cheap fee on Sepolia never reads "0.0000" (0.000021).
+ * cheap fee never reads "0.0000" (0.000021). Never more than 6 decimals: a fee below 0.000001 ETH (common on
+ * Sepolia) is shown as 0.000001, not "0.000000000046". Always rounded up, because a fee is shown as an upper bound.
  */
 export function formatEthFee(wei: bigint): string {
   if (wei <= 0n || wei >= 10n ** 14n) return formatBalance(wei, 18, 4);
-  const digits = wei.toString().length; // wei < 1e14: at most 14 digits
+  const floor = 10n ** 12n; // 0.000001 ETH
+  if (wei <= floor) return '0.000001';
+  const digits = wei.toString().length; // 13 or 14 digits here
   const keep = 10n ** BigInt(Math.max(0, digits - 2));
-  // Round up: a fee is shown as an upper bound.
   const rounded = ((wei + keep - 1n) / keep) * keep;
   const s = rounded.toString().padStart(18, '0');
   return `0.${s}`.replace(/0+$/, '');
