@@ -40,7 +40,7 @@ describe.skipIf(process.platform === 'win32')('wallet data storage', () => {
     writeFileSync(join(dataDir, 'wallets', 'old.json'), '{}', { mode: 0o644 });
     const res = runCli(['--version'], t.home);
     expect(res.stderr).toMatch(/Restricted \d+ wallet data item\(s\)/);
-    // Any semver, pre-releases included (2.1.0-beta.1): the point is that --version ran.
+    // Any semver, pre-releases included (e.g. 2.0.0-beta.1): the point is that --version ran.
     expect(res.stdout.trim()).toMatch(/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/);
     expect(mode(join(dataDir, 'wallets', 'old.json'))).toBe(0o600);
     expect(mode(dataDir)).toBe(0o700);

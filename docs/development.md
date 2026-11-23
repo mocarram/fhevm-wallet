@@ -4,8 +4,8 @@ Guide for setting up and running fhEVM Wallet locally for development.
 
 ## Prerequisites
 
-- Node.js >= 22
-- npm, yarn, pnpm, or bun
+- Node.js 24.11 or later (`node -v`)
+- npm (the lockfile is npm's; `npm ci` installs exactly from it)
 
 ## Setup
 
@@ -16,7 +16,7 @@ cd fhevm-wallet
 
 # 2. Install dependencies
 make install
-# or: npm install
+# or: npm ci
 
 # 3. Create environment file
 make env
@@ -27,12 +27,12 @@ make env
 
 ## Environment Variables
 
-| Variable               | Description                                 | Required        |
-| ---------------------- | ------------------------------------------- | --------------- |
-| `SEPOLIA_RPC_URL`      | Sepolia testnet RPC endpoint                | No              |
-| `MAINNET_RPC_URL`      | Ethereum mainnet RPC endpoint               | No              |
-| `ETHERSCAN_API_KEY`    | Etherscan API key (for tx history sync)     | No              |
-| `ZAMA_MAINNET_API_KEY` | Zama relayer API key (mainnet FHE only)     | For mainnet     |
+| Variable               | Description                             | Required    |
+| ---------------------- | --------------------------------------- | ----------- |
+| `SEPOLIA_RPC_URL`      | Sepolia testnet RPC endpoint            | No          |
+| `MAINNET_RPC_URL`      | Ethereum mainnet RPC endpoint           | No          |
+| `ETHERSCAN_API_KEY`    | Etherscan API key (for tx history sync) | No          |
+| `ZAMA_MAINNET_API_KEY` | Zama relayer API key (mainnet FHE only) | For mainnet |
 
 Only these four keys are read from a `.env` in the current directory, and they never
 override variables already set in your shell. RPC URLs there must be https (plain http
@@ -84,26 +84,16 @@ Run `make help` to see all available commands:
 
 ## Project Structure
 
-```
-src/
-├── index.ts              # Entry point
-├── cli/
-│   ├── index.ts          # Commander setup
-│   ├── commands/         # Command implementations
-│   │   ├── wallet.ts
-│   │   ├── token.ts
-│   │   ├── balance.ts
-│   │   ├── transfer.ts
-│   │   ├── history.ts
-│   │   └── interactive.ts
-│   └── utils/
-├── core/
-│   ├── wallet/           # Wallet management
-│   ├── token/            # Token operations
-│   ├── fhe/              # FHE encryption/decryption
-│   └── network/          # Network configuration
-├── storage/              # Data persistence
-└── utils/                # Utilities
+See the Architecture section of [AGENTS.md](../AGENTS.md): it is kept up to date with
+every change (CLI commands, the terminal UI in `src/tui/`, the Backend with its offline
+mock, network, FHE, token and storage modules).
+
+## Tests
+
+```bash
+npm test             # unit and integration tests (vitest)
+npm run test:e2e     # the built CLI against the offline mock backend
+npm run verify       # lint, format, build, unit and e2e: must pass before a merge
 ```
 
 ## Building
@@ -181,14 +171,6 @@ FHE allows computations on encrypted data without decrypting it first. This enab
 
 ## Publishing
 
-The package is configured for npm publishing:
-
-```bash
-# Login to npm
-npm login
-
-# Publish (runs prepublishOnly which builds automatically)
-npm publish
-```
-
-The `prepublishOnly` script ensures a clean build before publishing.
+Releases follow [docs/releasing.md](releasing.md). `npm publish` runs `prepublishOnly`,
+which cleans `dist/` and runs the full `npm run verify` first, so a failing build or test
+stops the publish.

@@ -77,9 +77,7 @@ with the offline mock backend, `FHEW_BACKEND=mock`):
 
 Requires Node.js >= 24.11.
 
-Testing a pre-release (`2.1.0-beta.1`)? Install the `.tgz` with
-`npm install -g ./fhevm-wallet-2.1.0-beta.1.tgz` and follow
-[docs/beta-testing.md](docs/beta-testing.md).
+A manual test checklist for a release is in [docs/manual-testing.md](docs/manual-testing.md).
 
 ```bash
 # npm
@@ -339,10 +337,7 @@ the amount is known. Error codes include `INVALID_AMOUNT`, `INVALID_ADDRESS`,
 `PROMPT_NOT_ALLOWED`, `LOOKALIKE_ADDRESS`, `INSUFFICIENT_BALANCE`, `NOT_AN_OPERATOR`,
 `NOT_A_WRAPPER`, `WRAPPER_SUPPLY_FULL`, `WRAP_APPROVED_ONLY`, `UNWRAP_UNCONFIRMED`,
 `UNWRAP_NOT_FOUND`, `UNWRAP_STILL_OPEN` and the transaction
-codes (`INSUFFICIENT_GAS_FUNDS`, `INSUFFICIENT_TOKEN_BALANCE`, `SENT_UNCONFIRMED`, `TX_REVERTED`, `TX_REPLACED`, `RPC_ERROR`, …). Changed
-after 2.0.0: `receive` and `balance` give `wallet` as that object (they had `wallet` as a name and
-a separate `address`), `send` gives `wallet` instead of `from`, and `history` and `token
-find` give `wallet` instead of `address`.
+codes (`INSUFFICIENT_GAS_FUNDS`, `INSUFFICIENT_TOKEN_BALANCE`, `SENT_UNCONFIRMED`, `TX_REVERTED`, `TX_REPLACED`, `RPC_ERROR`, …).
 
 ```bash
 pass show my-wallet | fhew balance --json --password-stdin | jq '.tokens[].formatted'

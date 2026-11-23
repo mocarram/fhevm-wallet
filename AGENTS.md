@@ -192,7 +192,7 @@ on-chain, say so explicitly in your report and list what the user should run by 
 ## Git workflow (mandatory)
 
 ```
-feature branch  ──merge --no-ff──▶  staging  ──merge --no-ff──▶  main
+feature branch  ──rebase, fast-forward──▶  staging  ──fast-forward──▶  main
 ```
 
 1. `main` and `staging` must stay in sync before new work starts. Branch from `staging`.
@@ -202,12 +202,17 @@ feature branch  ──merge --no-ff──▶  staging  ──merge --no-ff──
    Subject ≤ 72 chars, imperative mood; body explains *why*.
 4. Before merging into `staging`: `npm run verify` passes **and** an independent review
    (see below) has no open blocking findings.
-5. Merge into `staging` with `--no-ff` so each phase is one visible merge commit.
-6. Promote `staging` → `main` only after a full e2e pass on `staging`. A pre-release
-   (`X.Y.Z-beta.N`) is tagged `vX.Y.Z-beta.N` on `staging` and shipped as an `npm pack`
-   tarball with `docs/beta-testing.md`; `main` gets `X.Y.Z` only after the user signs off.
+5. History is linear: rebase the feature branch on `staging`, then fast-forward
+   (`git merge --ff-only`). No merge commits.
+6. Promote `staging` → `main` (fast-forward) only after a full e2e pass on `staging`
+   and the manual checklist in `docs/manual-testing.md`. A release is one
+   `chore(release): X.Y.Z` commit (version + CHANGELOG), tagged `vX.Y.Z` on `main`,
+   then published to npm following `docs/releasing.md`.
 7. Never force-push `staging` or `main`. Never rewrite published history.
 8. Never commit secrets, `.env`, keystores or anything from the data dir.
+9. Commits are authored by the repository owner (Mocarram Hossain
+   <mocarramhossain@gmail.com>) with no AI attribution lines (`Co-Authored-By`,
+   session links).
 
 ## Quality loop (mandatory)
 

@@ -10,9 +10,9 @@ Thanks for your interest in contributing to fhEVM Wallet! This guide will help y
    git clone https://github.com/YOUR_USERNAME/fhevm-wallet.git
    cd fhevm-wallet
    ```
-3. Install dependencies:
+3. Install dependencies (Node.js 24.11 or later):
    ```bash
-   npm install
+   npm ci
    ```
 4. Create a branch for your changes:
    ```bash
@@ -60,6 +60,7 @@ refactor: simplify wallet encryption logic
 ```
 
 Prefixes:
+
 - `feat:` - New feature
 - `fix:` - Bug fix
 - `docs:` - Documentation changes
@@ -70,6 +71,7 @@ Prefixes:
 ## Pull Requests
 
 1. Ensure your code passes linting and builds successfully:
+
    ```bash
    npm run lint
    npm run build

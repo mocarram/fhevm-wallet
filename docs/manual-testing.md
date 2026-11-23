@@ -1,37 +1,36 @@
-# Beta testing guide: fhevm-wallet 2.1.0-beta.1
+# Manual testing checklist
 
-Thank you for testing. This beta adds Wrap/Unwrap and many fixes found in the 2.1 audit
-(RPC handling, history sync, security, terminal UI). Please test on **Sepolia** first.
+Run this before a release (and after a big change), on **Sepolia** first. It covers what
+the automated tests cannot: a real terminal, the real chain and the relayer.
 
-## Install
+## Install the build under test
 
-You need Node.js 24.11 or newer (`node -v`).
+You need Node.js 24.11 or newer (`node -v`). From a checkout:
 
 ```bash
-npm install -g ./fhevm-wallet-2.1.0-beta.1.tgz
+npm ci && npm run build && npm pack
 ```
 
 ```bash
-fhew --version
+npm install -g ./fhevm-wallet-<version>.tgz
 ```
 
-It should print `2.1.0-beta.1`. To go back to 2.0.0, reinstall it the way you installed it
-before and restore the backup below.
+`fhew --version` should print that version.
 
-## Before you start: keep your data safe
+## Keep your data safe
 
-The beta reads and updates the data folder (`~/.fhevm-wallet`): it adds new files
-(`unwraps.json`, `wrappers.json`) and stores history sync progress per token. Going back
-to 2.0 with a folder the beta has used was not tested, so make a copy first:
+A new version may add files to the data folder (`~/.fhevm-wallet`) or change how it
+stores sync progress, and going back to an older version with that folder is not
+tested. Make a copy first:
 
 ```bash
-cp -a ~/.fhevm-wallet ~/.fhevm-wallet.backup-2.0
+cp -a ~/.fhevm-wallet ~/.fhevm-wallet.backup
 ```
 
-If you would rather keep the beta completely separate, give it its own folder:
+Or test with a separate folder:
 
 ```bash
-export FHEVM_WALLET_HOME=~/.fhevm-wallet-beta
+export FHEVM_WALLET_HOME=~/.fhevm-wallet-test
 ```
 
 ## Try it without real funds (optional, 2 minutes)
@@ -108,7 +107,7 @@ that looks wrong in your terminal, or an error you did not expect.
 - [ ] `FHEW_DEBUG=1 fhew …` shows technical details with secrets masked.
 - [ ] Scripts: `--json` prints one JSON document, and errors give exit code 1.
 
-## Not verified before this beta
+## Known gaps (covered by tests only)
 
 - Mainnet: nothing was sent on mainnet. A one-shot command that signs on mainnet without
   a prompt needs both `-n mainnet` and `--mainnet`.
