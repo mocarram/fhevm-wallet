@@ -207,8 +207,9 @@ CLI (same wording): `fhew wrap 25 czama`, `fhew unwrap 10 czama`, `fhew unwrap -
 
 Receive shows the address and a terminal QR code (half blocks, quiet zone) of the address,
 or of an EIP-681 link `ethereum:<address>@<chainId>` after "QR with network (EIP-681)".
-Doctor lists one row per check (Node, data folder, each RPC endpoint by its host (the masked URL when two share a host or when it fails), relayer, ETH for
-gas, each tracked token's ERC-7984 check) with ✔ ! ✗ marks, the same as `fhew doctor`.
+Doctor lists one row per check (Node, data folder, each RPC endpoint by its host (`host
+#2` when two share a host; the masked URL when it fails), relayer, ETH for gas, each
+tracked token's ERC-7984 check) with ✔ ! ✗ marks, the same as `fhew doctor`.
 
 ## History
 

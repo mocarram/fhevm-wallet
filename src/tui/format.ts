@@ -36,13 +36,13 @@ const COMPACT_UNITS: Array<[bigint, string]> = [
 export function formatCompactAmount(value: bigint, decimals: number): string {
   if (value < 0n) return `-${formatCompactAmount(-value, decimals)}`;
   const unit = 10n ** BigInt(decimals);
-  const whole = (value < 0n ? -value : value) / unit;
+  const whole = value / unit;
   for (const [size, suffix] of COMPACT_UNITS) {
     if (whole < size) continue;
-    const hundredths = ((value < 0n ? -value : value) * 100n) / (size * unit);
+    const hundredths = (value * 100n) / (size * unit);
     const int = (hundredths / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     const frac = (hundredths % 100n).toString().padStart(2, '0');
-    return `${value < 0n ? '-' : ''}${int}.${frac}${suffix}`;
+    return `${int}.${frac}${suffix}`;
   }
   return formatAmount(value, decimals);
 }

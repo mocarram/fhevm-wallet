@@ -108,10 +108,11 @@ export function rpcHost(url: string): string {
 async function rpcRows(backend: Backend, network: NetworkName): Promise<DoctorRow[]> {
   const checks = await backend.checkRpcEndpoints(network);
   const anyOk = checks.some((c) => c.ok);
-  // Show the host; fall back to the (masked) URL when two endpoints share a host.
+  // Show the host. Two endpoints on one host would read the same (a masked path is
+  // "/…" either way), so those get their position in the list: "h.example #2".
   const hosts = checks.map((c) => rpcHost(c.url));
   const label = (i: number): string =>
-    hosts.filter((h) => h === hosts[i]).length > 1 ? checks[i].url : hosts[i];
+    hosts.filter((h) => h === hosts[i]).length > 1 ? `${hosts[i]} #${i + 1}` : hosts[i];
   const rows: DoctorRow[] = checks.map((c, i) =>
     c.ok
       ? {
