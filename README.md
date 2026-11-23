@@ -2,6 +2,8 @@
 
 A CLI wallet for managing encrypted ERC-7984 tokens using Zama's Fully Homomorphic Encryption (FHE) technology.
 
+**[Website](https://mocarram.github.io/fhevm-wallet/)** · [npm](https://www.npmjs.com/package/fhevm-wallet)
+
 ## Features
 
 - **Interactive terminal UI** - Status bar, numbered menus, a send wizard with safety checks, `?` help and a `:` command bar

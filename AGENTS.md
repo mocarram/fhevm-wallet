@@ -56,6 +56,9 @@ src/
   utils/                   validation, formatting, amount parsing
 tests/                     vitest; mirrors src/
 tests/e2e/                 end-to-end runs of dist/index.js in a throwaway HOME
+site/                      the website (plain HTML/CSS/JS, no build step), deployed to
+                           https://mocarram.github.io/fhevm-wallet/ by
+                           .github/workflows/pages.yml when site/ changes on staging
 ```
 
 ### ERC-7984 rules that bit us before
@@ -393,3 +396,6 @@ Every unit of work goes through this loop until it comes out clean:
 - `docs/ROADMAP.md`: phases, acceptance criteria and status. Agents pick the next unchecked
   item from here.
 - `docs/ui-design.md`: the approved terminal design (screens, keymap, behaviours).
+- `site/`: the website. Screenshots in `site/assets/screenshots/` are real captures of the
+  terminal UI (a pty run rendered with xterm.js), never mock-ups; never show the MOCK
+  badge there. Its version and install text follow the latest npm release.

@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>fhEVM Wallet - confidential ERC-7984 tokens from your terminal</title>
+    <meta
+      name="description"
+      content="A terminal wallet for ERC-7984 confidential tokens on Zama's fhEVM: send, wrap and decrypt from your keyboard. Amounts stay encrypted on-chain."
+    />
+    <meta name="theme-color" content="#0b0e14" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <meta property="og:title" content="fhEVM Wallet - confidential tokens from your terminal" />
+    <meta
+      property="og:description"
+      content="Send, wrap and decrypt ERC-7984 confidential tokens with a fast, keyboard-driven terminal wallet."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://mocarram.github.io/fhevm-wallet/" />
+    <meta
+      property="og:image"
+      content="https://mocarram.github.io/fhevm-wallet/assets/screenshots/home_sent.png"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="band" style="background: var(--band-0)">
+      <div class="wrap">
+        <header class="top">
+          <a class="brand" href="#top"><b aria-hidden="true">&gt;_</b>fhEVM Wallet</a>
+          <nav class="nav" aria-label="Sections">
+            <a href="#features">Features</a>
+            <a href="#gallery">Screens</a>
+            <a href="#scripts">Scripting</a>
+            <a href="#security">Security</a>
+            <a class="gh" href="https://github.com/mocarram/fhevm-wallet">GitHub</a>
+          </nav>
+        </header>
+
+        <section class="hero" id="top">
+          <div class="pill">ERC-7984 · Zama fhEVM · v2.0.0</div>
+          <h1>Confidential tokens, from your terminal.</h1>
+          <p>
+            Send, wrap and decrypt ERC-7984 tokens with a fast, keyboard-driven wallet. Amounts are
+            encrypted on-chain; only you see the numbers.
+          </p>
+          <div class="ctas">
+            <div class="install">
+              <span class="dollar" aria-hidden="true">$</span>
+              <code id="install-cmd">npm install -g fhevm-wallet</code>
+              <button type="button" class="btn btn-light" id="copy-btn">Copy</button>
+            </div>
+            <a class="btn-ghost" href="https://github.com/mocarram/fhevm-wallet#readme"
+              >Read the docs</a
+            >
+          </div>
+          <div class="meta">Node.js 24.11 or later · macOS and Linux · MIT licensed</div>
+        </section>
+
+        <section style="padding-block: 8px 88px">
+          <figure>
+            <div class="term big">
+              <div class="chrome"><i></i><i></i><i></i><span>fhew · alice on Sepolia</span></div>
+              <img
+                src="assets/screenshots/home_sent.png"
+                width="1664"
+                height="1008"
+                alt="fhEVM Wallet home screen after sending 0.25 cZAMA to bob on Sepolia, with the command to repeat it and the decrypted balances"
+              />
+            </div>
+            <figcaption class="under">
+              The real terminal UI, captured on the Sepolia testnet.
+            </figcaption>
+          </figure>
+        </section>
+      </div>
+    </div>
+
+    <div class="band" id="features" style="background: var(--band-1)">
+      <div class="wrap section">
+        <div class="eyebrow">What it does</div>
+        <h2 style="max-width: 22ch">Everything a confidential wallet needs, one keypress away.</h2>
+        <div class="grid">
+          <div class="card">
+            <div class="k">s · send</div>
+            <div class="t">Confidential sends</div>
+            <div class="b">
+              Pick a contact, type 25, done. Amounts are encrypted on your machine before they leave
+              it.
+            </div>
+          </div>
+          <div class="card">
+            <div class="k">b · balances</div>
+            <div class="t">One signature, every balance</div>
+            <div class="b">A single EIP-712 signature decrypts all your tracked tokens.</div>
+          </div>
+          <div class="card">
+            <div class="k">w · wrap</div>
+            <div class="t">Wrap and unwrap</div>
+            <div class="b">Move between public ERC-20s and their confidential twins, exactly.</div>
+          </div>
+          <div class="card">
+            <div class="k">h · history</div>
+            <div class="t">History you can read</div>
+            <div class="b">Incoming and outgoing transfers, decrypted when you ask.</div>
+          </div>
+          <div class="card">
+            <div class="k">: · command bar</div>
+            <div class="t">Fast as a shell</div>
+            <div class="b">Type :send bob 25 cusdc anywhere. Esc steps back, numbers jump.</div>
+          </div>
+          <div class="card">
+            <div class="k">d · doctor</div>
+            <div class="t">Know your setup</div>
+            <div class="b">
+              One screen checks Node, your data folder, RPC, relayer, gas and tokens.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="band" style="background: var(--band-2)">
+      <div class="wrap section">
+        <div class="spot">
+          <div class="copy">
+            <div class="eyebrow">Send</div>
+            <h3>Checked before you sign.</h3>
+            <p>
+              Every send is simulated and checked against your decrypted balance (an ERC-7984
+              transfer above your balance silently moves 0), and a five-second countdown lets you
+              stop it with Esc.
+            </p>
+          </div>
+          <figure class="term mid">
+            <img
+              src="assets/screenshots/send_review.png"
+              width="1664"
+              height="1008"
+              alt="Send review: 0.25 cZAMA from alice to bob, simulation passed, balance covers the amount"
+            />
+          </figure>
+        </div>
+      </div>
+    </div>
+
+    <div class="band" style="background: var(--band-3)">
+      <div class="wrap section">
+        <div class="spot rev">
+          <figure class="term mid">
+            <img
+              src="assets/screenshots/wrap_amount.png"
+              width="1664"
+              height="1008"
+              alt="Wrap screen: wrap 1 ZAMA into 1 cZAMA"
+            />
+          </figure>
+          <div class="copy">
+            <div class="eyebrow">Wrap and unwrap</div>
+            <h3>Public ERC-20 in, confidential tokens out.</h3>
+            <p>
+              Exact approvals, never unlimited. Dust that cannot be wrapped is shown before you
+              confirm, and an interrupted unwrap resumes without sending anything twice.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="band" id="gallery" style="background: var(--band-4)">
+      <div class="wrap section">
+        <div class="ghead">
+          <div>
+            <div class="eyebrow">Screens</div>
+            <h2>Every screen, captured on Sepolia</h2>
+          </div>
+          <div class="gnav">
+            <span class="pos" id="g-pos" aria-live="polite">1 / 10</span>
+            <button type="button" id="g-prev" aria-label="Previous screen">‹</button>
+            <button type="button" id="g-next" aria-label="Next screen">›</button>
+          </div>
+        </div>
+        <figure class="term mid">
+          <div class="stage"><img id="g-img" src="assets/screenshots/home_sent.png" alt="" /></div>
+          <figcaption class="gcap">
+            <kbd id="g-key">.</kbd><strong id="g-title">Home after a send</strong
+            ><span id="g-cap"
+              >The result, the command to repeat it next time, and your decrypted balances.</span
+            >
+          </figcaption>
+        </figure>
+        <div class="thumbs" id="g-thumbs" role="list" aria-label="All screens"></div>
+      </div>
+    </div>
+
+    <div class="band" id="scripts" style="background: var(--band-5)">
+      <div class="wrap section">
+        <div class="panel">
+          <div class="copy">
+            <div class="eyebrow">Scripting</div>
+            <h3>The same wallet, as commands.</h3>
+            <p>
+              Every screen has a one-shot command with the same checks. Add <code>--json</code> for
+              one machine-readable document and precise error codes.
+            </p>
+          </div>
+          <pre class="cmds"><span class="d">$</span> fhew send bob 25 cusdc
+<span class="d">$</span> fhew wrap 100 czama
+<span class="d">$</span> fhew balance --json --password-stdin
+<span class="d">$</span> fhew history --decrypt
+<span class="d">$</span> fhew doctor
+<span class="c"># try it with no funds: FHEW_BACKEND=mock FHEVM_WALLET_HOME=$(mktemp -d) fhew</span></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="band" id="security" style="background: var(--band-1)">
+      <div class="wrap section" style="padding-bottom: 96px">
+        <div class="eyebrow">Security</div>
+        <h2 style="max-width: 24ch">Built so a mistake never costs you twice.</h2>
+        <div class="safety">
+          <div>
+            <strong>Keys stay local</strong>
+            <p>Keystores are encrypted with your password, and signing happens on your machine.</p>
+          </div>
+          <div>
+            <strong>Never sent twice</strong>
+            <p>A transaction that may still land is never retried; you get its hash instead.</p>
+          </div>
+          <div>
+            <strong>Owner-only data</strong>
+            <p>Wallet files are private to your user, and folders others can change are refused.</p>
+          </div>
+          <div>
+            <strong>Mainnet needs intent</strong>
+            <p>Scripts need both -n mainnet and --mainnet before anything is signed.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="band" style="background: var(--band-6)">
+      <div class="wrap foot">
+        <span>fhEVM Wallet 2.0.0 · MIT licensed</span>
+        <nav aria-label="Links">
+          <a href="https://github.com/mocarram/fhevm-wallet">GitHub</a
+          ><a href="https://www.npmjs.com/package/fhevm-wallet">npm</a>
+        </nav>
+      </div>
+    </footer>
+    <script src="main.js"></script>
+  </body>
+</html>
